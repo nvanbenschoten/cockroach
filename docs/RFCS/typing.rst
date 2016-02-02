@@ -186,7 +186,7 @@ For example:
 
       select length(E'\\000a'::bytes || 'b'::string)
 
-   Succeeds (wrongly!) in Postgres and reports 6 as result.  This
+   Succeeds (wrongly!) in Postgres and reports 7 as result.  This
    should have failed with either "cannot concatenate bytes and string",
    or created a bytesrray of 3 bytes (\x00ab), or a string with a
    single character (b), or a 0-sized string.
@@ -292,7 +292,7 @@ Detailed design
 AST changes and new types
 -------------------------
 
-SELECT, INSERT and UPDATE should really be **expressions**.
+SELECT, INSERT and UPDATE should really be **EXPR** s.
 
 The type of a SELECT expression should be an **aggregate**.
 
@@ -341,7 +341,7 @@ casted placeholders (but only placeholders!), that is, folding::
 
      $1::T :: U => $1[T] :: U
 
-Then we type using the following types
+Then we type using the following rules
 
 A. Constant folding.
 
@@ -528,7 +528,7 @@ B. Culling and candidate type collection.
     nodes when there is a call and not pushed further down (e.g. to
     12[*N] in this example).
 
-C. Repeat B as long as there is at least one candidate set with more
+C. Repeat step 2 as long as there is at least one candidate set with more
    than 1 type, and until the candidate sets do not evolve any more.
 
    This simplifies the example above to::
@@ -556,7 +556,7 @@ D. Refine the type of constants.
    their literals.  That is, there is a special meaning expressed by
    writing "2.0" instead of "2".
 
-E. Run B-C again. This will refine the type of placeholders
+E. Run steps 2 and 3 again. This will refine the type of placeholders
    automatically.
 
 F. If there is any remaining candidate type set with more than one
@@ -698,6 +698,38 @@ non-functional Go code) and may have non-trivial run-time costs
 (e.g. extensions to Hindley-Milner to support overloading resolve in
 quadratic time).
 
+
+
+
+
+Untyped numeric literals
+------------------------
+
+To implement untyped numeric literals which will enable exact arithmetic, 
+we will use https://godoc.org/golang.org/x/tools/go/exact. This will require
+a change to our Yacc parser and lexical scanner, which will parser all
+numeric looking values (``ICONST`` and ``FCONST``) as ``NumVal``. 
+
+We will then
+introduce a simplification/constant folding pass before type checking is initially
+performed (ideally using a folding visitor instead of the current interface approach).
+While constant folding these untyped literals, we can use `BinaryOp <https://godoc.org/golang.org/x/tools/go/exact#BinaryOp>`_ and `UnaryOp <https://godoc.org/golang.org/x/tools/go/exact#UnaryOp>`_ to retain exact precision.
+
+Next, during type checking, ``NumVals`` will be evalutated as their logical 
+Datum types. Here, they will be converted to DInt if possible (if ``Value.Kind()`` 
+returns an Int) using `Int64Val <https://godoc.org/golang.org/x/tools/go/exact#Int64Val>`_,
+and DDecimal if ``Value.Kind()`` returns a Float by using ``decimal.SetString(Value.String())``.
+All other Kinds will result in a panic because they should not be possible based on our
+parser. However, we could eventually introduce Complex literals using this approach.
+
+Finally, once type checking has occured, we can proceed with simplification and constant folding
+for all typed values and expressions.
+
+
+**To discuss:**
+
+``(2 + 10) / strpos(“hello”, “o”)``: 2 and 10 would be added using exact arithmatic in the first folding pass to get 12. However, because the constant function ``strpos`` returns a typed value, we would not fold this in the first pass. Instead, we would type the 12 to a DInt in the type check phase, and then perform the rest of the constant folding on the DInt and the return value of strpos in the second constant folding phase. **Once an untyped constant literal needs to be typed, it can never become untyped again.**
+
 Unresolved questions
 ====================
 
@@ -705,5 +737,5 @@ How much Postgres compatibility is really required?
 
 What should our type-coercion story be in terms of implicitly
 making conversions from a subset of available casts at type
-discontinuity boundaries in SQL expressions?
-     
+discontinuity boundaries in SQL expressions? Are untyped constants 
+enough to remove the need for this coercion?
