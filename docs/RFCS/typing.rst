@@ -6,7 +6,7 @@
 :Cockroach Issue: #4024, #4026, #3633
 
 .. contents::
-		  
+
 Summary
 =======
 
@@ -31,7 +31,7 @@ To reach these goals the RFC proposes to:
   sub-selects)
 - structure typing as a visitor that annotates types as attributes in
   AST nodes
-  
+
 Motivation
 ==========
 
@@ -60,7 +60,7 @@ This RFC considers specifically the following issues:
 
 The following issues are related to typing but fall outside of the
 scope of this RFC:
-  
+
 - "prepare" reports type X to client, client does not *know* X (and
   thus unable to send the proper format byte in subsequent "execute")
 
@@ -73,7 +73,7 @@ scope of this RFC:
   For this issue one can argue the client is wrong; this issue may be
   addressed at a later stage if real-world use shows that demand for
   legacy compatibility here is real.
-  
+
 - prepare reports type "int" to client, client feeds "string" during
   execute
 
@@ -98,7 +98,7 @@ There are 4 different roles for typing in SQL:
    features shared with other languages, when overloading exists.
 
 3. **inferring implicit conversions**, ie. determine where to insert
-   implicit casts in contexts with disjoint types, when your flavor 
+   implicit casts in contexts with disjoint types, when your flavor
    SQL supports this (this is like in a few other languages, like C).
 
 4. **typing placeholders** inferring the type of
@@ -146,7 +146,7 @@ For example:
 	insert into t(x) values (3 / 2)
 
    This inserts 1 in Postgres (this is slightly surprising) and 1.5 in
-   CockroachDB (this looks and feels OK). However 
+   CockroachDB (this looks and feels OK). However
    if the example is turned around, we get a result that looks
    strange in CockroachDB::
 
@@ -186,7 +186,7 @@ For example:
 
       select length(E'\\000a'::bytes || 'b'::string)
 
-   Succeeds (wrongly!) in Postgres and reports 7 as result.  This
+   Succeeds (wrongly!) in Postgres and reports 6 as result.  This
    should have failed with either "cannot concatenate bytes and string",
    or created a bytesrray of 3 bytes (\x00ab), or a string with a
    single character (b), or a 0-sized string.
@@ -220,7 +220,7 @@ For example:
    is implemented in other languages) that ``g`` asking for ``int`` is
    sufficient to select the 1st overload for ``f`` and thus fully
    determine the type of $1.
-   
+
 
 Things that look wrong but really aren't
 ----------------------------------------
@@ -259,7 +259,7 @@ Things that look wrong but really aren't
 
      prepare a as select $1::float + 2;
      execute a(1.5)
-   
+
 2) Casts as type hints.
 
    Postgres uses casts as a way to indicate type hints on
@@ -267,20 +267,20 @@ Things that look wrong but really aren't
    user may legitimately want to use a value of a given type in a
    context where another type is needed, without restricting the type
    of the placeholder. For example::
-   
+
      create table t (x int, s string);
      insert into t (x, s)  values ($1, "hello " + $1::string)
-   
+
    Here intuition says we want this to infer "int" for $1, not get a
    type error due to conflicting types.
 
    However in any such case it is always possible to rewrite the
    query to both take advantage of type hints and also demand
    the required cast, for example::
-   
+
      create table t (x int, s string);
      insert into t (x, s)  values ($1::int, "hello " + ($1::int)::string)
-   
+
    Therefore the use of casts as type hints should not be seem as a
    hurdle, and simply requires the documentation to properly mention
    to the user "if you intend to cast, explain the intended source
@@ -326,7 +326,7 @@ string   String-like (S)
 bytes    String-like (S)
 bool     Boolean (B)
 ======== =================
-    
+
 We also thus denote::
 
    E [T]      E has type T specifically
@@ -341,7 +341,7 @@ casted placeholders (but only placeholders!), that is, folding::
 
      $1::T :: U => $1[T] :: U
 
-Then we type using the following rules
+Then we type using the following types
 
 A. Constant folding.
 
@@ -364,9 +364,9 @@ A. Constant folding.
    typed using either the intrinsic type if all operands had one; or
    the unknown type for a specific kind when the operands did not have
    a single intrinsic type.
-   
+
    For example::
-   
+
      true and false               => false[bool]
      'a' + 'b'                    => "ab"[*S]
      E'a\\000' + 'b'              => "a\0b"[*S]
@@ -437,7 +437,7 @@ B. Culling and candidate type collection.
    and we obtain::
 
       ( 5[int] + 23[int] )[int]
-      
+
    Another example::
 
      'abc' + $1
@@ -456,7 +456,7 @@ B. Culling and candidate type collection.
    Given this information (restriction of the overload) we change the
    type annotation on the 2nd argument to intersect with the possible
    types at that location::
-     
+
          'abc'[string,bytes] + $1[string,bytes]
 
    And given these arguments, we resolve the set of possible types
@@ -465,7 +465,7 @@ B. Culling and candidate type collection.
          ('abc'[string,bytes] + $1[string,bytes] )[string,bytes]
 
    Another example::
-   
+
        f:int->int
        f:float->float
        f:string->string
@@ -475,7 +475,7 @@ B. Culling and candidate type collection.
 
        (12[*N] + $1) + f($1)
           .
-	  
+
        (12[*N] + $1[*N]) + f($1[*N])
                    .
                    Note that the placeholders in the AST share
@@ -500,7 +500,7 @@ B. Culling and candidate type collection.
 
         f:int->int
 	f:float->float
-   
+
     And the typing continues, restricting the type of $1::
 
        (12[*N] + $1[int,float])[*N] + f($1[int,float])
@@ -534,8 +534,8 @@ C. Repeat step 2 as long as there is at least one candidate set with more
    This simplifies the example above to::
 
      ((12[int,float] + $1[int,float])[int,float] + f($1[int,float])[int,float])[int,float]
-     
-D. Refine the type of constants. 
+
+D. Refine the type of constants.
 
    This is a depth-first, post-order traversal.
 
@@ -577,45 +577,45 @@ From section `Examples that go wrong (arguably)`_:
 			3[int] + $1[int]  B
 
     OK
-    
+
     create table t (x decimal);
     insert into t(x) values (3/2)
                              (3/2)[*N]        A
 			     (3/2)[decimal]   B
 
     OK
-    
+
     create table u (x int);
     insert into u(x) values (((9 / 3) * (1 / 3))::int)
                                3 * (1/3)::int   A
                                1::int           A
 			       1[int]           A
-			       
+
     OK
 
     create tabe t (x float);
     insert into t(x) values (1e10000 * 1e-9999)
                              10[*N]     A
                              10[float]  B
-			     
+
     OK
-    
+
     select length(E'\\000' + 'a'::bytes)
-                  E'\\000'[*S] + 'a'[bytes]  
+                  E'\\000'[*S] + 'a'[bytes]
 		  E'\\000'[bytes] + 'a'[bytes]  B
-		 
+
     OK
 
     select length(E'\\000a'::bytes || 'b'::string)
                   E'\\000a'[bytes] || 'b'[string]
 		  then failure, no overload for || found
-		  
+
     OK
-    
+
 Fancy example that shows the power of the proposed
 type system, with an example where Postgres would
 give up::
-  
+
     f:int,float->int
     f:string,string->int
     g:float,decimal->int
@@ -633,7 +633,7 @@ give up::
               (B re-iterates)
 
               f($1[string],$2[string]) + ...
-	                   .    
+	                   .
 	      f(...)+g($2[string],$3[string]) + ...
 	                          .
               f(...)+g(...)+h($3[string],$1[string])
@@ -648,7 +648,7 @@ Drawbacks
 =========
 
 The following example types differently from Postgres::
-     
+
      select (3 + $1) + ($1 + 3.5)
              3[*N] + $1[*N] + $1[*N] + 3.5[*N]       B
              3[int] + $1[*N] + $1[*N] + 3.5[float]   D
@@ -678,12 +678,27 @@ for an improvement::
 Alternatives
 ============
 
-To properly address situations like ``floor($1 + $2)`` one might
+There's cases where the type type inference doesn't quite work, like ``floor($1 + $2)`` or ``g(f($1))``
+or ``CASE a WHEN 1 THEN 'one' WHEN 2 THEN CASE language WHEN 'en' THEN $1 END END``.
+Or another category of failues involves dependencies between choices of types. E.g.::
+
+	f: int,int->int
+	f: float,float->int
+	f: char, string->int
+	g: int->int
+	g: float->int
+	h: int->int
+	h: string->int
+	
+	f($1, $2) + g($1) + h($2)
+	
+Here the only possibility is $1[int], $2[int] but the algorithm is not
+smart enough to figure that out.
+
+To support these, one might
 suggest the application of a "bidirectional" typing algorithm, where
 the allowable types in a given context guide the typing of
-sub-expressions.
-
-This is akin to constraint-driven typing and a number
+sub-expressions. These are akin to constraint-driven typing and a number
 of established algorithms exist, such as Hindley-Milner.
 
 The introduction of a more powerful typing system would certainlly
@@ -697,10 +712,6 @@ implemented functionally and need to be first translated to
 non-functional Go code) and may have non-trivial run-time costs
 (e.g. extensions to Hindley-Milner to support overloading resolve in
 quadratic time).
-
-
-
-
 
 Untyped numeric literals
 ------------------------
@@ -729,6 +740,40 @@ for all typed values and expressions.
 **To discuss:**
 
 ``(2 + 10) / strpos(“hello”, “o”)``: 2 and 10 would be added using exact arithmatic in the first folding pass to get 12. However, because the constant function ``strpos`` returns a typed value, we would not fold this in the first pass. Instead, we would type the 12 to a DInt in the type check phase, and then perform the rest of the constant folding on the DInt and the return value of strpos in the second constant folding phase. **Once an untyped constant literal needs to be typed, it can never become untyped again.**
+=======
+Implementation notes
+====================
+
+#. All AST nodes (produced by the parser) implement ``Expr``.
+
+	#. ``INSERT``, ``SELECT``, ``UPDATE`` nodes become visitable by visitors. This will unify the way we do processing on the AST.
+
+#. The ``TypeCheck`` method from ``Expr`` becomes a separate visitor. Expr gets a ``type`` field populated by this visitor. This will make it clear when type inference and type checking have run (and that they run only once). This is in contrast with ``TypeCheck`` being called at random times by random code.
+#. During typing there will be a need for a data structure to collect the type candidate sets per AST node (``Expr``) and placeholder. This should be done using a separate map, where either AST nodes or placeholder names are keys.
+#. Semantic analysis will be done as a new step doing constant folding, type inference, type checking.
+	
+	#. Constant folding will actually be split in two parts: one running before type checking and doing folding of untyped numerical computations, the other running after type checking and doing folding of any constant expression (typed literals, function calls, etc.). This is because we want to do untyped computations before having to figure out types, so we can possibly use the resulting value when deciding the type (e.g. 3.5 - 0.5 could be inferred as ``int``).
+	
+The semantic analysis will thus look like::
+	
+	type placeholderTypes = map[ValArg]Type
+
+	// Mutates the tree and populates .type
+	func semanticAnalysis(root Expr) (assignments placeholderTypes,  error) {
+		var untypedFolder UntypedConstantFoldingVisitor = UntypedConstantFoldingVisitor{}
+		untypedFolder.Visit(root)
+		
+		// Type checking and type inference combined.
+		var typeChecker TypeCheckVisitor = TypeCheckVisitor{}
+		if err := typeChecker.Visit(root); err != nil {
+			report ambiguity or typing error
+		}
+		assignments = typeChecker.GetPlaceholderTypes()
+		
+		var constantFolder ConstantFoldingVisitor = ConstantFoldingVisitor{}
+		constantFolder.Visit(root)
+	}
+
 
 Unresolved questions
 ====================
@@ -737,5 +782,13 @@ How much Postgres compatibility is really required?
 
 What should our type-coercion story be in terms of implicitly
 making conversions from a subset of available casts at type
-discontinuity boundaries in SQL expressions? Are untyped constants 
-enough to remove the need for this coercion?
+discontinuity boundaries in SQL expressions? It'd be really
+convenient to say that we don't support any implicit casts.
+Note that some of the reasons why implicit casts would be otherwise
+needed go away with the untyped constant arithmetic that we're suggesting,
+and also because we'd now have type inference for values used in ``INSERT``
+and ``UPDATE`` statements (``INSERT INTO tab (float_col) VALUES 42`` works as
+expected``). If we choose to have some implicit casts in the language, then the
+type inference algorithm probably needs to be extended to rank overload options based on
+the number of casts required.
+     
