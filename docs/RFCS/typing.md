@@ -357,16 +357,51 @@ a preference to the type on the right".
 
 This is different from casts, see below.
 
-The need for this type of extension was also part of both Rick and Morty.
+The need for this type of extension is also implicitly
+present/expressed in the alternate proposals Rick and Morty.
 
-### First pass: placeholder annotation assertion
+### First pass: placeholder annotations
 
-For the first pass, we walk through the expression tree and assign the placeholders
-that are direct arguments of explicit type annotations to those types.
+In the first pass we check the following:
 
-(= for each placeholder, if there is a type annotation around it,
-assign this annotation as the placeholder's type before the rest of type checking
-starts; fail if another earlier annotation provides a conflicting type.)
+- if any given placeholder appears as immediate argument of an
+  explicit annotation, then assign that type to the placeholder (and
+  reject conflicting annotations after the 1st).
+
+- otherwise (no direct annotations on a placeholder), if all
+  occurrences of a placeholder appear as immediate argument
+  to a cast expression then:
+  
+  - if all the cast(s)  are homogenous,
+    then assign the placeholder the type indicated by the cast.
+  
+  - otherwise, assign the type "string" to the placeholder.
+
+Examples:
+
+```
+   select $1:float, $1::string
+       -> $1 : float, execution will perform explicit cast float->string
+   select $1:float, $1:string
+       -> error: conflicting types
+   select $1::float, $1::float
+       -> $1 : float
+   select $1::float, $1::string
+       -> $1 : string, execution will perform explicit cast $1 -> float
+   select $1:float, $1
+       -> $1 : float
+   select $1::float, $1
+       -> nothing done during 1st pass, typing below will resolve
+```
+
+(Note that this rule does not interfere with the separate rule,
+customary in SQL interpreters, that the client may choose to disregard
+the stated type of a placeholder during execute and instead pass the
+value as a string. The query executor must then convert the string to
+the type for the placeholder that was determined during type checking.
+For example if a client prepares `select $1:int + 2` and passes "123" (a string),
+the executor must convert "123" to 123 (an int) before running the query. The
+annotation expression is a type assertion, not conversion, at run-time.)
 
 ### Second pass: constant folding
 
@@ -728,7 +763,7 @@ Typing of "floor" resumes, finds an "float" argument.
 rules 7.2 completes with 1 candidate, and
 typing of "floor" completes with type "float".
 
-Typing completes..
+Typing completes.
 
 
 ```
@@ -881,10 +916,20 @@ Another example:
     select $1::int
 ```
 
-This is cast expression! A cast accepts any type as argument,
-so typing fails with an error.
-(In Rick/Morty the syntax :: is also a hint. Not with Summer. We
-like to give a separate meaning to casts here.)
+First pass annotates $1 as int (all occurrences are argument of
+cast). Typing completes with int.
+
+Next example:
+
+```sql
+    f:int,int->int
+    f:float,float->int
+    PREPARE a AS SELECT f($1, $2), $2::float
+```
+
+Typing of "f" starts,
+Multiple candidate remain after overload resolution.
+Typing fails with ambiguous types.
 
 Next example:
 
@@ -901,31 +946,43 @@ Typing completes
 $1 is assigned "float"
 
 ```sql
+    PREPARE a AS SELECT ($1 + 4) + $1::int
+```
+
+Typin of top "+" starts.
+Typing of inner "+" starts.
+Candidates filtered to +(date,int) and +(int, int).
+Rule 7.6 applies, $1 gets assigned "int".
+"+" resolves 1 candidate.
+Top level plus is +(int,int)->int
+Typing end with int.
+
+
+```sql
     PREPARE a AS SELECT ($1 + 4) + $1:int
 ```
 
-"$1" gets assigned "int"
+"$1" gets assigned "int" during the first phase.
 "+" resolves 1 candidate
+[...]
 Typing ends.
 
 ```sql
     PREPARE a AS SELECT ($2 - $2) * $1:int, $2:int
 ```
 
+$2 is assigned int during the first pass.
 Typing of "*" begins.
 It sees that its 2nd argument already has type.
 So the candidate list is reduced to *(int,int)
 so Typing of "-" starts with desired type "int".
-There are still 2 candidates:
+There are 2 candidates:
 -(int, int) -> int
 -(date, date) -> int
+$2 already has type int, so one candidate remains.
+[...]
+Typing ends successfully.
 
-Rules 7.1 to 7.6 fail to reduce further.
-So we fail with ambiguous typing.
-
-Now, if the rule about type annotations discussed above
-is introduced, then $2 would have received the type "int"
-early, and then all would be well.
 
 ```sql
     f : int -> int
@@ -936,7 +993,7 @@ early, and then all would be well.
     -- fails with ambiguous typing for $1-$2, f not visited yet.
 ```
 
-Same as morty.
+Same as Morty.
 
 ```sql
    SELECT CASE a_int
