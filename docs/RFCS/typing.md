@@ -348,16 +348,31 @@ Where Summer will always pick a type and be able to explain it.
 
 ### Language extension
 
-We introduce a new expression node "type annotation".
+In order to clarify the typing rules below and to exercise
+the proposed system, we found it was useful to "force" certain
+expressions to be of a certain type. 
 
-We also introduce the new SQL syntax for this: "E : T".
+Unfortunately the SQL cast expression (`CAST(... AS ...)` or
+`...::...`) is not appropriate for this, because although it
+guarantees a type to the surrounding expression it does not constrain
+its argument. For example `sign(1.2)::int` does not disambiguate which
+overload of `sign` to use.
+
+Therefore we propose the following SQL extension, which is not
+required to implement the typing system but offers opportunities to
+better exercise it in tests.  The explanatory examples below also use
+this extension for explanatory purposes.
+
+The extension is a new expression node "type annotation".
+
+We also propose the following SQL syntax for this: "E : T".
 
 For example: `1:int` of `1 : int`.
 
-The meaning of this at a first order approximation is "interpret the expression on the left giving
-a preference to the type on the right".
+The meaning of this at a first order approximation is "interpret the
+expression on the left giving a preference to the type on the right".
 
-This is different from casts, see below.
+This is different from casts, as explain below.
 
 The need for this type of extension is also implicitly
 present/expressed in the alternate proposals Rick and Morty.
@@ -494,7 +509,7 @@ tree where each node is unable to be properly introspect about its own return
 type into a typed tree which can provide its inferred result type, and as such 
 can be evaluated later. 
 
-#### Implementation Note
+#### Implementation Notes
 
 _In an effort to make this distinction clearer in code, a `TypedExpr` interface 
 will be created, which is a superset of the `Expr` interface, but also has the 
@@ -574,18 +589,27 @@ subsequent step, we check the remaining overload set:
    Then the overload candidates are filtered based on the resulting types. If any argument of the call 
    receives type null, then it is not used for filtering.
    
+   For example: `select mod(extract(seconds from now(), $1*20)`. There
+   are 3 candidates for `mod`, on `int`, `float` and `decimal`. The
+   first argument `extract` is typed without a desired type and
+   resolves to `int`. This selects the candidate `mod(int, int)`. From then on only one candidate
+   remains so `$1*20` gets typed using desired type `int` and `$1` gets typed as `int`.
+   
 3. (7.3) candidates are filtered based on the resolvable type set types of constant number literals. 
    Remember at this point all constant literals already have a resolvable type set since constant folding.
   
    The filtering is done left to right, eliminating at each argument all candidates that do not accept
    one of the types in the resolvable set at that position.
-  
+
+   Example: `select sign(1.2)`. `sign` has 3 candidates for `int`, `float` and `decimal`. Step 7.3 eliminates
+   the candidate for `int`.
+
    After this point,
    the number of candidates left will be checked now and after each following step.
    
 4. (7.4) candidates are filtered based on the desired return type, if one is provided
 
-   Example: `insert into (str_col) values (left($1, 1))
+   Example: `insert into (str_col) values (left($1, 1))`
    With only rules 7.2 and 7.3 above we still have 2 candidates: `left(string, int)` and `left(bytes, int)`.
    With rule 7.4 `left(string, int)` is selected.
 
@@ -615,7 +639,7 @@ subsequent step, we check the remaining overload set:
    that accepts this type in the yet untyped positions,
    choose that candidate.
   
-   Example: `select (1 + $1)`
+   Example: `select div(1, $1)` still has candidates for `int`, `float` and `decimal`.
 
 Another approach would be to go through each overload and attempt to type check each 
 argument expression with the parameter's type. If any of these expressions type checked to a 
