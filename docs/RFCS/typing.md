@@ -346,6 +346,65 @@ Where Summer will always pick a type and be able to explain it.
 
 ## Proposed typing strategy
 
+### High-level overview
+
+To explain Summer to a newcomer it would be mostly correct to say
+"Summer first determines the types of the operands of a complex
+expression, then based on the operand types decides the type of the
+complex expression", ie. the intuitive description of a bottom-up type
+inference.
+
+The reason why Summer is more complex than this in reality (and the principle
+underlying its design) is threefold:
+
+- Expressions containing placeholders often contain insufficient
+  information to determine a proper type in a bottom-up fashion. For
+  example in the expression `floor($1 * $2)` we cannot type the
+  placeholders unless we take into account the accepted argument types
+  of `floor`.
+
+- SQL number literals are usually valid values in multiple types
+  (`int`, `float`, `decimal`). Not only do users expect a minimum
+  amount of automatic type coercion, so that expressions like `1.5 +
+  123` are not rejected.  Also there is a conflict of interest between
+  flexibility for the SQL user (which suggests picking the largest
+  type) and performance (which suggests picking the smallest type).
+  Summer does extra work to reach a balance in there. For example
+  `greatest(1, 1.2)` will pick `float` whereas `greatest(1,
+  1.2e10000)` will pick `decimal`.
+
+- SQL has overloaded functions. If there are multiple candidates and
+  the operand types do not match the candidates' expected types
+  "exactly" Summer does extra work to find an acceptable candidate.
+
+So another way to explain Summer that is somewhat less incorrect
+than the naive explanation above would be:
+
+1. the type of constant literals (numbers, strings, null) and
+   placeholders are mostly determined by their parent expression
+   depending on other rules (especially the expected type at that
+   position), not themselves. For example Summer does not "know"
+   (determines) the constant "123" to be an `int` until it looks at
+   its parent in the syntax tree. For complex expressions involving
+   number constants, this requires Summer to first perform constant
+   folding so that the immediate parent of a constant, often an
+   overloaded operator, has enough information from its other
+   operand(s) to decide a type for the constant. This constant folding
+   is performed using exact arithmetic.
+
+2. for functions that require homogenous types (e.g. `GREATEST`, `CASE
+   .. THEN` etc), the type expected by the context, if any, is used to
+   restrict the operand types (rule 6.2) otherwise the first operand
+   with a "possibly useful" type is used to restrict the type of the
+   other operands (rules 6.3 and 6.4).
+
+3. during overload resolution, the candidate list is first restricted
+   to the candidates that are *compatible* with the arguments (rules
+   7.1 to 7.3), then filtered down by compatibility between the
+   candidate return types and the context (7.4), then by minimizing
+   the amount of type conversions for literals (7.5), then by
+   preferring homogenous argument lists (7.6).  
+
 ### Language extension
 
 In order to clarify the typing rules below and to exercise
@@ -370,7 +429,7 @@ We also propose the following SQL syntax for this: "E : T".
 For example: `1:int` of `1 : int`.
 
 The meaning of this at a first order approximation is "interpret the
-expression on the left giving a preference to the type on the right".
+expression on the left using the type on the right".
 
 This is different from casts, as explain below.
 
@@ -589,7 +648,7 @@ subsequent step, we check the remaining overload set:
    Then the overload candidates are filtered based on the resulting types. If any argument of the call 
    receives type null, then it is not used for filtering.
    
-   For example: `select mod(extract(seconds from now(), $1*20)`. There
+   For example: `select mod(extract(seconds from now()), $1*20)`. There
    are 3 candidates for `mod`, on `int`, `float` and `decimal`. The
    first argument `extract` is typed without a desired type and
    resolves to `int`. This selects the candidate `mod(int, int)`. From then on only one candidate
