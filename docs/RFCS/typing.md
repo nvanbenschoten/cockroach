@@ -318,22 +318,23 @@ a specification *a posteriori*. This will allow us to consider the new system
 orthogonally from the code, and directly compare it to Rick and Morty.
 
 The resulting type system is called **Summer**, after the name of
-Morty's sister in the show. Summer is more mature and more
-predictable than Morty, and gives the same or more desirable in almost
-all scenarios while all the while being more easy to understand externally.
+Morty's sister in the show. Summer is more mature and more predictable
+than Morty, and gives the same or more desirable results in almost all
+scenarios while being more easy to understand
+externally.
 
 ## Overview of Summer
 
 - Summer is also based on a set of rules that can be applied using
-  using a regular tree recursion
+  using a regular tree recursion.
 - Summer does slightly more work than Morty (more conditions checked
   at every level) but is not iterative like Rick.
-- Summer requires constant folding early in the type resolution
+- Summer requires constant folding early in the type resolution.
 - Summer does not require or allow implicit type conversions, as opposed
   to Morty. In a similar approach to Go, it uses untyped literals
   to cover 90% of the use cases for implicit type conversions, and deems
   that it's preferable to require explicit programmer clarification for 
-  the other 10%
+  the other 10%.
 - Summer only uses exact arithmetic during initial constant folding,
   and performs all further operations using SQL types, whereas Morty
   sometimes uses exact arithmetic during evaluation.
@@ -348,9 +349,10 @@ Where Summer will always pick a type and be able to explain it.
 ### Language extension
 
 We introduce a new expression node "type annotation".
-Noted in input syntax as "E : T".
 
-For example: `1:int` 
+We also introduce the new SQL syntax for this: "E : T".
+
+For example: `1:int` of `1 : int`.
 
 The meaning of this at a first order approximation is "interpret the expression on the left giving
 a preference to the type on the right".
@@ -425,7 +427,7 @@ stored internally using a `string` value.
 After constant folding has occurred the remaining constants are represented as
 literal constants in the syntax tree and annotated by an ordered list of SQL types that can 
 represent them with the least loss of information. We call this list the *resolvable type
-ordered set*, or *resolved type set* for short, and the head of this list the *natural type* of the 
+ordered set*, or *resolvable type set* for short, and the head of this list the *natural type* of the 
 constant.
 
 #### Numeric Constant Examples
@@ -477,13 +479,6 @@ that demands a type the checker, the error becomes `1+floor(1.5) is not a string
 Meanwhile, the type checking of a node retains the option to accept
 the type found for a sub-tree even if it's different from the desired type.
 
-FIXME: we need an example for this. If we don't find an example, perhaps this 
-opportunity is not that useful, in which case it may be possible to always throw 
-an error if a type resolves for a node that is different from the desired type.
-Logically, this would mean changing the optional "desired" type propagated
-down during type checking into a "required" type propagated down during type 
-checking.
-
 As an important optimization, we annotate the results of typing in the syntax
 node. This way during normalization when the syntax structure is changed,
 the new nodes created by normalization can reuse the types of their sub-trees
@@ -527,7 +522,7 @@ The function then works as follows:
 5. if the node is a simple statement (or sub-select, not CASE!). Propagate the desired types down, then look at what comes
    up when the recursion returns, then check the inferred type are compatible with the statement semantics.
 
-6. for statements or variadic function calls with an homogeneity requirement, we use the rules in the section 
+6. for statements or variadic function calls with a homogeneity requirement, we use the rules in the section 
    [below](#required-homogeneity) for typing.
 
 7. if the node is a function call not otherwise handled in step #6 [incl a binary or unary operation, or a comparison
@@ -557,7 +552,7 @@ string literals)
 The **first three** steps below are run unconditionally. After the 3rd step and after each 
 subsequent step, we check the remaining overload set:
 
-- If there are no candidate left, type checking fails ("no matching overload").
+- If there are no candidates left, type checking fails ("no matching overload").
 - if there is only one candidate left, this is used as the implementation function to use for the call, any
   yet untyped placeholder or constant literal is typed recursively using the type defined by its argument position as desired type,
   (it is possible to prove, and we could assert here, that the inferred type here is always the desired type)
@@ -590,25 +585,27 @@ subsequent step, we check the remaining overload set:
    
 4. (7.4) candidates are filtered based on the desired return type, if one is provided
 
-   Example: `insert into (int_col) values (max(1,2))`
-   We only steps 2 and 3 above we still have 2 candidates:
-   With candidates `max(int, int) and max(float, float)`
+   Example: `insert into (str_col) values (left($1, 1))
+   With only rules 7.2 and 7.3 above we still have 2 candidates: `left(string, int)` and `left(bytes, int)`.
+   With rule 7.4 `left(string, int)` is selected.
 
 5. (7.5) If there are constant number literals in the argument list, then try to filter the candidate list
    down to 1 candidate using the natural type of the constants. If that fails (either 0 candidates left or >1), try again
    this time trying to find a candidate that accepts the "best" mutual type in the resolvable type set of all constants.
    (in the order defined in the resolvable type set)
   
-   Example: `select max(1,2)`
-   We only steps 2 and 3 above we still have 2 candidates:
-   With candidates `max(int, int) and max(float, float)`
+   Example: `select sign(1.2)`
+   With only rules 7.2 to 7.4 above we still have 2 candidates:
+   With candidates `sign(float)` and `sign(decimal)`.
+   Rule 7.5 with the natural type selects `div(float)`.
   
-   Example: `select max(1,2.5)`
-   We only steps 2 and 3 above we still have 2 candidates:
-   With candidates `max(float, float) and max(decimal, decimal)`
-  
-6. (7.6) *for the final step, we look to prefer homogeneous argument types across candidates. This could
-   be argued as incorrect or unnecessary, but it seems to be what Postgres does. For instance, overloads
+   Example: `select div(1e10000,2.5)`
+   With only rules 7.2 to 7.4 above we still have 2 candidates:
+   `div(float,float)` and `div(decimal,decimal)` however the natural types are `decimal` and `float`, respectively.
+   The 2nd part of rule 7.5 picks `div(decimal,decimal)`.
+
+6. (7.6) *for the final step, we look to prefer homogeneous argument types across candidates. 
+   For instance, overloads
    for `int + int` and `int + date` exist, so without preferring homogeneous overloads, `1 + $1` would
    be resolved as ambiguous. Therefore, we check if all previously resolved types are the same, and if
    so, follow the filtering step.*
@@ -677,34 +674,34 @@ rules to be applied to a given list of untyped expressions and an optional desir
   
 Constant folding happens, nothing changes. 
   
-Typing of the select begins. Since this is not a sub-select there is no demanded type.
-Typing of "+" begins. Again no demanded type. 
+Typing of the select begins. Since this is not a sub-select there is no desired type.
+Typing of "+" begins. Again no desired type. 
 
 Rule 7.1 then 7.2 applies.
 
 Typing of "case" begins without a desired type.
 
-Then "case" recursively types its condition variable without demanded type.
-Typing of "4" begins. No demanded type here, resolves to int as natural type, [int, float, dec] as resolvable type set.
+Then "case" recursively types its condition variable without desired type.
+Typing of "4" begins. No desired type here, resolves to int as natural type, [int, float, dec] as resolvable type set.
 Typing of "case" continues. Now it knows the condition is an "int" it will demand "int" for the WHEN branches.
-Typing of "4" (the 2nd one) begins. Type "int" is demanded so the 2nd "4" is typed to that.
+Typing of "4" (the 2nd one) begins. Type "int" is desired so the 2nd "4" is typed to that.
 Typing of "case" continues. Here rule 6.4 applies, and a failure occurs.
 
 ```sql
  prepare a as select 3 + case (4) when 4 then $1 else 42 end
 ```
 
-Typing of the select begins. Since this is not a sub-select there is no demanded type.
-Typing of "+" begins. Again no demanded type. 
+Typing of the select begins. Since this is not a sub-select there is no desired type.
+Typing of "+" begins. Again no desired type. 
 
 Rule 7.1 then 7.2 applies.
 
 Typing of "case" begins without a desired type.
 
-Then "case" recursively types its condition variable without demanded type.
-Typing of "4" begins. No demanded type here, resolves to int as natural type, [int, float, dec] as resolvable type set.
+Then "case" recursively types its condition variable without desired type.
+Typing of "4" begins. No desired type here, resolves to int as natural type, [int, float, dec] as resolvable type set.
 Typing of "case" continues. Now it knows the condition is an "int" it will demand "int" for the WHEN branches.
-Typing of "4" (the 2nd one) begins. Type "int" is demanded so the 2nd "4" is typed to that.
+Typing of "4" (the 2nd one) begins. Type "int" is desired so the 2nd "4" is typed to that.
 
 Here rule 6.4 applies. "42" decides int, so $1 gets assigned "int" and
 case resolves as "int".
@@ -715,7 +712,7 @@ Based on the resolved type for case, "+" reduces the overload set to
 (int, int), (date, int), (timestamp, int).
 
 Rule 7.3 applies. This eliminates the candidates that take non-number as 1st argument. Only (int, int) remains.
-This decides the overload, "1" gets typed as "int", and the
+This decides the overload, "$1" gets typed as "int", and the
 typing completes for "+" with "int".
 Typing completes.
 
@@ -757,7 +754,7 @@ Typing of "+" begins with desired type "float".
 Rule 7.2 applies: nothing to do.
 Rule 7.3 applies: nothing to do.
 Rule 7.4 applies: +(float, float) is selected.
-Then $1 and $2 are assigned the types demanded by the remaining candidate.
+Then $1 and $2 are assigned the types desired by the remaining candidate.
 
 Typing of "floor" resumes, finds an "float" argument.
 rules 7.2 completes with 1 candidate, and
