@@ -100,7 +100,7 @@ func loadTestData(
 		}
 		timestamp := hlc.Timestamp{WallTime: minWallTime + rand.Int63n(int64(batchTimeSpan))}
 		value := roachpb.MakeValueFromBytes(randutil.RandBytes(rng, valueBytes))
-		value.InitChecksum(key)
+		// value.InitChecksum(key)
 		if err := engine.MVCCPut(ctx, batch, nil, key, timestamp, value, nil); err != nil {
 			return nil, err
 		}

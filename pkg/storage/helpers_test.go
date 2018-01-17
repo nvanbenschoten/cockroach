@@ -422,7 +422,7 @@ func MakeSSTable(key, value string, ts hlc.Timestamp) ([]byte, engine.MVCCKeyVal
 	defer sst.Close()
 
 	v := roachpb.MakeValueFromBytes([]byte(value))
-	v.InitChecksum([]byte(key))
+	// v.InitChecksum([]byte(key))
 
 	kv := engine.MVCCKeyValue{
 		Key: engine.MVCCKey{

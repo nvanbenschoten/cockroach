@@ -90,8 +90,8 @@ func slurpSSTablesLatestKey(
 				return true, errors.Errorf("could not rewrite key: %s", kv.Key.Key)
 			}
 			v := roachpb.Value{RawBytes: kv.Value}
-			v.ClearChecksum()
-			v.InitChecksum(kv.Key.Key)
+			// v.ClearChecksum()
+			// v.InitChecksum(kv.Key.Key)
 			if err := batch.Put(kv.Key, v.RawBytes); err != nil {
 				return true, err
 			}

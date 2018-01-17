@@ -1836,7 +1836,7 @@ func (s *Store) BootstrapRange(
 	// Now add all passed-in default entries.
 	for _, kv := range initialValues {
 		// Initialize the checksums.
-		kv.Value.InitChecksum(kv.Key)
+		// kv.Value.InitChecksum(kv.Key)
 		if err := engine.MVCCPut(ctx, batch, ms, kv.Key, now, kv.Value, nil); err != nil {
 			return err
 		}

@@ -191,7 +191,7 @@ func (is *infoStore) addInfo(key string, i *Info) error {
 		}
 	}
 	if i.OrigStamp == 0 {
-		i.Value.InitChecksum([]byte(key))
+		// i.Value.InitChecksum([]byte(key))
 		i.OrigStamp = monotonicUnixNano()
 		if highWaterStamp, ok := is.highWaterStamps[i.NodeID]; ok && highWaterStamp >= i.OrigStamp {
 			// Report both timestamps in the crash.

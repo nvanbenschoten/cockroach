@@ -657,7 +657,7 @@ func MVCCPutProto(
 	if err := value.SetProto(msg); err != nil {
 		return err
 	}
-	value.InitChecksum(key)
+	// value.InitChecksum(key)
 	return MVCCPut(ctx, engine, ms, key, timestamp, value, txn)
 }
 
@@ -1424,7 +1424,7 @@ func MVCCIncrement(
 
 		newValue := roachpb.Value{}
 		newValue.SetInt(newInt64Val)
-		newValue.InitChecksum(key)
+		// newValue.InitChecksum(key)
 		return newValue.RawBytes, nil
 	})
 

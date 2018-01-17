@@ -210,46 +210,46 @@ func TestIsPrev(t *testing.T) {
 	}
 }
 
-func TestValueChecksumEmpty(t *testing.T) {
-	k := []byte("key")
-	v := Value{}
-	// Before initializing checksum, always works.
-	if err := v.Verify(k); err != nil {
-		t.Error(err)
-	}
-	if err := v.Verify([]byte("key2")); err != nil {
-		t.Error(err)
-	}
-	v.InitChecksum(k)
-	if err := v.Verify(k); err != nil {
-		t.Error(err)
-	}
-}
+// func TestValueChecksumEmpty(t *testing.T) {
+// 	k := []byte("key")
+// 	v := Value{}
+// 	// Before initializing checksum, always works.
+// 	if err := v.Verify(k); err != nil {
+// 		t.Error(err)
+// 	}
+// 	if err := v.Verify([]byte("key2")); err != nil {
+// 		t.Error(err)
+// 	}
+// 	v.InitChecksum(k)
+// 	if err := v.Verify(k); err != nil {
+// 		t.Error(err)
+// 	}
+// }
 
-func TestValueChecksumWithBytes(t *testing.T) {
-	k := []byte("key")
-	v := MakeValueFromString("abc")
-	v.InitChecksum(k)
-	if err := v.Verify(k); err != nil {
-		t.Error(err)
-	}
-	// Try a different key; should fail.
-	if err := v.Verify([]byte("key2")); err == nil {
-		t.Error("expected checksum verification failure on different key")
-	}
-	// Mess with the value. In order to corrupt the data for testing purposes we
-	// have to ensure we overwrite the data without touching the checksum.
-	copy(v.RawBytes[headerSize:], "cba")
-	if err := v.Verify(k); err == nil {
-		t.Error("expected checksum verification failure on different value")
-	}
-	// Test ClearChecksum and reinitialization of checksum.
-	v.ClearChecksum()
-	v.InitChecksum(k)
-	if err := v.Verify(k); err != nil {
-		t.Error(err)
-	}
-}
+// func TestValueChecksumWithBytes(t *testing.T) {
+// 	k := []byte("key")
+// 	v := MakeValueFromString("abc")
+// 	v.InitChecksum(k)
+// 	if err := v.Verify(k); err != nil {
+// 		t.Error(err)
+// 	}
+// 	// Try a different key; should fail.
+// 	if err := v.Verify([]byte("key2")); err == nil {
+// 		t.Error("expected checksum verification failure on different key")
+// 	}
+// 	// Mess with the value. In order to corrupt the data for testing purposes we
+// 	// have to ensure we overwrite the data without touching the checksum.
+// 	copy(v.RawBytes[headerSize:], "cba")
+// 	if err := v.Verify(k); err == nil {
+// 		t.Error("expected checksum verification failure on different value")
+// 	}
+// 	// Test ClearChecksum and reinitialization of checksum.
+// 	v.ClearChecksum()
+// 	v.InitChecksum(k)
+// 	if err := v.Verify(k); err != nil {
+// 		t.Error(err)
+// 	}
+// }
 
 func TestSetGetChecked(t *testing.T) {
 	v := Value{}

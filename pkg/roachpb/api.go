@@ -764,7 +764,7 @@ func NewIncrement(key Key, increment int64) Request {
 
 // NewPut returns a Request initialized to put the value at key.
 func NewPut(key Key, value Value) Request {
-	value.InitChecksum(key)
+	// value.InitChecksum(key)
 	return &PutRequest{
 		Span: Span{
 			Key: key,
@@ -776,7 +776,7 @@ func NewPut(key Key, value Value) Request {
 // NewPutInline returns a Request initialized to put the value at key
 // using an inline value.
 func NewPutInline(key Key, value Value) Request {
-	value.InitChecksum(key)
+	// value.InitChecksum(key)
 	return &PutRequest{
 		Span: Span{
 			Key: key,
@@ -789,13 +789,13 @@ func NewPutInline(key Key, value Value) Request {
 // NewConditionalPut returns a Request initialized to put value as a byte
 // slice at key if the existing value at key equals expValueBytes.
 func NewConditionalPut(key Key, value, expValue Value) Request {
-	value.InitChecksum(key)
+	// value.InitChecksum(key)
 	var expValuePtr *Value
 	if expValue.RawBytes != nil {
 		// Make a copy to avoid forcing expValue itself on to the heap.
 		expValueTmp := expValue
 		expValuePtr = &expValueTmp
-		expValue.InitChecksum(key)
+		// expValue.InitChecksum(key)
 	}
 	return &ConditionalPutRequest{
 		Span: Span{
@@ -812,7 +812,7 @@ func NewConditionalPut(key Key, value, expValue Value) Request {
 // true, tombstones count as mismatched values and will cause a
 // ConditionFailedError.
 func NewInitPut(key Key, value Value, failOnTombstones bool) Request {
-	value.InitChecksum(key)
+	// value.InitChecksum(key)
 	return &InitPutRequest{
 		Span: Span{
 			Key: key,

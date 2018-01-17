@@ -269,8 +269,8 @@ func evalImport(ctx context.Context, cArgs batcheval.CommandArgs) (*roachpb.Impo
 		}
 
 		// Rewriting the key means the checksum needs to be updated.
-		value.ClearChecksum()
-		value.InitChecksum(key.Key)
+		// value.ClearChecksum()
+		// value.InitChecksum(key.Key)
 
 		if log.V(3) {
 			log.Infof(ctx, "Put %s -> %s", key.Key, value.PrettyPrint())

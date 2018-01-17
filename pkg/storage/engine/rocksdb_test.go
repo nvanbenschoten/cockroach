@@ -303,7 +303,7 @@ func TestRocksDBApproximateDiskBytes(t *testing.T) {
 		key := roachpb.Key(randutil.RandBytes(rnd, 1<<10))
 		key = append(key, []byte(fmt.Sprintf("#%d", i))...) // make unique
 		value := roachpb.MakeValueFromBytes(randutil.RandBytes(rnd, 1<<20))
-		value.InitChecksum(key)
+		// value.InitChecksum(key)
 		if err := MVCCPut(context.Background(), rocksdb, nil, key, ts, value, nil); err != nil {
 			t.Fatal(err)
 		}

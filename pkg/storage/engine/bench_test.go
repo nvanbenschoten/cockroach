@@ -121,7 +121,7 @@ func setupMVCCData(
 		ts := hlc.Timestamp{WallTime: int64(counts[idx]+1) * 5}
 		counts[idx]++
 		value := roachpb.MakeValueFromBytes(randutil.RandBytes(rng, valueBytes))
-		value.InitChecksum(key)
+		// value.InitChecksum(key)
 		if err := MVCCPut(context.Background(), batch, nil, key, ts, value, nil); err != nil {
 			b.Fatal(err)
 		}

@@ -586,7 +586,7 @@ func (r *Replica) append(
 		if err := value.SetProto(ent); err != nil {
 			return 0, 0, 0, err
 		}
-		value.InitChecksum(key)
+		// value.InitChecksum(key)
 		var err error
 		if ent.Index > prevLastIndex {
 			err = engine.MVCCBlindPut(ctx, batch, &diff, key, hlc.Timestamp{}, value, nil /* txn */)

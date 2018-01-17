@@ -248,7 +248,7 @@ func (ib *indexBackfiller) runChunk(
 				rawBytes := entry.Value.RawBytes
 				entry.Value.RawBytes = make([]byte, len(rawBytes))
 				copy(entry.Value.RawBytes, rawBytes)
-				entry.Value.ClearChecksum()
+				// entry.Value.ClearChecksum()
 			}
 			batch.InitPut(entry.Key, &entry.Value, true /* failOnTombstones */)
 		}

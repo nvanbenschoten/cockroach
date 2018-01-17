@@ -153,8 +153,8 @@ func copySeqCache(
 				return false, errors.Errorf("could not decode mvcc metadata %s [% x]: %s", kv.Key, kv.Value, err)
 			}
 			value := engine.MakeValue(meta)
-			value.ClearChecksum()
-			value.InitChecksum(key)
+			// value.ClearChecksum()
+			// value.InitChecksum(key)
 			meta.RawBytes = value.RawBytes
 
 			keyBytes, valBytes, err := engine.PutProto(e, encKey, &meta)

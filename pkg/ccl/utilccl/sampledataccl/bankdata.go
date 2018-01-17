@@ -168,8 +168,8 @@ func (b *Backup) NextKeyValues(
 				return nil, roachpb.Span{}, errors.Errorf("rewriter did not match key: %s", key.Key)
 			}
 			v := roachpb.Value{RawBytes: it.Value()}
-			v.ClearChecksum()
-			v.InitChecksum(key.Key)
+			// v.ClearChecksum()
+			// v.InitChecksum(key.Key)
 			kvs = append(kvs, engine.MVCCKeyValue{Key: key, Value: v.RawBytes})
 
 			if key.Key.Compare(span.Key) < 0 {

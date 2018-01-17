@@ -1033,10 +1033,10 @@ func (mrf *MultiRowFetcher) checkSecondaryIndexDatumEncodings(ctx context.Contex
 		return scrub.WrapError(scrub.IndexKeyDecodingError, errors.Errorf(
 			"secondary index key failed to round-trip encode. expected %#v, got: %#v",
 			mrf.rowReadyTable.lastKV.Key, indexEntry.Key))
-	} else if !bytes.Equal(indexEntry.Value.RawBytes[4:], table.lastKV.Value.RawBytes[4:]) {
+	} else if !bytes.Equal(indexEntry.Value.RawBytes[0:], table.lastKV.Value.RawBytes[0:]) {
 		return scrub.WrapError(scrub.IndexValueDecodingError, errors.Errorf(
 			"secondary index value failed to round-trip encode. expected %#v, got: %#v",
-			mrf.rowReadyTable.lastKV.Value.RawBytes[4:], indexEntry.Value.RawBytes[4:]))
+			mrf.rowReadyTable.lastKV.Value.RawBytes[0:], indexEntry.Value.RawBytes[0:]))
 	}
 	return nil
 }
