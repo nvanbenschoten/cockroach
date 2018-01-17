@@ -219,21 +219,21 @@ const (
 	headerSize            = tagPos + 1
 )
 
-func (v Value) checksum() uint32 {
-	if len(v.RawBytes) < checksumSize {
-		return 0
-	}
-	_, u, err := encoding.DecodeUint32Ascending(v.RawBytes[:checksumSize])
-	if err != nil {
-		panic(err)
-	}
-	return u
-}
+// func (v Value) checksum() uint32 {
+// 	if len(v.RawBytes) < checksumSize {
+// 		return 0
+// 	}
+// 	_, u, err := encoding.DecodeUint32Ascending(v.RawBytes[:checksumSize])
+// 	if err != nil {
+// 		panic(err)
+// 	}
+// 	return u
+// }
 
 func (v *Value) setChecksum(cksum uint32) {
-	if len(v.RawBytes) >= checksumSize {
-		encoding.EncodeUint32Ascending(v.RawBytes[:0], cksum)
-	}
+	// if len(v.RawBytes) >= checksumSize {
+	// 	encoding.EncodeUint32Ascending(v.RawBytes[:0], cksum)
+	// }
 }
 
 // InitChecksum initializes a checksum based on the provided key and
@@ -243,19 +243,19 @@ func (v *Value) setChecksum(cksum uint32) {
 // TODO(peter): This method should return an error if the Value is corrupted
 // (e.g. the RawBytes field is > 0 but smaller than the header size).
 func (v *Value) InitChecksum(key []byte) {
-	if v.RawBytes == nil {
-		return
-	}
-	// Should be uninitialized.
-	if v.checksum() != checksumUninitialized {
-		panic(fmt.Sprintf("initialized checksum = %x", v.checksum()))
-	}
-	v.setChecksum(v.computeChecksum(key))
+	// if v.RawBytes == nil {
+	// 	return
+	// }
+	// // Should be uninitialized.
+	// if v.checksum() != checksumUninitialized {
+	// 	panic(fmt.Sprintf("initialized checksum = %x", v.checksum()))
+	// }
+	// v.setChecksum(v.computeChecksum(key))
 }
 
 // ClearChecksum clears the checksum value.
 func (v *Value) ClearChecksum() {
-	v.setChecksum(0)
+	// v.setChecksum(0)
 }
 
 // Verify verifies the value's Checksum matches a newly-computed
@@ -265,12 +265,12 @@ func (v Value) Verify(key []byte) error {
 	if n := len(v.RawBytes); n > 0 && n < headerSize {
 		return fmt.Errorf("%s: invalid header size: %d", Key(key), n)
 	}
-	if sum := v.checksum(); sum != 0 {
-		if computedSum := v.computeChecksum(key); computedSum != sum {
-			return fmt.Errorf("%s: invalid checksum (%x) value [% x]",
-				Key(key), computedSum, v.RawBytes)
-		}
-	}
+	// if sum := v.checksum(); sum != 0 {
+	// 	if computedSum := v.computeChecksum(key); computedSum != sum {
+	// 		return fmt.Errorf("%s: invalid checksum (%x) value [% x]",
+	// 			Key(key), computedSum, v.RawBytes)
+	// 	}
+	// }
 	return nil
 }
 
