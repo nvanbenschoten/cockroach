@@ -179,7 +179,9 @@ func setNeededColumns(plan planNode, needed []bool) {
 		// TODO(knz): This can be optimized by omitting the columns that
 		// are not part of the primary key, do not participate in
 		// foreign key relations and that are not needed for RETURNING.
-		setNeededColumns(n.run.rows, allColumns(n.run.rows))
+		for _, nn := range n.targets {
+			setNeededColumns(nn.run.rows, allColumns(nn.run.rows))
+		}
 
 	case *splitNode:
 		setNeededColumns(n.rows, allColumns(n.rows))

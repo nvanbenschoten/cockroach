@@ -91,6 +91,61 @@ var _ tableWriter = (*tableUpdater)(nil)
 var _ tableWriter = (*tableUpserter)(nil)
 var _ tableWriter = (*tableDeleter)(nil)
 
+type multiTableInserter struct {
+	tis        []*tableInserter
+	autoCommit bool
+
+	// Set by init.
+	txn *client.Txn
+	b   *client.Batch
+}
+
+func (mti *multiTableInserter) walkExprs(_ func(desc string, index int, expr tree.TypedExpr)) {}
+
+func (mti *multiTableInserter) init(txn *client.Txn) error {
+	mti.txn = txn
+	mti.b = txn.NewBatch()
+	for _, ti := range mti.tis {
+		ti.txn = txn
+		ti.b = mti.b
+	}
+	return nil
+}
+
+func (mti *multiTableInserter) row(
+	ctx context.Context, values tree.Datums, traceKV bool,
+) (tree.Datums, error) {
+	panic("not implemented")
+}
+
+func (mti *multiTableInserter) finalize(ctx context.Context, _ bool) (*sqlbase.RowContainer, error) {
+	var err error
+	if mti.autoCommit {
+		// An auto-txn can commit the transaction with the batch. This is an
+		// optimization to avoid an extra round-trip to the transaction
+		// coordinator.
+		err = mti.txn.CommitInBatch(ctx, mti.b)
+	} else {
+		err = mti.txn.Run(ctx, mti.b)
+	}
+
+	if err != nil {
+		panic("not implemented")
+		// return nil, sqlbase.ConvertBatchError(ctx, ti.ri.Helper.TableDesc, ti.b)
+	}
+	return nil, nil
+}
+
+func (mti *multiTableInserter) tableDesc() *sqlbase.TableDescriptor {
+	panic("not implemented")
+}
+
+func (mti *multiTableInserter) fkSpanCollector() sqlbase.FkSpanCollector {
+	panic("not implemented")
+}
+
+func (mti *multiTableInserter) close(_ context.Context) {}
+
 // tableInserter handles writing kvs and forming table rows for inserts.
 type tableInserter struct {
 	ri         sqlbase.RowInserter
@@ -140,6 +195,8 @@ func (ti *tableInserter) fkSpanCollector() sqlbase.FkSpanCollector {
 	return ti.ri.Fks
 }
 
+func (ti *tableInserter) close(_ context.Context) {}
+
 // tableUpdater handles writing kvs and forming table rows for updates.
 type tableUpdater struct {
 	ru         sqlbase.RowUpdater
@@ -149,8 +206,6 @@ type tableUpdater struct {
 	txn *client.Txn
 	b   *client.Batch
 }
-
-func (ti *tableInserter) close(_ context.Context) {}
 
 func (tu *tableUpdater) walkExprs(_ func(desc string, index int, expr tree.TypedExpr)) {}
 
@@ -655,6 +710,62 @@ func (tu *tableUpserter) close(ctx context.Context) {
 		tu.rowsUpserted.Close(ctx)
 	}
 }
+
+type multiTableUpserter struct {
+	tus        []*tableUpserter
+	autoCommit bool
+
+	// Set by init.
+	txn           *client.Txn
+	fastPathBatch *client.Batch
+}
+
+func (mti *multiTableUpserter) walkExprs(_ func(desc string, index int, expr tree.TypedExpr)) {}
+
+func (mti *multiTableUpserter) init(txn *client.Txn) error {
+	mti.txn = txn
+	mti.fastPathBatch = txn.NewBatch()
+	for _, tu := range mti.tus {
+		if err := tu.init(txn); err != nil {
+			return err
+		}
+		if tu.fastPathBatch == nil {
+			panic("not fast path")
+		}
+		tu.fastPathBatch = mti.fastPathBatch
+	}
+	return nil
+}
+
+func (mti *multiTableUpserter) row(
+	ctx context.Context, values tree.Datums, traceKV bool,
+) (tree.Datums, error) {
+	panic("not implemented")
+}
+
+func (mti *multiTableUpserter) finalize(ctx context.Context, _ bool) (*sqlbase.RowContainer, error) {
+	if mti.autoCommit {
+		// An auto-txn can commit the transaction with the batch. This is an
+		// optimization to avoid an extra round-trip to the transaction
+		// coordinator.
+		err := mti.txn.CommitInBatch(ctx, mti.fastPathBatch)
+		if err != nil {
+			return nil, err
+		}
+		return nil, nil
+	}
+	panic("not implemented")
+}
+
+func (mti *multiTableUpserter) tableDesc() *sqlbase.TableDescriptor {
+	panic("not implemented")
+}
+
+func (mti *multiTableUpserter) fkSpanCollector() sqlbase.FkSpanCollector {
+	panic("not implemented")
+}
+
+func (mti *multiTableUpserter) close(_ context.Context) {}
 
 // tableDeleter handles writing kvs and forming table rows for deletes.
 type tableDeleter struct {

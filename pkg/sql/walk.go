@@ -294,11 +294,12 @@ func (v *planVisitor) visit(plan planNode) {
 		v.visit(n.rows)
 
 	case *insertNode:
+		nn := n.targets[0]
 		if v.observer.attr != nil {
 			var buf bytes.Buffer
-			buf.WriteString(n.tableDesc.Name)
+			buf.WriteString(nn.tableDesc.Name)
 			buf.WriteByte('(')
-			for i, col := range n.insertCols {
+			for i, col := range nn.insertCols {
 				if i > 0 {
 					buf.WriteString(", ")
 				}
@@ -309,20 +310,20 @@ func (v *planVisitor) visit(plan planNode) {
 		}
 
 		var subplans []planNode
-		for i, dexpr := range n.defaultExprs {
+		for i, dexpr := range nn.defaultExprs {
 			subplans = v.expr(name, "default", i, dexpr, subplans)
 		}
-		for i, cexpr := range n.checkHelper.exprs {
+		for i, cexpr := range nn.checkHelper.exprs {
 			subplans = v.expr(name, "check", i, cexpr, subplans)
 		}
-		for i, rexpr := range n.rh.exprs {
+		for i, rexpr := range nn.rh.exprs {
 			subplans = v.expr(name, "returning", i, rexpr, subplans)
 		}
-		n.tw.walkExprs(func(d string, i int, e tree.TypedExpr) {
+		nn.tw.walkExprs(func(d string, i int, e tree.TypedExpr) {
 			subplans = v.expr(name, d, i, e, subplans)
 		})
 		v.subqueries(name, subplans)
-		v.visit(n.run.rows)
+		v.visit(nn.run.rows)
 
 	case *updateNode:
 		if v.observer.attr != nil {

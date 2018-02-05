@@ -331,10 +331,14 @@ func (p *planner) CopyData(ctx context.Context, n CopyDataBlock) (planNode, erro
 	cf.rowsMemAcc.Clear(ctx)
 
 	in := tree.Insert{
-		Table:   cf.table,
-		Columns: cf.columns,
-		Rows: &tree.Select{
-			Select: vc,
+		Targets: []*tree.InsertTarget{
+			{
+				Table:   cf.table,
+				Columns: cf.columns,
+				Rows: &tree.Select{
+					Select: vc,
+				},
+			},
 		},
 		Returning: tree.AbsentReturningClause,
 	}

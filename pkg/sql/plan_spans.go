@@ -45,14 +45,14 @@ func collectSpans(params runParams, plan planNode) (reads, writes roachpb.Spans,
 	case *updateNode:
 		return editNodeSpans(params, &n.run.editNodeRun)
 	case *insertNode:
-		if v, ok := n.run.editNodeRun.rows.(*valuesNode); ok && !n.isUpsert() {
+		if v, ok := n.targets[0].run.editNodeRun.rows.(*valuesNode); ok && !n.isUpsert() {
 			// subqueries, even within valuesNodes, can be arbitrarily complex,
 			// so we can't run the valuesNode ahead of time if they are present.
 			if v.isConst {
 				return insertNodeWithValuesSpans(params, n, v)
 			}
 		}
-		return editNodeSpans(params, &n.run.editNodeRun)
+		return editNodeSpans(params, &n.targets[0].run.editNodeRun)
 	case *deleteNode:
 		return editNodeSpans(params, &n.run.editNodeRun)
 
@@ -134,8 +134,9 @@ func tableWriterSpans(params runParams, tw tableWriter) (reads, writes roachpb.S
 // specific index spans that will be touched by each VALUES tuple. valuesNode
 // can not contain subqueries.
 func insertNodeWithValuesSpans(
-	params runParams, n *insertNode, v *valuesNode,
+	params runParams, nn *insertNode, v *valuesNode,
 ) (reads, writes roachpb.Spans, err error) {
+	n := nn.targets[0]
 
 	// addWriteKey adds a write span for the given index key.
 	addWriteKey := func(key roachpb.Key) {

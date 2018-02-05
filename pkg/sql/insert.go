@@ -30,7 +30,7 @@ import (
 
 var insertNodePool = sync.Pool{
 	New: func() interface{} {
-		return &insertNode{}
+		return &singleTargetinsertNode{}
 	},
 }
 
@@ -46,11 +46,11 @@ var tableUpserterPool = sync.Pool{
 	},
 }
 
-type insertNode struct {
+type singleTargetinsertNode struct {
 	// The following fields are populated during makePlan.
 	editNodeBase
 	defaultExprs []tree.TypedExpr
-	n            *tree.Insert
+	n            *tree.InsertTarget
 	checkHelper  checkHelper
 
 	insertCols            []sqlbase.ColumnDescriptor
@@ -71,314 +71,388 @@ type insertNode struct {
 	}
 }
 
+type insertNode struct {
+	nn      *tree.Insert
+	targets []*singleTargetinsertNode
+	tw      tableWriter
+
+	curTarget int
+
+	isUpsertReturning bool
+}
+
 // Insert inserts rows into the database.
 // Privileges: INSERT on table. Also requires UPDATE on "ON DUPLICATE KEY UPDATE".
 //   Notes: postgres requires INSERT. No "on duplicate key update" option.
 //          mysql requires INSERT. Also requires UPDATE on "ON DUPLICATE KEY UPDATE".
 func (p *planner) Insert(
-	ctx context.Context, n *tree.Insert, desiredTypes []types.T,
+	ctx context.Context, ins *tree.Insert, desiredTypes []types.T,
 ) (planNode, error) {
-	tn, err := p.getAliasedTableName(n.Table)
-	if err != nil {
-		return nil, err
-	}
+	var targets []*singleTargetinsertNode
 
-	en, err := p.makeEditNode(ctx, tn, privilege.INSERT)
-	if err != nil {
-		return nil, err
-	}
 	isUpsertReturning := false
-	if n.OnConflict != nil {
-		if !n.OnConflict.DoNothing {
-			if err := p.CheckPrivilege(en.tableDesc, privilege.UPDATE); err != nil {
-				return nil, err
-			}
-		}
-		if _, ok := n.Returning.(*tree.ReturningExprs); ok {
+	if _, ok := ins.Returning.(*tree.ReturningExprs); ok {
+		// Can only be one.
+		if ins.Targets[0].OnConflict != nil {
 			isUpsertReturning = true
 		}
 	}
 
-	var cols []sqlbase.ColumnDescriptor
-	// Determine which columns we're inserting into.
-	if n.DefaultValues() {
-		cols = en.tableDesc.Columns
-	} else {
-		var err error
-		if cols, err = p.processColumns(en.tableDesc, n.Columns); err != nil {
-			return nil, err
-		}
-	}
-	// Number of columns expecting an input. This doesn't include the
-	// columns receiving a default value.
-	numInputColumns := len(cols)
-
-	cols, defaultExprs, err :=
-		sqlbase.ProcessDefaultColumns(cols, en.tableDesc, &p.txCtx, &p.evalCtx)
-	if err != nil {
-		return nil, err
-	}
-
-	var insertRows tree.SelectStatement
-	if n.DefaultValues() {
-		insertRows = getDefaultValuesClause(defaultExprs, cols)
-	} else {
-		src, values, err := extractInsertSource(n.Rows)
+	for _, n := range ins.Targets {
+		tn, err := p.getAliasedTableName(n.Table)
 		if err != nil {
 			return nil, err
 		}
-		if values != nil {
-			if len(values.Tuples) > 0 {
-				// Check to make sure the values clause doesn't have too many or
-				// too few expressions in each tuple.
-				numExprs := len(values.Tuples[0].Exprs)
-				if err := checkNumExprs(numExprs, numInputColumns, n.Columns != nil); err != nil {
+
+		en, err := p.makeEditNode(ctx, tn, privilege.INSERT)
+		if err != nil {
+			return nil, err
+		}
+
+		isUpsertReturningInternal := false
+		if n.OnConflict != nil {
+			if !n.OnConflict.DoNothing {
+				if err := p.CheckPrivilege(en.tableDesc, privilege.UPDATE); err != nil {
 					return nil, err
 				}
 			}
-			src, err = fillDefaults(defaultExprs, cols, values)
-			if err != nil {
-				return nil, err
+			if _, ok := ins.Returning.(*tree.ReturningExprs); ok {
+				isUpsertReturningInternal = true
 			}
 		}
-		insertRows = src
-	}
 
-	// Analyze the expressions for column information and typing.
-	desiredTypesFromSelect := make([]types.T, len(cols))
-	for i, col := range cols {
-		desiredTypesFromSelect[i] = col.Type.ToDatumType()
-	}
-
-	// Create the plan for the data source.
-	// This performs type checking on source expressions, collecting
-	// types for placeholders in the process.
-	rows, err := p.newPlan(ctx, insertRows, desiredTypesFromSelect)
-	if err != nil {
-		return nil, err
-	}
-
-	if _, ok := insertRows.(*tree.ValuesClause); !ok {
-		// If the insert source was not a VALUES clause, then we have not
-		// already verified the expression length.
-		numExprs := len(planColumns(rows))
-		if err := checkNumExprs(numExprs, numInputColumns, n.Columns != nil); err != nil {
-			return nil, err
-		}
-	}
-
-	fkTables := sqlbase.TablesNeededForFKs(*en.tableDesc, sqlbase.CheckInserts)
-	if err := p.fillFKTableMap(ctx, fkTables); err != nil {
-		return nil, err
-	}
-	ri, err := sqlbase.MakeRowInserter(p.txn, en.tableDesc, fkTables, cols,
-		sqlbase.CheckFKs, &p.alloc)
-	if err != nil {
-		return nil, err
-	}
-
-	var tw tableWriter
-	if n.OnConflict == nil {
-		ti := tableInserterPool.Get().(*tableInserter)
-		*ti = tableInserter{ri: ri, autoCommit: p.autoCommit}
-		tw = ti
-	} else {
-		updateExprs, conflictIndex, err := upsertExprsAndIndex(en.tableDesc, *n.OnConflict, ri.InsertCols)
-		if err != nil {
-			return nil, err
-		}
-
-		if n.OnConflict.DoNothing {
-			// TODO(dan): Postgres allows ON CONFLICT DO NOTHING without specifying a
-			// conflict index, which means do nothing on any conflict. Support this if
-			// someone needs it.
-			tu := tableUpserterPool.Get().(*tableUpserter)
-			*tu = tableUpserter{
-				ri:            ri,
-				autoCommit:    p.autoCommit,
-				conflictIndex: *conflictIndex,
-				alloc:         &p.alloc,
-				mon:           &p.session.TxnState.mon,
-				collectRows:   isUpsertReturning,
-			}
-			tw = tu
+		var cols []sqlbase.ColumnDescriptor
+		// Determine which columns we're inserting into.
+		if n.DefaultValues() {
+			cols = en.tableDesc.Columns
 		} else {
-			names, err := p.namesForExprs(updateExprs)
+			var err error
+			if cols, err = p.processColumns(en.tableDesc, n.Columns); err != nil {
+				return nil, err
+			}
+		}
+		// Number of columns expecting an input. This doesn't include the
+		// columns receiving a default value.
+		numInputColumns := len(cols)
+
+		cols, defaultExprs, err :=
+			sqlbase.ProcessDefaultColumns(cols, en.tableDesc, &p.txCtx, &p.evalCtx)
+		if err != nil {
+			return nil, err
+		}
+
+		var insertRows tree.SelectStatement
+		if n.DefaultValues() {
+			insertRows = getDefaultValuesClause(defaultExprs, cols)
+		} else {
+			src, values, err := extractInsertSource(n.Rows)
 			if err != nil {
 				return nil, err
 			}
-			// Also include columns that are inactive because they should be
-			// updated.
-			updateCols := make([]sqlbase.ColumnDescriptor, len(names))
-			for i, n := range names {
-				c, err := n.NormalizeUnqualifiedColumnItem()
+			if values != nil {
+				if len(values.Tuples) > 0 {
+					// Check to make sure the values clause doesn't have too many or
+					// too few expressions in each tuple.
+					numExprs := len(values.Tuples[0].Exprs)
+					if err := checkNumExprs(numExprs, numInputColumns, n.Columns != nil); err != nil {
+						return nil, err
+					}
+				}
+				src, err = fillDefaults(defaultExprs, cols, values)
+				if err != nil {
+					return nil, err
+				}
+			}
+			insertRows = src
+		}
+
+		// Analyze the expressions for column information and typing.
+		desiredTypesFromSelect := make([]types.T, len(cols))
+		for i, col := range cols {
+			desiredTypesFromSelect[i] = col.Type.ToDatumType()
+		}
+
+		// Create the plan for the data source.
+		// This performs type checking on source expressions, collecting
+		// types for placeholders in the process.
+		rows, err := p.newPlan(ctx, insertRows, desiredTypesFromSelect)
+		if err != nil {
+			return nil, err
+		}
+
+		if _, ok := insertRows.(*tree.ValuesClause); !ok {
+			// If the insert source was not a VALUES clause, then we have not
+			// already verified the expression length.
+			numExprs := len(planColumns(rows))
+			if err := checkNumExprs(numExprs, numInputColumns, n.Columns != nil); err != nil {
+				return nil, err
+			}
+		}
+
+		fkTables := sqlbase.TablesNeededForFKs(*en.tableDesc, sqlbase.CheckInserts)
+		if err := p.fillFKTableMap(ctx, fkTables); err != nil {
+			return nil, err
+		}
+		ri, err := sqlbase.MakeRowInserter(p.txn, en.tableDesc, fkTables, cols,
+			sqlbase.CheckFKs, &p.alloc)
+		if err != nil {
+			return nil, err
+		}
+
+		var tw tableWriter
+		if n.OnConflict == nil {
+			ti := tableInserterPool.Get().(*tableInserter)
+			*ti = tableInserter{ri: ri, autoCommit: p.autoCommit}
+			tw = ti
+		} else {
+			updateExprs, conflictIndex, err := upsertExprsAndIndex(en.tableDesc, *n.OnConflict, ri.InsertCols)
+			if err != nil {
+				return nil, err
+			}
+
+			if n.OnConflict.DoNothing {
+				// TODO(dan): Postgres allows ON CONFLICT DO NOTHING without specifying a
+				// conflict index, which means do nothing on any conflict. Support this if
+				// someone needs it.
+				tu := tableUpserterPool.Get().(*tableUpserter)
+				*tu = tableUpserter{
+					ri:            ri,
+					autoCommit:    p.autoCommit,
+					conflictIndex: *conflictIndex,
+					alloc:         &p.alloc,
+					mon:           &p.session.TxnState.mon,
+					collectRows:   isUpsertReturningInternal,
+				}
+				tw = tu
+			} else {
+				names, err := p.namesForExprs(updateExprs)
+				if err != nil {
+					return nil, err
+				}
+				// Also include columns that are inactive because they should be
+				// updated.
+				updateCols := make([]sqlbase.ColumnDescriptor, len(names))
+				for i, n := range names {
+					c, err := n.NormalizeUnqualifiedColumnItem()
+					if err != nil {
+						return nil, err
+					}
+
+					col, _, err := en.tableDesc.FindColumnByName(c.ColumnName)
+					if err != nil {
+						return nil, err
+					}
+					updateCols[i] = col
+				}
+
+				helper, err := p.makeUpsertHelper(
+					ctx, tn, en.tableDesc, ri.InsertCols, updateCols, updateExprs, conflictIndex, n.OnConflict.Where,
+				)
 				if err != nil {
 					return nil, err
 				}
 
-				col, _, err := en.tableDesc.FindColumnByName(c.ColumnName)
-				if err != nil {
+				fkTables := sqlbase.TablesNeededForFKs(*en.tableDesc, sqlbase.CheckUpdates)
+				if err := p.fillFKTableMap(ctx, fkTables); err != nil {
 					return nil, err
 				}
-				updateCols[i] = col
+				tu := tableUpserterPool.Get().(*tableUpserter)
+				*tu = tableUpserter{
+					ri:            ri,
+					autoCommit:    p.autoCommit,
+					alloc:         &p.alloc,
+					mon:           &p.session.TxnState.mon,
+					collectRows:   isUpsertReturningInternal,
+					fkTables:      fkTables,
+					updateCols:    updateCols,
+					conflictIndex: *conflictIndex,
+					evaler:        helper,
+					isUpsertAlias: n.OnConflict.IsUpsertAlias(),
+				}
+				tw = tu
+			}
+		}
+
+		in := insertNodePool.Get().(*singleTargetinsertNode)
+		*in = singleTargetinsertNode{
+			n:                     n,
+			editNodeBase:          en,
+			defaultExprs:          defaultExprs,
+			insertCols:            ri.InsertCols,
+			insertColIDtoRowIndex: ri.InsertColIDtoRowIndex,
+			isUpsertReturning:     isUpsertReturningInternal,
+			tw:                    tw,
+		}
+
+		if err := in.checkHelper.init(ctx, p, tn, en.tableDesc); err != nil {
+			return nil, err
+		}
+
+		if err := in.run.initEditNode(
+			ctx, &in.editNodeBase, rows, in.tw, tn, ins.Returning, desiredTypes); err != nil {
+			return nil, err
+		}
+
+		targets = append(targets, in)
+	}
+
+	tw := targets[0].tw
+	if len(targets) > 1 {
+		switch targets[0].tw.(type) {
+		case *tableInserter:
+			var tis []*tableInserter
+			for _, target := range targets {
+				tis = append(tis, target.tw.(*tableInserter))
+			}
+			tw = &multiTableInserter{tis: tis, autoCommit: p.autoCommit}
+		case *tableUpserter:
+			var tis []*tableUpserter
+			for _, target := range targets {
+				tis = append(tis, target.tw.(*tableUpserter))
+			}
+			tw = &multiTableUpserter{tus: tis, autoCommit: p.autoCommit}
+		}
+	}
+
+	return &insertNode{
+		nn:                ins,
+		targets:           targets,
+		tw:                tw,
+		isUpsertReturning: isUpsertReturning,
+	}, nil
+}
+
+func (nn *insertNode) Start(params runParams) error {
+	for _, n := range nn.targets {
+		// Prepare structures for building values to pass to rh.
+		// TODO(couchand): Delete this, use tablewriter interface.
+		if n.rh.exprs != nil {
+			// In some cases (e.g. `INSERT INTO t (a) ...`) rowVals does not contain all the table
+			// columns. We need to pass values for all table columns to rh, in the correct order; we
+			// will use rowTemplate for this. We also need a table that maps row indices to rowTemplate indices
+			// to fill in the row values; any absent values will be NULLs.
+
+			n.run.rowTemplate = make(tree.Datums, len(n.tableDesc.Columns))
+			for i := range n.run.rowTemplate {
+				n.run.rowTemplate[i] = tree.DNull
 			}
 
-			helper, err := p.makeUpsertHelper(
-				ctx, tn, en.tableDesc, ri.InsertCols, updateCols, updateExprs, conflictIndex, n.OnConflict.Where,
-			)
+			colIDToRetIndex := map[sqlbase.ColumnID]int{}
+			for i, col := range n.tableDesc.Columns {
+				colIDToRetIndex[col.ID] = i
+			}
+
+			n.run.rowIdxToRetIdx = make([]int, len(n.insertCols))
+			for i, col := range n.insertCols {
+				n.run.rowIdxToRetIdx[i] = colIDToRetIndex[col.ID]
+			}
+		}
+
+		if err := n.run.startEditNode(params, &n.editNodeBase); err != nil {
+			return err
+		}
+	}
+
+	return nn.tw.init(params.p.txn)
+}
+
+func (nn *insertNode) Close(ctx context.Context) {
+	for _, n := range nn.targets {
+		n.tw.close(ctx)
+		n.run.rows.Close(ctx)
+		n.run.rows = nil
+		if n.run.rowsUpserted != nil {
+			n.run.rowsUpserted.Close(ctx)
+			n.run.rowsUpserted = nil
+		}
+		switch t := n.tw.(type) {
+		case *tableInserter:
+			*t = tableInserter{}
+			tableInserterPool.Put(t)
+		case *tableUpserter:
+			*t = tableUpserter{}
+			tableUpserterPool.Put(t)
+		}
+		*n = singleTargetinsertNode{}
+		insertNodePool.Put(n)
+	}
+}
+
+func (nn *insertNode) Next(params runParams) (bool, error) {
+	if nn.isUpsertReturning {
+		return nn.drain(params)
+	}
+	return nn.internalNext(params)
+}
+
+func (nn *insertNode) internalNext(params runParams) (bool, error) {
+	if nn.curTarget >= len(nn.targets) {
+		return false, nil
+	}
+
+	next, err := nn.targets[nn.curTarget].internalNext(params)
+	if err != nil {
+		return false, err
+	}
+	if next {
+		return true, nil
+	}
+
+	nn.curTarget++
+	if nn.curTarget < len(nn.targets) {
+		return true, nil
+	}
+
+	if err := params.p.cancelChecker.Check(); err != nil {
+		return false, err
+	}
+	// We're done. Finish the batch.
+	rows, err := nn.tw.finalize(params.ctx, params.p.session.Tracing.KVTracingEnabled())
+	if err != nil {
+		return false, err
+	}
+
+	if nn.isUpsertReturning {
+		n := nn.targets[0]
+		n.run.rowsUpserted = sqlbase.NewRowContainer(
+			params.p.session.TxnState.makeBoundAccount(),
+			sqlbase.ColTypeInfoFromResCols(n.rh.columns),
+			rows.Len(),
+		)
+		for i := 0; i < rows.Len(); i++ {
+			cooked, err := n.rh.cookResultRow(rows.At(i))
 			if err != nil {
-				return nil, err
+				return false, err
 			}
-
-			fkTables := sqlbase.TablesNeededForFKs(*en.tableDesc, sqlbase.CheckUpdates)
-			if err := p.fillFKTableMap(ctx, fkTables); err != nil {
-				return nil, err
+			_, err = n.run.rowsUpserted.AddRow(params.ctx, cooked)
+			if err != nil {
+				return false, err
 			}
-			tu := tableUpserterPool.Get().(*tableUpserter)
-			*tu = tableUpserter{
-				ri:            ri,
-				autoCommit:    p.autoCommit,
-				alloc:         &p.alloc,
-				mon:           &p.session.TxnState.mon,
-				collectRows:   isUpsertReturning,
-				fkTables:      fkTables,
-				updateCols:    updateCols,
-				conflictIndex: *conflictIndex,
-				evaler:        helper,
-				isUpsertAlias: n.OnConflict.IsUpsertAlias(),
-			}
-			tw = tu
 		}
+		n.run.doneUpserting = true
 	}
-
-	in := insertNodePool.Get().(*insertNode)
-	*in = insertNode{
-		n:                     n,
-		editNodeBase:          en,
-		defaultExprs:          defaultExprs,
-		insertCols:            ri.InsertCols,
-		insertColIDtoRowIndex: ri.InsertColIDtoRowIndex,
-		isUpsertReturning:     isUpsertReturning,
-		tw:                    tw,
-	}
-
-	if err := in.checkHelper.init(ctx, p, tn, en.tableDesc); err != nil {
-		return nil, err
-	}
-
-	if err := in.run.initEditNode(
-		ctx, &in.editNodeBase, rows, in.tw, tn, n.Returning, desiredTypes); err != nil {
-		return nil, err
-	}
-
-	return in, nil
-}
-
-func (n *insertNode) Start(params runParams) error {
-	// Prepare structures for building values to pass to rh.
-	// TODO(couchand): Delete this, use tablewriter interface.
-	if n.rh.exprs != nil {
-		// In some cases (e.g. `INSERT INTO t (a) ...`) rowVals does not contain all the table
-		// columns. We need to pass values for all table columns to rh, in the correct order; we
-		// will use rowTemplate for this. We also need a table that maps row indices to rowTemplate indices
-		// to fill in the row values; any absent values will be NULLs.
-
-		n.run.rowTemplate = make(tree.Datums, len(n.tableDesc.Columns))
-		for i := range n.run.rowTemplate {
-			n.run.rowTemplate[i] = tree.DNull
-		}
-
-		colIDToRetIndex := map[sqlbase.ColumnID]int{}
-		for i, col := range n.tableDesc.Columns {
-			colIDToRetIndex[col.ID] = i
-		}
-
-		n.run.rowIdxToRetIdx = make([]int, len(n.insertCols))
-		for i, col := range n.insertCols {
-			n.run.rowIdxToRetIdx[i] = colIDToRetIndex[col.ID]
-		}
-	}
-
-	if err := n.run.startEditNode(params, &n.editNodeBase); err != nil {
-		return err
-	}
-
-	return n.run.tw.init(params.p.txn)
-}
-
-func (n *insertNode) Close(ctx context.Context) {
-	n.tw.close(ctx)
-	n.run.rows.Close(ctx)
-	n.run.rows = nil
-	if n.run.rowsUpserted != nil {
-		n.run.rowsUpserted.Close(ctx)
-		n.run.rowsUpserted = nil
-	}
-	switch t := n.tw.(type) {
-	case *tableInserter:
-		*t = tableInserter{}
-		tableInserterPool.Put(t)
-	case *tableUpserter:
-		*t = tableUpserter{}
-		tableUpserterPool.Put(t)
-	}
-	*n = insertNode{}
-	insertNodePool.Put(n)
-}
-
-func (n *insertNode) Next(params runParams) (bool, error) {
-	if n.isUpsertReturning {
-		return n.drain(params)
-	}
-
-	return n.internalNext(params)
+	return false, nil
 }
 
 // Because TableUpserter batches the upserts, we need to completely drain the
 // source and handle all the rows before returning from the first call to Next,
 // so that we can return an upserted row from each call to Values.
-func (n *insertNode) drain(params runParams) (bool, error) {
-	for !n.run.doneUpserting {
-		_, err := n.internalNext(params)
-		if err != nil {
-			return false, err
-		}
-	}
-	hasRows := n.run.rowsUpserted.Len() > 0
-	return hasRows, nil
-}
-
-func (n *insertNode) internalNext(params runParams) (bool, error) {
-	if next, err := n.run.rows.Next(params); !next {
-		if err == nil {
-			if err := params.p.cancelChecker.Check(); err != nil {
-				return false, err
-			}
-			// We're done. Finish the batch.
-			rows, err := n.tw.finalize(params.ctx, params.p.session.Tracing.KVTracingEnabled())
+func (nn *insertNode) drain(params runParams) (bool, error) {
+	hasRows := false
+	for _, n := range nn.targets {
+		for !n.run.doneUpserting {
+			_, err := nn.internalNext(params)
 			if err != nil {
 				return false, err
 			}
-
-			if n.isUpsertReturning {
-				n.run.rowsUpserted = sqlbase.NewRowContainer(
-					params.p.session.TxnState.makeBoundAccount(),
-					sqlbase.ColTypeInfoFromResCols(n.rh.columns),
-					rows.Len(),
-				)
-				for i := 0; i < rows.Len(); i++ {
-					cooked, err := n.rh.cookResultRow(rows.At(i))
-					if err != nil {
-						return false, err
-					}
-					_, err = n.run.rowsUpserted.AddRow(params.ctx, cooked)
-					if err != nil {
-						return false, err
-					}
-				}
-				n.run.doneUpserting = true
-			}
 		}
+		hasRows = hasRows || n.run.rowsUpserted.Len() > 0
+	}
+	return hasRows, nil
+}
+
+func (n *singleTargetinsertNode) internalNext(params runParams) (bool, error) {
+	if next, err := n.run.rows.Next(params); !next {
 		return false, err
 	}
 
@@ -635,16 +709,16 @@ func checkNumExprs(numExprs, numCols int, specifiedTargets bool) error {
 	return nil
 }
 
-func (n *insertNode) Values() tree.Datums {
-	if !n.isUpsertReturning {
-		return n.run.resultRow
+func (nn *insertNode) Values() tree.Datums {
+	if !nn.isUpsertReturning {
+		return nn.targets[0].run.resultRow
 	}
 
-	row := n.run.rowsUpserted.At(0)
-	n.run.rowsUpserted.PopFirst()
+	row := nn.targets[0].run.rowsUpserted.At(0)
+	nn.targets[0].run.rowsUpserted.PopFirst()
 	return row
 }
 
-func (n *insertNode) isUpsert() bool {
-	return n.n.OnConflict != nil
+func (nn *insertNode) isUpsert() bool {
+	return nn.nn.Upsert
 }

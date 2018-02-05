@@ -266,8 +266,10 @@ func (p *planner) propagateFilters(
 		}
 
 	case *insertNode:
-		if n.run.rows, err = p.triggerFilterPropagation(ctx, n.run.rows); err != nil {
-			return plan, extraFilter, err
+		for _, nn := range n.targets {
+			if nn.run.rows, err = p.triggerFilterPropagation(ctx, nn.run.rows); err != nil {
+				return plan, extraFilter, err
+			}
 		}
 
 	case *updateNode:

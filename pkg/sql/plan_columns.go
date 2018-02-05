@@ -100,7 +100,7 @@ func getPlanColumns(plan planNode, mut bool) sqlbase.ResultColumns {
 	case *deleteNode:
 		return n.rh.columns
 	case *insertNode:
-		return n.rh.columns
+		return n.targets[0].rh.columns
 	case *updateNode:
 		return n.rh.columns
 

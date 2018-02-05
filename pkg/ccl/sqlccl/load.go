@@ -175,7 +175,7 @@ func Load(
 			}
 
 		case *tree.Insert:
-			name := tree.AsString(s.Table)
+			name := tree.AsString(s.Targets[0].Table)
 			if tableDesc == nil {
 				return BackupDescriptor{}, errors.Errorf("expected previous CREATE TABLE %s statement", name)
 			}
@@ -242,29 +242,30 @@ func insertStmtToKVs(
 	stmt *tree.Insert,
 	f func(roachpb.KeyValue),
 ) error {
-	if stmt.OnConflict != nil {
+	target := stmt.Targets[0]
+	if target.OnConflict != nil {
 		return errors.Errorf("load insert: ON CONFLICT not supported: %q", stmt)
 	}
 	if tree.HasReturningClause(stmt.Returning) {
 		return errors.Errorf("load insert: RETURNING not supported: %q", stmt)
 	}
-	if len(stmt.Columns) > 0 {
-		if len(stmt.Columns) != len(cols) {
+	if len(target.Columns) > 0 {
+		if len(target.Columns) != len(cols) {
 			return errors.Errorf("load insert: wrong number of columns: %q", stmt)
 		}
 		for i, col := range tableDesc.Columns {
-			if stmt.Columns[i].String() != col.Name {
+			if target.Columns[i].String() != col.Name {
 				return errors.Errorf("load insert: unexpected column order: %q", stmt)
 			}
 		}
 	}
-	if stmt.Rows.Limit != nil {
+	if target.Rows.Limit != nil {
 		return errors.Errorf("load insert: LIMIT not supported: %q", stmt)
 	}
-	if stmt.Rows.OrderBy != nil {
+	if target.Rows.OrderBy != nil {
 		return errors.Errorf("load insert: ORDER BY not supported: %q", stmt)
 	}
-	values, ok := stmt.Rows.Select.(*tree.ValuesClause)
+	values, ok := target.Rows.Select.(*tree.ValuesClause)
 	if !ok {
 		return errors.Errorf("load insert: expected VALUES clause: %q", stmt)
 	}

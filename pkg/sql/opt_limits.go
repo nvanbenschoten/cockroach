@@ -141,7 +141,9 @@ func (p *planner) applyLimit(plan planNode, numRows int64, soft bool) {
 	case *updateNode:
 		p.setUnlimited(n.run.rows)
 	case *insertNode:
-		p.setUnlimited(n.run.rows)
+		for _, nn := range n.targets {
+			p.setUnlimited(nn.run.rows)
+		}
 	case *createTableNode:
 		if n.sourcePlan != nil {
 			p.applyLimit(n.sourcePlan, numRows, soft)

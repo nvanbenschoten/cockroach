@@ -27,20 +27,37 @@ import "bytes"
 
 // Insert represents an INSERT statement.
 type Insert struct {
-	Table      TableExpr
-	Columns    UnresolvedNames
-	Rows       *Select
-	OnConflict *OnConflict
-	Returning  ReturningClause
+	Upsert    bool
+	Targets   []*InsertTarget
+	Returning ReturningClause
 }
 
 // Format implements the NodeFormatter interface.
 func (node *Insert) Format(buf *bytes.Buffer, f FmtFlags) {
-	if node.OnConflict.IsUpsertAlias() {
+	if node.Upsert {
 		buf.WriteString("UPSERT")
 	} else {
 		buf.WriteString("INSERT")
 	}
+	if len(node.Targets) > 1 {
+		buf.WriteString(" ALL")
+	}
+	for _, target := range node.Targets {
+		FormatNode(buf, f, target)
+	}
+	FormatNode(buf, f, node.Returning)
+}
+
+// InsertTarget represents the target of an insertion.
+type InsertTarget struct {
+	Table      TableExpr
+	Columns    UnresolvedNames
+	Rows       *Select
+	OnConflict *OnConflict
+}
+
+// Format implements the NodeFormatter interface.
+func (node *InsertTarget) Format(buf *bytes.Buffer, f FmtFlags) {
 	buf.WriteString(" INTO ")
 	FormatNode(buf, f, node.Table)
 	if node.Columns != nil {
@@ -71,11 +88,10 @@ func (node *Insert) Format(buf *bytes.Buffer, f FmtFlags) {
 			}
 		}
 	}
-	FormatNode(buf, f, node.Returning)
 }
 
 // DefaultValues returns true iff only default values are being inserted.
-func (node *Insert) DefaultValues() bool {
+func (node *InsertTarget) DefaultValues() bool {
 	return node.Rows.Select == nil
 }
 

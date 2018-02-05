@@ -816,8 +816,12 @@ func (n *createTableNode) Start(params runParams) error {
 		n.sourcePlan = nil
 
 		insert := &tree.Insert{
-			Table:     &n.n.Table,
-			Rows:      n.n.AsSource,
+			Targets: []*tree.InsertTarget{
+				{
+					Table: &n.n.Table,
+					Rows:  n.n.AsSource,
+				},
+			},
 			Returning: tree.AbsentReturningClause,
 		}
 		insertPlan, err := params.p.Insert(params.ctx, insert, nil /* desiredTypes */)

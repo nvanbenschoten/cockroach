@@ -731,17 +731,26 @@ func (stmt *Explain) WalkStmt(v Visitor) Statement {
 // CopyNode makes a copy of this Statement without recursing in any child Statements.
 func (stmt *Insert) CopyNode() *Insert {
 	stmtCopy := *stmt
+	stmtCopy.Targets = make([]*InsertTarget, len(stmt.Targets))
+	for i, target := range stmt.Targets {
+		targetCopy := *target
+		stmtCopy.Targets[i] = &targetCopy
+	}
 	return &stmtCopy
 }
 
 // WalkStmt is part of the WalkableStmt interface.
 func (stmt *Insert) WalkStmt(v Visitor) Statement {
 	ret := stmt
-	if stmt.Rows != nil {
-		rows, changed := WalkStmt(v, stmt.Rows)
-		if changed {
-			ret = stmt.CopyNode()
-			ret.Rows = rows.(*Select)
+	for i, target := range stmt.Targets {
+		if target.Rows != nil {
+			rows, changed := WalkStmt(v, target.Rows)
+			if changed {
+				if ret == stmt {
+					ret = stmt.CopyNode()
+				}
+				ret.Targets[i].Rows = rows.(*Select)
+			}
 		}
 	}
 	returning, changed := walkReturningClause(v, stmt.Returning)

@@ -256,6 +256,12 @@ func (u *sqlSymUnion) tblExpr() tree.TableExpr {
 func (u *sqlSymUnion) tblExprs() tree.TableExprs {
     return u.val.(tree.TableExprs)
 }
+func (u *sqlSymUnion) insertTarget() *tree.InsertTarget {
+    return u.val.(*tree.InsertTarget)
+}
+func (u *sqlSymUnion) insertTargets() []*tree.InsertTarget {
+    return u.val.([]*tree.InsertTarget)
+}
 func (u *sqlSymUnion) from() *tree.From {
     return u.val.(*tree.From)
 }
@@ -774,9 +780,11 @@ func (u *sqlSymUnion) scrubOption() tree.ScrubOption {
 %type <empty> row_or_rows
 %type <empty> first_or_next
 
-%type <tree.Statement>  insert_rest
+%type <*tree.InsertTarget> single_table_insert single_table_upsert
+%type <[]*tree.InsertTarget> multi_table_insert multi_table_upsert
+%type <*tree.InsertTarget> insert_rest
 %type <tree.NameList> opt_conf_expr
-%type <*tree.OnConflict> on_conflict
+%type <*tree.OnConflict> opt_on_conflict
 
 %type <tree.Statement>  begin_transaction
 %type <tree.TransactionModes> transaction_mode_list transaction_mode
@@ -3442,7 +3450,7 @@ index_params:
 
 // Index attributes can be either simple column references, or arbitrary
 // expressions in parens. For backwards-compatibility reasons, we allow an
-// expression that's just a function call to be written without parens.
+// expression thats just a function call to be written without parens.
 index_elem:
   name opt_collate opt_asc_desc
   {
@@ -3829,18 +3837,19 @@ opt_equal:
 //        [RETURNING <exprs...>]
 // %SeeAlso: UPSERT, UPDATE, DELETE, WEBDOCS/insert.html
 insert_stmt:
-  opt_with_clause INSERT INTO insert_target insert_rest returning_clause
+  opt_with_clause INSERT single_table_insert returning_clause
   {
-    $$.val = $5.stmt()
-    $$.val.(*tree.Insert).Table = $4.tblExpr()
-    $$.val.(*tree.Insert).Returning = $6.retClause()
+    $$.val = &tree.Insert{
+      Targets:   []*tree.InsertTarget{$3.insertTarget()},
+      Returning: $4.retClause(),
+    }
   }
-| opt_with_clause INSERT INTO insert_target insert_rest on_conflict returning_clause
+| opt_with_clause INSERT ALL multi_table_insert
   {
-    $$.val = $5.stmt()
-    $$.val.(*tree.Insert).Table = $4.tblExpr()
-    $$.val.(*tree.Insert).OnConflict = $6.onConflict()
-    $$.val.(*tree.Insert).Returning = $7.retClause()
+    $$.val = &tree.Insert{
+      Targets:   $4.insertTargets(),
+      Returning: tree.AbsentReturningClause,
+    }
   }
 | opt_with_clause INSERT error // SHOW HELP: INSERT
 
@@ -3852,14 +3861,59 @@ insert_stmt:
 //        [RETURNING <exprs...>]
 // %SeeAlso: INSERT, UPDATE, DELETE, WEBDOCS/upsert.html
 upsert_stmt:
-  opt_with_clause UPSERT INTO insert_target insert_rest returning_clause
+  opt_with_clause UPSERT single_table_upsert returning_clause
   {
-    $$.val = $5.stmt()
-    $$.val.(*tree.Insert).Table = $4.tblExpr()
-    $$.val.(*tree.Insert).OnConflict = &tree.OnConflict{}
-    $$.val.(*tree.Insert).Returning = $6.retClause()
+    $$.val = &tree.Insert{
+      Upsert:    true,
+      Targets:   []*tree.InsertTarget{$3.insertTarget()},
+      Returning: $4.retClause(),
+    }
+  }
+| opt_with_clause UPSERT ALL multi_table_upsert
+  {
+    $$.val = &tree.Insert{
+      Upsert:    true,
+      Targets:   $4.insertTargets(),
+      Returning: tree.AbsentReturningClause,
+    }
   }
 | opt_with_clause UPSERT error // SHOW HELP: UPSERT
+
+single_table_insert:
+  INTO insert_target insert_rest opt_on_conflict
+  {
+    $$.val = $3.insertTarget()
+    $$.val.(*tree.InsertTarget).Table = $2.tblExpr()
+    $$.val.(*tree.InsertTarget).OnConflict = $4.onConflict()
+  }
+
+multi_table_insert:
+  single_table_insert
+  {
+    $$.val = []*tree.InsertTarget{$1.insertTarget()}
+  }
+| multi_table_insert single_table_insert
+  {
+    $$.val = append($1.insertTargets(), $2.insertTarget())
+  }
+
+single_table_upsert:
+  INTO insert_target insert_rest
+  {
+    $$.val = $3.insertTarget()
+    $$.val.(*tree.InsertTarget).Table = $2.tblExpr()
+    $$.val.(*tree.InsertTarget).OnConflict = &tree.OnConflict{}
+  }
+
+multi_table_upsert:
+  single_table_upsert
+  {
+    $$.val = []*tree.InsertTarget{$1.insertTarget()}
+  }
+| multi_table_upsert single_table_upsert
+  {
+    $$.val = append($1.insertTargets(), $2.insertTarget())
+  }
 
 insert_target:
   qualified_name
@@ -3878,18 +3932,18 @@ insert_target:
 insert_rest:
   select_stmt
   {
-    $$.val = &tree.Insert{Rows: $1.slct()}
+    $$.val = &tree.InsertTarget{Rows: $1.slct()}
   }
 | '(' qualified_name_list ')' select_stmt
   {
-    $$.val = &tree.Insert{Columns: $2.unresolvedNames(), Rows: $4.slct()}
+    $$.val = &tree.InsertTarget{Columns: $2.unresolvedNames(), Rows: $4.slct()}
   }
 | DEFAULT VALUES
   {
-    $$.val = &tree.Insert{Rows: &tree.Select{}}
+    $$.val = &tree.InsertTarget{Rows: &tree.Select{}}
   }
 
-on_conflict:
+opt_on_conflict:
   ON CONFLICT opt_conf_expr DO UPDATE SET set_clause_list where_clause
   {
     $$.val = &tree.OnConflict{Columns: $3.nameList(), Exprs: $7.updateExprs(), Where: tree.NewWhere(tree.AstWhere, $8.expr())}
@@ -3897,6 +3951,10 @@ on_conflict:
 | ON CONFLICT opt_conf_expr DO NOTHING
   {
     $$.val = &tree.OnConflict{Columns: $3.nameList(), DoNothing: true}
+  }
+| /* EMPTY */
+  {
+    $$.val = (*tree.OnConflict)(nil)
   }
 
 opt_conf_expr:
