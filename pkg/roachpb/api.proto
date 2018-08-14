@@ -1359,6 +1359,18 @@ message RangeStatsResponse {
   double queries_per_second = 3;
 }
 
+message CountKeysRequest {
+  option (gogoproto.equal) = true;
+
+  RequestHeader header = 1 [(gogoproto.nullable) = false, (gogoproto.embed) = true];
+}
+
+message CountKeysResponse {
+  ResponseHeader header = 1 [(gogoproto.nullable) = false, (gogoproto.embed) = true];
+
+  int64 count = 2;
+}
+
 // A RequestUnion contains exactly one of the requests.
 // The values added here must match those in ResponseUnion.
 //
@@ -1407,6 +1419,7 @@ message RequestUnion {
     RefreshRangeRequest refresh_range = 41;
     SubsumeRequest subsume = 43;
     RangeStatsRequest range_stats = 44;
+    CountKeysRequest count_keys = 46;
   }
   reserved 15, 23, 25, 27;
 }
@@ -1455,6 +1468,7 @@ message ResponseUnion {
     RefreshRangeResponse refresh_range = 41;
     SubsumeResponse subsume = 43;
     RangeStatsResponse range_stats = 44;
+    CountKeysResponse count_keys = 46;
   }
   reserved 15, 23, 25, 27, 28;
 }

@@ -348,6 +348,20 @@ func (r *AdminScatterResponse) combine(c combinable) error {
 
 var _ combinable = &AdminScatterResponse{}
 
+// Combine implements the combinable interface.
+func (r *CountKeysResponse) combine(c combinable) error {
+	if r != nil {
+		otherR := c.(*CountKeysResponse)
+		if err := r.ResponseHeader.combine(otherR.Header()); err != nil {
+			return err
+		}
+		r.Count += otherR.Count
+	}
+	return nil
+}
+
+var _ combinable = &CountKeysResponse{}
+
 // Header implements the Request interface.
 func (rh RequestHeader) Header() RequestHeader {
 	return rh
@@ -580,6 +594,9 @@ func (*SubsumeRequest) Method() Method { return Subsume }
 
 // Method implements the Request interface.
 func (*RangeStatsRequest) Method() Method { return RangeStats }
+
+// Method implements the Request interface.
+func (*CountKeysRequest) Method() Method { return CountKeys }
 
 // ShallowCopy implements the Request interface.
 func (gr *GetRequest) ShallowCopy() Request {
@@ -823,6 +840,12 @@ func (r *SubsumeRequest) ShallowCopy() Request {
 
 // ShallowCopy implements the Request interface.
 func (r *RangeStatsRequest) ShallowCopy() Request {
+	shallowCopy := *r
+	return &shallowCopy
+}
+
+// ShallowCopy implements the Request interface.
+func (r *CountKeysRequest) ShallowCopy() Request {
 	shallowCopy := *r
 	return &shallowCopy
 }
@@ -1080,6 +1103,10 @@ func (*RefreshRangeRequest) flags() int { return isRead | isTxn | isRange | upda
 func (*SubsumeRequest) flags() int { return isRead | isAlone | updatesReadTSCache }
 
 func (*RangeStatsRequest) flags() int { return isRead }
+
+func (*CountKeysRequest) flags() int {
+	return isRead | isTxn | updatesReadTSCache
+}
 
 // Keys returns credentials in an aws.Config.
 func (b *ExportStorage_S3) Keys() *aws.Config {

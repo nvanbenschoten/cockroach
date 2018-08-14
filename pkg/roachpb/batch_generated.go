@@ -160,6 +160,8 @@ func (ru RequestUnion) GetInner() Request {
 		return t.Subsume
 	case *RequestUnion_RangeStats:
 		return t.RangeStats
+	case *RequestUnion_CountKeys:
+		return t.CountKeys
 	default:
 		return nil
 	}
@@ -248,6 +250,8 @@ func (ru ResponseUnion) GetInner() Response {
 		return t.Subsume
 	case *ResponseUnion_RangeStats:
 		return t.RangeStats
+	case *ResponseUnion_CountKeys:
+		return t.CountKeys
 	default:
 		return nil
 	}
@@ -408,6 +412,8 @@ func (ru *RequestUnion) SetInner(r Request) bool {
 		union = &RequestUnion_Subsume{t}
 	case *RangeStatsRequest:
 		union = &RequestUnion_RangeStats{t}
+	case *CountKeysRequest:
+		union = &RequestUnion_CountKeys{t}
 	default:
 		return false
 	}
@@ -499,6 +505,8 @@ func (ru *ResponseUnion) SetInner(r Response) bool {
 		union = &ResponseUnion_Subsume{t}
 	case *RangeStatsResponse:
 		union = &ResponseUnion_RangeStats{t}
+	case *CountKeysResponse:
+		union = &ResponseUnion_CountKeys{t}
 	default:
 		return false
 	}
@@ -506,7 +514,7 @@ func (ru *ResponseUnion) SetInner(r Response) bool {
 	return true
 }
 
-type reqCounts [41]int32
+type reqCounts [42]int32
 
 // getReqCounts returns the number of times each
 // request type appears in the batch.
@@ -596,6 +604,8 @@ func (ba *BatchRequest) getReqCounts() reqCounts {
 			counts[39]++
 		case *RequestUnion_RangeStats:
 			counts[40]++
+		case *RequestUnion_CountKeys:
+			counts[41]++
 		default:
 			panic(fmt.Sprintf("unsupported request: %+v", ru))
 		}
@@ -645,6 +655,7 @@ var requestNames = []string{
 	"RefreshRng",
 	"Subsume",
 	"RngStats",
+	"CountKeys",
 }
 
 // Summary prints a short summary of the requests in a batch.
@@ -840,6 +851,10 @@ type rangeStatsResponseAlloc struct {
 	union ResponseUnion_RangeStats
 	resp  RangeStatsResponse
 }
+type countKeysResponseAlloc struct {
+	union ResponseUnion_CountKeys
+	resp  CountKeysResponse
+}
 
 // CreateReply creates replies for each of the contained requests, wrapped in a
 // BatchResponse. The response objects are batch allocated to minimize
@@ -891,6 +906,7 @@ func (ba *BatchRequest) CreateReply() *BatchResponse {
 	var buf38 []refreshRangeResponseAlloc
 	var buf39 []subsumeResponseAlloc
 	var buf40 []rangeStatsResponseAlloc
+	var buf41 []countKeysResponseAlloc
 
 	for i, r := range ba.Requests {
 		switch r.GetValue().(type) {
@@ -1179,8 +1195,13 @@ func (ba *BatchRequest) CreateReply() *BatchResponse {
 				buf40 = make([]rangeStatsResponseAlloc, counts[40])
 			}
 			buf40[0].union.RangeStats = &buf40[0].resp
-			br.Responses[i].Value = &buf40[0].union
-			buf40 = buf40[1:]
+		case *RequestUnion_CountKeys:
+			if buf41 == nil {
+				buf41 = make([]countKeysResponseAlloc, counts[41])
+			}
+			buf41[0].union.CountKeys = &buf41[0].resp
+			br.Responses[i].Value = &buf41[0].union
+			buf41 = buf41[1:]
 		default:
 			panic(fmt.Sprintf("unsupported request: %+v", r))
 		}
