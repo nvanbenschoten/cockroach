@@ -18,26 +18,103 @@ import (
 	"fmt"
 
 	proto "github.com/gogo/protobuf/proto"
+
+	"github.com/cockroachdb/cockroach/pkg/util/hlc"
 )
 
 // ToStats converts the receiver to an MVCCStats.
 func (ms *MVCCStatsDelta) ToStats() MVCCStats {
-	return MVCCStats(*ms)
+	return MVCCStats{
+		ContainsEstimates:  ms.ContainsEstimates,
+		LastUpdateNanos:    ms.LastUpdateNanos,
+		IntentAge:          ms.IntentAge,
+		GCBytesAge:         ms.GCBytesAge,
+		LiveBytes:          ms.LiveBytes,
+		LiveCount:          ms.LiveCount,
+		KeyBytes:           ms.KeyBytes,
+		KeyCount:           ms.KeyCount,
+		ValBytes:           ms.ValBytes,
+		ValCount:           ms.ValCount,
+		IntentBytes:        ms.IntentBytes,
+		IntentCount:        ms.IntentCount,
+		SysBytes:           ms.SysBytes,
+		SysCount:           ms.SysCount,
+		WriteHighWatermark: FixedTimestamp(ms.WriteHighWatermark),
+	}
 }
 
 // ToStatsDelta converts the receiver to an MVCCStatsDelta.
 func (ms *MVCCStats) ToStatsDelta() MVCCStatsDelta {
-	return MVCCStatsDelta(*ms)
+	return MVCCStatsDelta{
+		ContainsEstimates:  ms.ContainsEstimates,
+		LastUpdateNanos:    ms.LastUpdateNanos,
+		IntentAge:          ms.IntentAge,
+		GCBytesAge:         ms.GCBytesAge,
+		LiveBytes:          ms.LiveBytes,
+		LiveCount:          ms.LiveCount,
+		KeyBytes:           ms.KeyBytes,
+		KeyCount:           ms.KeyCount,
+		ValBytes:           ms.ValBytes,
+		ValCount:           ms.ValCount,
+		IntentBytes:        ms.IntentBytes,
+		IntentCount:        ms.IntentCount,
+		SysBytes:           ms.SysBytes,
+		SysCount:           ms.SysCount,
+		WriteHighWatermark: hlc.Timestamp(ms.WriteHighWatermark),
+	}
 }
 
 // ToStats converts the receiver to an MVCCStats.
 func (ms *MVCCPersistentStats) ToStats() MVCCStats {
-	return MVCCStats(*ms)
+	return MVCCStats{
+		ContainsEstimates:  ms.ContainsEstimates,
+		LastUpdateNanos:    ms.LastUpdateNanos,
+		IntentAge:          ms.IntentAge,
+		GCBytesAge:         ms.GCBytesAge,
+		LiveBytes:          ms.LiveBytes,
+		LiveCount:          ms.LiveCount,
+		KeyBytes:           ms.KeyBytes,
+		KeyCount:           ms.KeyCount,
+		ValBytes:           ms.ValBytes,
+		ValCount:           ms.ValCount,
+		IntentBytes:        ms.IntentBytes,
+		IntentCount:        ms.IntentCount,
+		SysBytes:           ms.SysBytes,
+		SysCount:           ms.SysCount,
+		WriteHighWatermark: FixedTimestamp(ms.WriteHighWatermark),
+	}
 }
 
 // ToPersistentStats converts the receiver to an MVCCPersistentStats.
 func (ms *MVCCStats) ToPersistentStats() MVCCPersistentStats {
-	return MVCCPersistentStats(*ms)
+	return MVCCPersistentStats{
+		ContainsEstimates:  ms.ContainsEstimates,
+		LastUpdateNanos:    ms.LastUpdateNanos,
+		IntentAge:          ms.IntentAge,
+		GCBytesAge:         ms.GCBytesAge,
+		LiveBytes:          ms.LiveBytes,
+		LiveCount:          ms.LiveCount,
+		KeyBytes:           ms.KeyBytes,
+		KeyCount:           ms.KeyCount,
+		ValBytes:           ms.ValBytes,
+		ValCount:           ms.ValCount,
+		IntentBytes:        ms.IntentBytes,
+		IntentCount:        ms.IntentCount,
+		SysBytes:           ms.SysBytes,
+		SysCount:           ms.SysCount,
+		WriteHighWatermark: hlc.Timestamp(ms.WriteHighWatermark),
+	}
+}
+
+// Forward updates the timestamp from the one given, if that moves it forwards
+// in time. Returns true if the timestamp was adjusted and false otherwise.
+func (t *FixedTimestamp) Forward(s hlc.Timestamp) bool {
+	tt := hlc.Timestamp(*t)
+	if tt.Less(s) {
+		*t = FixedTimestamp(s)
+		return true
+	}
+	return false
 }
 
 var isolationTypeLowerCase = map[int32]string{

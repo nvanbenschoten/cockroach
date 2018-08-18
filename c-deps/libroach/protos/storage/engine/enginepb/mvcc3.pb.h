@@ -370,6 +370,17 @@ class MVCCStatsDelta : public ::google::protobuf::MessageLite /* @@protoc_insert
 
   // accessors -------------------------------------------------------
 
+  bool has_write_high_watermark() const;
+  void clear_write_high_watermark();
+  static const int kWriteHighWatermarkFieldNumber = 15;
+  private:
+  const ::cockroach::util::hlc::Timestamp& _internal_write_high_watermark() const;
+  public:
+  const ::cockroach::util::hlc::Timestamp& write_high_watermark() const;
+  ::cockroach::util::hlc::Timestamp* release_write_high_watermark();
+  ::cockroach::util::hlc::Timestamp* mutable_write_high_watermark();
+  void set_allocated_write_high_watermark(::cockroach::util::hlc::Timestamp* write_high_watermark);
+
   // sfixed64 last_update_nanos = 1;
   void clear_last_update_nanos();
   static const int kLastUpdateNanosFieldNumber = 1;
@@ -457,6 +468,7 @@ class MVCCStatsDelta : public ::google::protobuf::MessageLite /* @@protoc_insert
  private:
 
   ::google::protobuf::internal::InternalMetadataWithArenaLite _internal_metadata_;
+  ::cockroach::util::hlc::Timestamp* write_high_watermark_;
   ::google::protobuf::int64 last_update_nanos_;
   ::google::protobuf::int64 intent_age_;
   ::google::protobuf::int64 gc_bytes_age_;
@@ -561,6 +573,17 @@ class MVCCPersistentStats : public ::google::protobuf::MessageLite /* @@protoc_i
 
   // accessors -------------------------------------------------------
 
+  bool has_write_high_watermark() const;
+  void clear_write_high_watermark();
+  static const int kWriteHighWatermarkFieldNumber = 15;
+  private:
+  const ::cockroach::util::hlc::Timestamp& _internal_write_high_watermark() const;
+  public:
+  const ::cockroach::util::hlc::Timestamp& write_high_watermark() const;
+  ::cockroach::util::hlc::Timestamp* release_write_high_watermark();
+  ::cockroach::util::hlc::Timestamp* mutable_write_high_watermark();
+  void set_allocated_write_high_watermark(::cockroach::util::hlc::Timestamp* write_high_watermark);
+
   // sfixed64 last_update_nanos = 1;
   void clear_last_update_nanos();
   static const int kLastUpdateNanosFieldNumber = 1;
@@ -648,6 +671,7 @@ class MVCCPersistentStats : public ::google::protobuf::MessageLite /* @@protoc_i
  private:
 
   ::google::protobuf::internal::InternalMetadataWithArenaLite _internal_metadata_;
+  ::cockroach::util::hlc::Timestamp* write_high_watermark_;
   ::google::protobuf::int64 last_update_nanos_;
   ::google::protobuf::int64 intent_age_;
   ::google::protobuf::int64 gc_bytes_age_;
@@ -2025,6 +2049,53 @@ inline void MVCCStatsDelta::set_sys_count(::google::protobuf::int64 value) {
   // @@protoc_insertion_point(field_set:cockroach.storage.engine.enginepb.MVCCStatsDelta.sys_count)
 }
 
+inline bool MVCCStatsDelta::has_write_high_watermark() const {
+  return this != internal_default_instance() && write_high_watermark_ != NULL;
+}
+inline const ::cockroach::util::hlc::Timestamp& MVCCStatsDelta::_internal_write_high_watermark() const {
+  return *write_high_watermark_;
+}
+inline const ::cockroach::util::hlc::Timestamp& MVCCStatsDelta::write_high_watermark() const {
+  const ::cockroach::util::hlc::Timestamp* p = write_high_watermark_;
+  // @@protoc_insertion_point(field_get:cockroach.storage.engine.enginepb.MVCCStatsDelta.write_high_watermark)
+  return p != NULL ? *p : *reinterpret_cast<const ::cockroach::util::hlc::Timestamp*>(
+      &::cockroach::util::hlc::_Timestamp_default_instance_);
+}
+inline ::cockroach::util::hlc::Timestamp* MVCCStatsDelta::release_write_high_watermark() {
+  // @@protoc_insertion_point(field_release:cockroach.storage.engine.enginepb.MVCCStatsDelta.write_high_watermark)
+  
+  ::cockroach::util::hlc::Timestamp* temp = write_high_watermark_;
+  write_high_watermark_ = NULL;
+  return temp;
+}
+inline ::cockroach::util::hlc::Timestamp* MVCCStatsDelta::mutable_write_high_watermark() {
+  
+  if (write_high_watermark_ == NULL) {
+    auto* p = CreateMaybeMessage<::cockroach::util::hlc::Timestamp>(GetArenaNoVirtual());
+    write_high_watermark_ = p;
+  }
+  // @@protoc_insertion_point(field_mutable:cockroach.storage.engine.enginepb.MVCCStatsDelta.write_high_watermark)
+  return write_high_watermark_;
+}
+inline void MVCCStatsDelta::set_allocated_write_high_watermark(::cockroach::util::hlc::Timestamp* write_high_watermark) {
+  ::google::protobuf::Arena* message_arena = GetArenaNoVirtual();
+  if (message_arena == NULL) {
+    delete reinterpret_cast< ::google::protobuf::MessageLite*>(write_high_watermark_);
+  }
+  if (write_high_watermark) {
+    ::google::protobuf::Arena* submessage_arena = NULL;
+    if (message_arena != submessage_arena) {
+      write_high_watermark = ::google::protobuf::internal::GetOwnedMessage(
+          message_arena, write_high_watermark, submessage_arena);
+    }
+    
+  } else {
+    
+  }
+  write_high_watermark_ = write_high_watermark;
+  // @@protoc_insertion_point(field_set_allocated:cockroach.storage.engine.enginepb.MVCCStatsDelta.write_high_watermark)
+}
+
 // -------------------------------------------------------------------
 
 // MVCCPersistentStats
@@ -2222,6 +2293,53 @@ inline void MVCCPersistentStats::set_sys_count(::google::protobuf::int64 value) 
   
   sys_count_ = value;
   // @@protoc_insertion_point(field_set:cockroach.storage.engine.enginepb.MVCCPersistentStats.sys_count)
+}
+
+inline bool MVCCPersistentStats::has_write_high_watermark() const {
+  return this != internal_default_instance() && write_high_watermark_ != NULL;
+}
+inline const ::cockroach::util::hlc::Timestamp& MVCCPersistentStats::_internal_write_high_watermark() const {
+  return *write_high_watermark_;
+}
+inline const ::cockroach::util::hlc::Timestamp& MVCCPersistentStats::write_high_watermark() const {
+  const ::cockroach::util::hlc::Timestamp* p = write_high_watermark_;
+  // @@protoc_insertion_point(field_get:cockroach.storage.engine.enginepb.MVCCPersistentStats.write_high_watermark)
+  return p != NULL ? *p : *reinterpret_cast<const ::cockroach::util::hlc::Timestamp*>(
+      &::cockroach::util::hlc::_Timestamp_default_instance_);
+}
+inline ::cockroach::util::hlc::Timestamp* MVCCPersistentStats::release_write_high_watermark() {
+  // @@protoc_insertion_point(field_release:cockroach.storage.engine.enginepb.MVCCPersistentStats.write_high_watermark)
+  
+  ::cockroach::util::hlc::Timestamp* temp = write_high_watermark_;
+  write_high_watermark_ = NULL;
+  return temp;
+}
+inline ::cockroach::util::hlc::Timestamp* MVCCPersistentStats::mutable_write_high_watermark() {
+  
+  if (write_high_watermark_ == NULL) {
+    auto* p = CreateMaybeMessage<::cockroach::util::hlc::Timestamp>(GetArenaNoVirtual());
+    write_high_watermark_ = p;
+  }
+  // @@protoc_insertion_point(field_mutable:cockroach.storage.engine.enginepb.MVCCPersistentStats.write_high_watermark)
+  return write_high_watermark_;
+}
+inline void MVCCPersistentStats::set_allocated_write_high_watermark(::cockroach::util::hlc::Timestamp* write_high_watermark) {
+  ::google::protobuf::Arena* message_arena = GetArenaNoVirtual();
+  if (message_arena == NULL) {
+    delete reinterpret_cast< ::google::protobuf::MessageLite*>(write_high_watermark_);
+  }
+  if (write_high_watermark) {
+    ::google::protobuf::Arena* submessage_arena = NULL;
+    if (message_arena != submessage_arena) {
+      write_high_watermark = ::google::protobuf::internal::GetOwnedMessage(
+          message_arena, write_high_watermark, submessage_arena);
+    }
+    
+  } else {
+    
+  }
+  write_high_watermark_ = write_high_watermark;
+  // @@protoc_insertion_point(field_set_allocated:cockroach.storage.engine.enginepb.MVCCPersistentStats.write_high_watermark)
 }
 
 // -------------------------------------------------------------------

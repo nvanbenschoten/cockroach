@@ -2704,6 +2704,8 @@ func ComputeStatsGo(
 					ms.IntentBytes += totalBytes
 					ms.IntentCount++
 					ms.IntentAge += nowNanos/1E9 - meta.Timestamp.WallTime/1E9
+				} else {
+					ms.WriteHighWatermark.Forward(hlc.Timestamp(meta.Timestamp))
 				}
 				if meta.KeyBytes != mvccVersionTimestampSize {
 					return ms, errors.Errorf("expected mvcc metadata key bytes to equal %d; got %d", mvccVersionTimestampSize, meta.KeyBytes)

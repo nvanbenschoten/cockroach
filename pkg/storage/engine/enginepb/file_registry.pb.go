@@ -14,6 +14,7 @@
 		FileRegistry
 		FileEntry
 		MVCCMetadata
+		FixedTimestamp
 		MVCCStats
 		TxnMeta
 		MVCCStatsDelta

@@ -103,7 +103,7 @@ func (r *Replica) CheckConsistency(
 		// were many bugs in our stats computations. These are being fixed, but it
 		// is through this mechanism that existing ranges are updated. Hence, the
 		// logging below is relatively timid.
-		delta := enginepb.MVCCStats(results[0].Response.Delta)
+		delta := results[0].Response.Delta.ToStats()
 		delta.LastUpdateNanos = 0
 		// If there's no delta (or some nodes in the cluster may not know
 		// RecomputeStats, in which case sending it to them could crash them),
@@ -337,7 +337,7 @@ func (r *Replica) computeChecksumDone(
 
 			delta := result.PersistedMS
 			delta.Subtract(result.RecomputedMS)
-			c.Delta = enginepb.MVCCStatsDelta(delta)
+			c.Delta = delta.ToStatsDelta()
 		}
 		c.gcTimestamp = timeutil.Now().Add(batcheval.ReplicaChecksumGCInterval)
 		c.Snapshot = snapshot

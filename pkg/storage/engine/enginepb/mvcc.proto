@@ -49,6 +49,20 @@ message MVCCMetadata {
   optional util.hlc.LegacyTimestamp merge_timestamp = 7;
 }
 
+message FixedTimestamp {
+  option (gogoproto.equal) = true;
+  option (gogoproto.populate) = true;
+
+  // Holds a wall time, typically a unix epoch time expressed in
+  // nanoseconds.
+  optional sfixed64 wall_time = 1 [(gogoproto.nullable) = false];
+  // The logical component captures causality for events whose wall
+  // times are equal. It is effectively bounded by (maximum clock
+  // skew)/(minimal ns between events) and nearly impossible to
+  // overflow.
+  optional sfixed32 logical = 2 [(gogoproto.nullable) = false];
+}
+
 // MVCCStats tracks byte and instance counts for various groups of keys,
 // values, or key-value pairs; see the field comments for details.
 //
@@ -137,4 +151,8 @@ message MVCCStats {
   optional sfixed64 sys_bytes = 12 [(gogoproto.nullable) = false];
   // sys_count is the number of meta keys tracked under sys_bytes.
   optional sfixed64 sys_count = 13 [(gogoproto.nullable) = false];
+
+  // write_high_watermark is the upper bound timestamp of all live
+  // values. The value will never recess.
+  optional FixedTimestamp write_high_watermark = 15 [(gogoproto.nullable) = false];
 }
