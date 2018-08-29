@@ -29,16 +29,11 @@ import (
 	"github.com/cockroachdb/cockroach/pkg/sql/sessiondata"
 	"github.com/cockroachdb/cockroach/pkg/sql/sqlbase"
 	"github.com/cockroachdb/cockroach/pkg/util/log"
-	"github.com/cockroachdb/cockroach/pkg/util/syncutil"
 )
 
 // This file contains utils and interfaces used by a connExecutor to communicate
 // with a SQL client. There's StmtBuf used for input and ClientComm used for
 // output.
-
-// CmdPos represents the index of a command relative to the start of a
-// connection. The first command received on a connection has position 0.
-type CmdPos int64
 
 // TransactionStatusIndicator represents a pg identifier for the transaction state.
 type TransactionStatusIndicator byte
@@ -52,70 +47,6 @@ const (
 	// transaction is in the Aborted state.
 	InFailedTxnBlock TransactionStatusIndicator = 'E'
 )
-
-// StmtBuf maintains a list of commands that a SQL client has sent for execution
-// over a network connection. The commands are SQL queries to be executed,
-// statements to be prepared, etc. At any point in time the buffer contains
-// outstanding commands that have yet to be executed, and it can also contain
-// some history of commands that we might want to retry - in the case of a
-// retriable error, we'd like to retry all the commands pertaining to the
-// current SQL transaction.
-//
-// The buffer is supposed to be used by one reader and one writer. The writer
-// adds commands to the buffer using Push(). The reader reads one command at a
-// time using curCmd(). The consumer is then supposed to create command results
-// (the buffer is not involved in this).
-// The buffer internally maintains a cursor representing the reader's position.
-// The reader has to manually move the cursor using advanceOne(),
-// seekToNextBatch() and rewind().
-// In practice, the writer is a module responsible for communicating with a SQL
-// client (i.e. pgwire.conn) and the reader is a connExecutor.
-//
-// The StmtBuf supports grouping commands into "batches" delimited by sync
-// commands. A reader can then at any time chose to skip over commands from the
-// current batch. This is used to implement Postgres error semantics: when an
-// error happens during processing of a command, some future commands might need
-// to be skipped. Batches correspond either to multiple queries received in a
-// single query string (when the SQL client sends a semicolon-separated list of
-// queries as part of the "simple" protocol), or to different commands pipelined
-// by the cliend, separated from "sync" messages.
-//
-// push() can be called concurrently with curCmd().
-//
-// The connExecutor will use the buffer to maintain a window around the
-// command it is currently executing. It will maintain enough history for
-// executing commands again in case of an automatic retry. The connExecutor is
-// in charge of trimming completed commands from the buffer when it's done with
-// them.
-type StmtBuf struct {
-	mu struct {
-		syncutil.Mutex
-
-		// closed, if set, means that the writer has closed the buffer. See Close().
-		closed bool
-
-		// cond is signaled when new commands are pushed.
-		cond *sync.Cond
-
-		// readerBlocked is set while the reader is blocked on waiting for a command
-		// to be pushed into the buffer.
-		readerBlocked bool
-
-		// data contains the elements of the buffer.
-		data []Command
-
-		// startPos indicates the index of the first command currently in data
-		// relative to the start of the connection.
-		startPos CmdPos
-		// curPos is the current position of the cursor going through the commands.
-		// At any time, curPos indicates the position of the command to be returned
-		// by curCmd().
-		curPos CmdPos
-		// lastPos indicates the position of the last command that was pushed into
-		// the buffer.
-		lastPos CmdPos
-	}
-}
 
 // Command is an interface implemented by all commands pushed by pgwire into the
 // buffer.
@@ -354,12 +285,67 @@ func (s SendError) String() string {
 
 var _ Command = SendError{}
 
+// CmdPos represents the index of a command relative to the start of a
+// connection. The first command received on a connection has position 0.
+type CmdPos int64
+
+// StmtBuf maintains a list of commands that a SQL client has sent for execution
+// over a network connection. The commands are SQL queries to be executed,
+// statements to be prepared, etc. At any point in time the buffer contains
+// outstanding commands that have yet to be executed, and it can also contain
+// some history of commands that we might want to retry - in the case of a
+// retriable error, we'd like to retry all the commands pertaining to the
+// current SQL transaction.
+//
+// The buffer is supposed to be used by one reader and one writer. The writer
+// adds commands to the buffer using Push(). The reader reads one command at a
+// time using curCmd(). The consumer is then supposed to create command results
+// (the buffer is not involved in this).
+// The buffer internally maintains a cursor representing the reader's position.
+// The reader has to manually move the cursor using advanceOne(),
+// seekToNextBatch() and rewind().
+// In practice, the writer is a module responsible for communicating with a SQL
+// client (i.e. pgwire.conn) and the reader is a connExecutor.
+//
+// The StmtBuf supports grouping commands into "batches" delimited by sync
+// commands. A reader can then at any time chose to skip over commands from the
+// current batch. This is used to implement Postgres error semantics: when an
+// error happens during processing of a command, some future commands might need
+// to be skipped. Batches correspond either to multiple queries received in a
+// single query string (when the SQL client sends a semicolon-separated list of
+// queries as part of the "simple" protocol), or to different commands pipelined
+// by the cliend, separated from "sync" messages.
+//
+// push() can be called concurrently with curCmd().
+//
+// The connExecutor will use the buffer to maintain a window around the
+// command it is currently executing. It will maintain enough history for
+// executing commands again in case of an automatic retry. The connExecutor is
+// in charge of trimming completed commands from the buffer when it's done with
+// them.
+type StmtBuf struct {
+	cmdC    chan Command
+	closedC chan struct{}
+
+	// recv holds state local to the consumer of the StmtBuf.
+	recv struct {
+		buffered []Command
+		// startPos indicates the index of the first command currently in data
+		// relative to the start of the connection.
+		startPos CmdPos
+		// curPos is the current position of the cursor going through the commands.
+		// At any time, curPos indicates the position of the command to be returned
+		// by curCmd().
+		curPos CmdPos
+	}
+}
+
 // NewStmtBuf creates a StmtBuf.
 func NewStmtBuf() *StmtBuf {
-	var buf StmtBuf
-	buf.mu.lastPos = -1
-	buf.mu.cond = sync.NewCond(&buf.mu.Mutex)
-	return &buf
+	return &StmtBuf{
+		cmdC:    make(chan Command, 16),
+		closedC: make(chan struct{}),
+	}
 }
 
 // Close marks the buffer as closed. Once Close() is called, no further push()es
@@ -369,26 +355,18 @@ func NewStmtBuf() *StmtBuf {
 //
 // Close() is idempotent.
 func (buf *StmtBuf) Close() {
-	buf.mu.Lock()
-	buf.mu.closed = true
-	buf.mu.cond.Signal()
-	buf.mu.Unlock()
+	select {
+	case <-buf.closedC:
+		// Already closed.
+	default:
+		close(buf.closedC)
+	}
 }
 
 // Push adds a Command to the end of the buffer. If a curCmd() call was blocked
 // waiting for this command to arrive, it will be woken up.
-//
-// An error is returned if the buffer has been closed.
 func (buf *StmtBuf) Push(ctx context.Context, cmd Command) error {
-	buf.mu.Lock()
-	defer buf.mu.Unlock()
-	if buf.mu.closed {
-		return fmt.Errorf("buffer is closed")
-	}
-	buf.mu.data = append(buf.mu.data, cmd)
-	buf.mu.lastPos++
-
-	buf.mu.cond.Signal()
+	buf.cmdC <- cmd
 	return nil
 }
 
@@ -402,29 +380,26 @@ func (buf *StmtBuf) Push(ctx context.Context, cmd Command) error {
 // If the buffer has previously been Close()d, or is closed while this is
 // blocked, io.EOF is returned.
 func (buf *StmtBuf) curCmd() (Command, CmdPos, error) {
-	buf.mu.Lock()
-	defer buf.mu.Unlock()
-	for {
-		if buf.mu.closed {
+	select {
+	case <-buf.closedC:
+		return nil, 0, io.EOF
+	default:
+	}
+
+	curPos := buf.recv.curPos
+	cmdIdx, err := buf.translatePosLocked(curPos)
+	if err != nil {
+		return nil, 0, err
+	}
+	for cmdIdx >= len(buf.recv.buffered) {
+		select {
+		case cmd := <-buf.cmdC:
+			buf.recv.buffered = append(buf.recv.buffered, cmd)
+		case <-buf.closedC:
 			return nil, 0, io.EOF
 		}
-		curPos := buf.mu.curPos
-		cmdIdx, err := buf.translatePosLocked(curPos)
-		if err != nil {
-			return nil, 0, err
-		}
-		if cmdIdx < len(buf.mu.data) {
-			return buf.mu.data[cmdIdx], curPos, nil
-		}
-		if cmdIdx != len(buf.mu.data) {
-			return nil, 0, errors.Errorf(
-				"can only wait for next command; corrupt cursor: %d", curPos)
-		}
-		// Wait for the next Command to arrive to the buffer.
-		buf.mu.readerBlocked = true
-		buf.mu.cond.Wait()
-		buf.mu.readerBlocked = false
 	}
+	return buf.recv.buffered[cmdIdx], curPos, nil
 }
 
 // translatePosLocked translates an absolute position of a command (counting
@@ -434,12 +409,12 @@ func (buf *StmtBuf) curCmd() (Command, CmdPos, error) {
 // Attempting to translate a position that's below buf.startPos returns an
 // error.
 func (buf *StmtBuf) translatePosLocked(pos CmdPos) (int, error) {
-	if pos < buf.mu.startPos {
+	if pos < buf.recv.startPos {
 		return 0, errors.Errorf(
 			"position %d no longer in buffer (buffer starting at %d)",
-			pos, buf.mu.startPos)
+			pos, buf.recv.startPos)
 	}
-	return int(pos - buf.mu.startPos), nil
+	return int(pos - buf.recv.startPos), nil
 }
 
 // ltrim iterates over the buffer forward and removes all commands up to
@@ -447,33 +422,29 @@ func (buf *StmtBuf) translatePosLocked(pos CmdPos) (int, error) {
 //
 // It's illegal to ltrim to a position higher than the current cursor.
 func (buf *StmtBuf) ltrim(ctx context.Context, pos CmdPos) {
-	buf.mu.Lock()
-	defer buf.mu.Unlock()
-	if pos < buf.mu.startPos {
+	if pos < buf.recv.startPos {
 		log.Fatalf(ctx, "invalid ltrim position: %d. buf starting at: %d",
-			pos, buf.mu.startPos)
+			pos, buf.recv.startPos)
 	}
-	if buf.mu.curPos < pos {
+	_, curPos, err := buf.curCmd()
+	if err != nil {
+		log.Fatal(ctx, err)
+	}
+	if curPos < pos {
 		log.Fatalf(ctx, "invalid ltrim position: %d when cursor is: %d",
-			pos, buf.mu.curPos)
+			pos, curPos)
 	}
 	// Remove commands one by one.
-	for {
-		if buf.mu.startPos == pos {
-			break
-		}
-		buf.mu.data[0] = nil
-		buf.mu.data = buf.mu.data[1:]
-		buf.mu.startPos++
+	for ; buf.recv.startPos < pos; buf.recv.startPos++ {
+		buf.recv.buffered[0] = nil
+		buf.recv.buffered = buf.recv.buffered[1:]
 	}
 }
 
 // advanceOne advances the cursor one Command over. The command over which the
 // cursor will be positioned when this returns may not be in the buffer yet.
 func (buf *StmtBuf) advanceOne() {
-	buf.mu.Lock()
-	buf.mu.curPos++
-	buf.mu.Unlock()
+	buf.recv.curPos++
 }
 
 // seekToNextBatch moves the cursor position to the start of the next batch of
@@ -488,50 +459,24 @@ func (buf *StmtBuf) advanceOne() {
 // It is an error to start seeking when the cursor is positioned on an empty
 // slot.
 func (buf *StmtBuf) seekToNextBatch() error {
-	buf.mu.Lock()
-	curPos := buf.mu.curPos
-	cmdIdx, err := buf.translatePosLocked(curPos)
-	if err != nil {
-		buf.mu.Unlock()
-		return err
-	}
-	if cmdIdx == len(buf.mu.data) {
-		buf.mu.Unlock()
-		return errors.Errorf("invalid seek start point")
-	}
-	buf.mu.Unlock()
-
-	var foundSync bool
-	for !foundSync {
+	for {
 		buf.advanceOne()
-		_, pos, err := buf.curCmd()
+		cmd, _, err := buf.curCmd()
 		if err != nil {
 			return err
 		}
-		buf.mu.Lock()
-		cmdIdx, err := buf.translatePosLocked(pos)
-		if err != nil {
-			buf.mu.Unlock()
-			return err
+		if _, ok := cmd.(Sync); ok {
+			return nil
 		}
-
-		if _, ok := buf.mu.data[cmdIdx].(Sync); ok {
-			foundSync = true
-		}
-
-		buf.mu.Unlock()
 	}
-	return nil
 }
 
 // rewind resets the buffer's position to pos.
 func (buf *StmtBuf) rewind(ctx context.Context, pos CmdPos) {
-	buf.mu.Lock()
-	defer buf.mu.Unlock()
-	if pos < buf.mu.startPos {
+	if pos < buf.recv.startPos {
 		log.Fatalf(ctx, "attempting to rewind below buffer start")
 	}
-	buf.mu.curPos = pos
+	buf.recv.curPos = pos
 }
 
 // RowDescOpt specifies whether a result needs a row description message.

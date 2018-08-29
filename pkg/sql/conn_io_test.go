@@ -178,13 +178,21 @@ func TestStmtBufLtrim(t *testing.T) {
 	}
 	// Advance the cursor so that we can trim.
 	buf.advanceOne()
+	_, _, err := buf.curCmd()
+	if err != nil {
+		t.Fatal(err)
+	}
 	buf.advanceOne()
+	_, _, err = buf.curCmd()
+	if err != nil {
+		t.Fatal(err)
+	}
 	trimPos := CmdPos(2)
 	buf.ltrim(ctx, trimPos)
-	if l := len(buf.mu.data); l != 3 {
+	if l := len(buf.recv.buffered) + len(buf.cmdC); l != 3 {
 		t.Fatalf("expected 3 left, got: %d", l)
 	}
-	if s := buf.mu.startPos; s != 2 {
+	if s := buf.recv.startPos; s != 2 {
 		t.Fatalf("expected start pos 2, got: %d", s)
 	}
 }
@@ -300,6 +308,10 @@ func TestStmtBufBatching(t *testing.T) {
 	mustPush(ctx, t, buf, ExecStmt{Stmt: s1})
 
 	// Go to 2nd batch.
+	_, _, err = buf.curCmd()
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := buf.seekToNextBatch(); err != nil {
 		t.Fatal(err)
 	}
