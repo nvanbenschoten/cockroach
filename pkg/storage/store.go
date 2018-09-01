@@ -359,8 +359,10 @@ func (rs *storeReplicaVisitor) EstimatedCount() int {
 }
 
 type raftRequestInfo struct {
-	req        *RaftMessageRequest
+	reqs       []*RaftMessageRequest
 	respStream RaftMessageResponseStream
+
+	reqBuf [4]*RaftMessageRequest
 }
 
 type raftRequestQueue struct {
@@ -3365,6 +3367,9 @@ func (s *Store) HandleRaftRequest(
 	return s.HandleRaftUncoalescedRequest(ctx, req, respStream)
 }
 
+var combine = envutil.EnvOrDefaultBool("COCKROACH_COMBINE_RAFT", false)
+var avoidDupl = envutil.EnvOrDefaultBool("COCKROACH_AVOID_DUPL", false)
+
 // HandleRaftUncoalescedRequest dispatches a raft message to the appropriate
 // Replica. It requires that s.mu is not held.
 func (s *Store) HandleRaftUncoalescedRequest(
@@ -3385,6 +3390,17 @@ func (s *Store) HandleRaftUncoalescedRequest(
 	}
 	q := (*raftRequestQueue)(value)
 	q.Lock()
+	if len(q.infos) > 0 && combine {
+		lastInfo := q.infos[len(q.infos)-1]
+		if lastInfo.respStream == respStream &&
+			lastInfo.reqs[0].RangeID == req.RangeID &&
+			lastInfo.reqs[0].FromReplica.ReplicaID == req.FromReplica.ReplicaID &&
+			lastInfo.reqs[0].ToReplica.ReplicaID == req.ToReplica.ReplicaID {
+			lastInfo.reqs = append(lastInfo.reqs, req)
+			q.Unlock()
+			return nil
+		}
+	}
 	if len(q.infos) >= replicaRequestQueueSize {
 		q.Unlock()
 		// TODO(peter): Return an error indicating the request was dropped. Note
@@ -3392,13 +3408,18 @@ func (s *Store) HandleRaftUncoalescedRequest(
 		s.metrics.RaftRcvdMsgDropped.Inc(1)
 		return nil
 	}
-	q.infos = append(q.infos, raftRequestInfo{
-		req:        req,
-		respStream: respStream,
-	})
+	info := raftRequestInfo{respStream: respStream}
+	info.reqs = info.reqBuf[:1]
+	info.reqs[0] = req
+	q.infos = append(q.infos, info)
+	if avoidDupl && len(q.infos) == 1 {
+		s.scheduler.EnqueueRaftRequest(req.RangeID)
+	}
 	q.Unlock()
 
-	s.scheduler.EnqueueRaftRequest(req.RangeID)
+	if !avoidDupl {
+		s.scheduler.EnqueueRaftRequest(req.RangeID)
+	}
 	return nil
 }
 
@@ -3786,13 +3807,18 @@ func (s *Store) processRequestQueue(ctx context.Context, rangeID roachpb.RangeID
 	var lastRepl *Replica
 	for i, info := range infos {
 		last := i == len(infos)-1
-		pErr := s.withReplicaForRequest(info.respStream.Context(), info.req,
+		pErr := s.withReplicaForRequest(info.respStream.Context(), info.reqs[0],
 			func(ctx context.Context, r *Replica) *roachpb.Error {
 				// Save the last Replica we see, since we don't know in advance which
 				// requests will fail during Replica retrieval. We want this later
 				// so we can handle the Raft Ready state all at once.
 				lastRepl = r
-				pErr := s.processRaftRequestWithReplica(ctx, r, info.req)
+				var pErr *roachpb.Error
+				for _, req := range info.reqs {
+					if pErr = s.processRaftRequestWithReplica(ctx, r, req); pErr != nil {
+						break
+					}
+				}
 				if last {
 					// If this is the last request, we can handle raft.Ready without
 					// giving up the lock. Set lastRepl to nil, so we don't handle it
@@ -3815,7 +3841,7 @@ func (s *Store) processRequestQueue(ctx context.Context, rangeID roachpb.RangeID
 				s.replicaQueues.Delete(int64(rangeID))
 			}
 			q.Unlock()
-			if err := info.respStream.Send(newRaftMessageResponse(info.req, pErr)); err != nil {
+			if err := info.respStream.Send(newRaftMessageResponse(info.reqs[0], pErr)); err != nil {
 				// Seems excessive to log this on every occurrence as the other side
 				// might have closed.
 				log.VEventf(ctx, 1, "error sending error: %s", err)
