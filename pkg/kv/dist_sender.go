@@ -35,11 +35,10 @@ import (
 	"github.com/cockroachdb/cockroach/pkg/util/metric"
 	"github.com/cockroachdb/cockroach/pkg/util/retry"
 	"github.com/cockroachdb/cockroach/pkg/util/tracing"
+	"github.com/pkg/errors"
 )
 
 const (
-	// The default limit for asynchronous senders.
-	defaultSenderConcurrency = 500
 	// The maximum number of range descriptors to prefetch during range lookups.
 	rangeLookupPrefetchCount = 8
 )
@@ -99,6 +98,20 @@ var rangeDescriptorCacheSize = settings.RegisterIntSetting(
 	"kv.range_descriptor_cache.size",
 	"maximum number of entries in the range descriptor and leaseholder caches",
 	1e6,
+)
+var distSenderConcurrency = settings.RegisterValidatedIntSetting(
+	"kv.dist_sender.concurrency",
+	"default limit for asynchronous senders",
+	500,
+	func(v int64) error {
+		if v <= 0 {
+			return errors.Errorf("cannot set kv.dist_sender.concurrency to a negative value: %d", v)
+		}
+		if v > 10000 {
+			return errors.Errorf("cannot set kv.dist_sender.concurrency to a value greater than 10000: %v", v)
+		}
+		return nil
+	},
 )
 
 // DistSenderMetrics is the set of metrics for a given distributed sender.
@@ -167,6 +180,7 @@ type DistSender struct {
 	nodeDialer       *nodedialer.Dialer
 	rpcRetryOptions  retry.Options
 	asyncSenderSem   chan struct{}
+	asyncSenderSize  int64
 
 	// disableFirstRangeUpdates disables updates of the first range via
 	// gossip. Used by tests which want finer control of the contents of the
@@ -245,7 +259,28 @@ func NewDistSender(cfg DistSenderConfig, g *gossip.Gossip) *DistSender {
 		}
 	}
 	ds.nodeDialer = cfg.NodeDialer
-	ds.asyncSenderSem = make(chan struct{}, defaultSenderConcurrency)
+	ds.asyncSenderSem = make(chan struct{}, 10000)
+	ds.asyncSenderSize = distSenderConcurrency.Get(&ds.st.SV)
+	fill := cap(ds.asyncSenderSem) - int(ds.asyncSenderSize)
+	for i := 0; i < fill; i++ {
+		ds.asyncSenderSem <- struct{}{}
+	}
+	distSenderConcurrency.SetOnChange(&ds.st.SV, func() {
+		newSize := distSenderConcurrency.Get(&ds.st.SV)
+		diff := newSize - ds.asyncSenderSize
+		ds.asyncSenderSize = newSize
+		if diff == 0 {
+			return
+		} else if diff > 0 {
+			for i := 0; i < int(diff); i++ {
+				<-ds.asyncSenderSem
+			}
+		} else {
+			for i := 0; i < int(diff); i++ {
+				ds.asyncSenderSem <- struct{}{}
+			}
+		}
+	})
 
 	if g != nil {
 		ctx := ds.AnnotateCtx(context.Background())
