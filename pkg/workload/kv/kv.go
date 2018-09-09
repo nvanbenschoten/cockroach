@@ -154,7 +154,7 @@ func (w *kv) Ops(urls []string, reg *workload.HistogramRegistry) (workload.Query
 	buf.Reset()
 	buf.WriteString(`UPSERT INTO kv (k, v) VALUES`)
 
-	for i := 0; i < w.batchSize; i++ {
+	for i := 0; i < 1; i++ {
 		j := i * 2
 		if i > 0 {
 			buf.WriteString(", ")
@@ -198,29 +198,27 @@ type kvOp struct {
 
 func (o *kvOp) run(ctx context.Context) error {
 	if o.g.rand().Intn(100) < o.config.readPercent {
-		args := make([]interface{}, o.config.batchSize)
-		for i := 0; i < o.config.batchSize; i++ {
-			args[i] = o.g.readKey()
+		panic("unsupported")
+	}
+	start := timeutil.Now()
+	tx, err := o.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	const argCount = 2
+	args := make([]interface{}, argCount)
+	for j := 0; j < o.config.batchSize; j++ {
+		for i := 0; i < 1; i++ {
+			j := i * argCount
+			args[j+0] = o.g.writeKey()
+			args[j+1] = randomBlock(o.config, o.g.rand())
 		}
-		start := timeutil.Now()
-		rows, err := o.readStmt.QueryContext(ctx, args...)
+		_, err := tx.StmtContext(ctx, o.writeStmt).ExecContext(ctx, args...)
 		if err != nil {
 			return err
 		}
-		for rows.Next() {
-		}
-		o.hists.Get(`read`).Record(timeutil.Since(start))
-		return rows.Err()
 	}
-	const argCount = 2
-	args := make([]interface{}, argCount*o.config.batchSize)
-	for i := 0; i < o.config.batchSize; i++ {
-		j := i * argCount
-		args[j+0] = o.g.writeKey()
-		args[j+1] = randomBlock(o.config, o.g.rand())
-	}
-	start := timeutil.Now()
-	_, err := o.writeStmt.ExecContext(ctx, args...)
+	err = tx.Commit()
 	o.hists.Get(`write`).Record(timeutil.Since(start))
 	return err
 }
