@@ -487,6 +487,7 @@ type RocksDB struct {
 		cond    sync.Cond
 		closed  bool
 		pending []*rocksDBBatch
+		doneC   []chan struct{}
 	}
 
 	iters struct {
@@ -672,6 +673,8 @@ func (r *RocksDB) syncLoop() {
 
 		pending := s.pending
 		s.pending = nil
+		doneC := s.doneC
+		s.doneC = nil
 
 		s.Unlock()
 
@@ -683,7 +686,9 @@ func (r *RocksDB) syncLoop() {
 
 		for _, b := range pending {
 			b.commitErr = err
-			b.commitWG.Done()
+		}
+		for _, d := range doneC {
+			close(d)
 		}
 
 		s.Lock()
@@ -1501,7 +1506,10 @@ type rocksDBBatch struct {
 	closed             bool
 	committed          bool
 	commitErr          error
-	commitWG           sync.WaitGroup
+
+	commitC, syncC chan struct{}
+	leaderIdx      int
+	replaced       bool
 }
 
 func newRocksDBBatch(parent *RocksDB, writeOnly bool) *rocksDBBatch {
@@ -1710,6 +1718,22 @@ func makeBatchGroup(
 	} else {
 		groupSize += n
 	}
+	if leader {
+		b.commitC, b.syncC = make(chan struct{}), make(chan struct{})
+		b.leaderIdx = len(pending)
+	} else {
+		b.commitC = pending[len(pending)-1].commitC
+		b.syncC = pending[len(pending)-1].syncC
+		b.leaderIdx = pending[len(pending)-1].leaderIdx
+		if b.syncCommit && !pending[b.leaderIdx].syncCommit {
+			leader = true
+			bRepl := pending[b.leaderIdx]
+			pending[b.leaderIdx] = b
+
+			b = bRepl
+			b.replaced = true
+		}
+	}
 	pending = append(pending, b)
 	return pending, groupSize, leader
 }
@@ -1741,7 +1765,6 @@ func (r *rocksDBBatch) Commit(syncCommit bool) error {
 	// batches commits together. While the batching below often can batch 20 or
 	// 30 concurrent commits.
 	c := &r.parent.commit
-	r.commitWG.Add(1)
 	r.syncCommit = syncCommit
 
 	// The leader for the commit is the first batch to be added to the pending
@@ -1755,82 +1778,90 @@ func (r *rocksDBBatch) Commit(syncCommit bool) error {
 	if leader {
 		// We're the leader of our group. Wait for any running commit to finish and
 		// for our batch to make it to the head of the pending queue.
-		for c.committing || c.pending[0] != r {
+		for !r.replaced && (c.committing || c.pending[0] != r) {
 			c.cond.Wait()
 		}
+		if !r.replaced {
+			var pending []*rocksDBBatch
+			pending, c.pending = nextBatchGroup(c.pending)
+			c.committing = true
+			c.Unlock()
 
-		var pending []*rocksDBBatch
-		pending, c.pending = nextBatchGroup(c.pending)
-		c.committing = true
-		c.Unlock()
-
-		// We want the batch that is performing the commit to be write-only in
-		// order to avoid the (significant) overhead of indexing the operations in
-		// the other batches when they are applied.
-		committer := r
-		merge := pending[1:]
-		if !r.writeOnly && len(merge) > 0 {
-			committer = newRocksDBBatch(r.parent, true /* writeOnly */)
-			defer committer.Close()
-			merge = pending
-		}
-
-		// Bundle all of the batches together.
-		var err error
-		for _, b := range merge {
-			if err = committer.ApplyBatchRepr(b.unsafeRepr(), false /* sync */); err != nil {
-				break
+			// We want the batch that is performing the commit to be write-only in
+			// order to avoid the (significant) overhead of indexing the operations in
+			// the other batches when they are applied.
+			committer := r
+			merge := pending[1:]
+			if !r.writeOnly && len(merge) > 0 {
+				committer = newRocksDBBatch(r.parent, true /* writeOnly */)
+				defer committer.Close()
+				merge = pending
 			}
-		}
 
-		if err == nil {
-			err = committer.commitInternal(false /* sync */)
-		}
-
-		// We're done committing the batch, let the next group of batches
-		// proceed.
-		c.Lock()
-		c.committing = false
-		// NB: Multiple leaders can be waiting.
-		c.cond.Broadcast()
-		c.Unlock()
-
-		// Propagate the error to all of the batches involved in the commit. If a
-		// batch requires syncing and the commit was successful, add it to the
-		// syncing list. Note that we're reusing the pending list here for the
-		// syncing list. We need to be careful to cap the capacity so that
-		// extending this slice past the length of the pending list will result in
-		// reallocation. Otherwise we have a race between appending to this list
-		// while holding the sync lock below, and appending to the commit pending
-		// list while holding the commit lock above.
-		syncing := pending[:0:len(pending)]
-		for _, b := range pending {
-			if err != nil || !b.syncCommit {
-				b.commitErr = err
-				b.commitWG.Done()
-			} else {
-				syncing = append(syncing, b)
+			// Bundle all of the batches together.
+			var err error
+			for _, b := range merge {
+				if err = committer.ApplyBatchRepr(b.unsafeRepr(), false /* sync */); err != nil {
+					break
+				}
 			}
-		}
 
-		if len(syncing) > 0 {
-			// The commit was successful and one or more of the batches requires
-			// syncing: notify the sync goroutine.
-			s := &r.parent.syncer
-			s.Lock()
-			if len(s.pending) == 0 {
-				s.pending = syncing
-			} else {
-				s.pending = append(s.pending, syncing...)
+			if err == nil {
+				err = committer.commitInternal(false /* sync */)
 			}
-			s.cond.Signal()
-			s.Unlock()
+
+			// We're done committing the batch, let the next group of batches
+			// proceed.
+			c.Lock()
+			c.committing = false
+			// NB: Multiple leaders can be waiting.
+			c.cond.Broadcast()
+			c.Unlock()
+
+			// Propagate the error to all of the batches involved in the commit. If a
+			// batch requires syncing and the commit was successful, add it to the
+			// syncing list. Note that we're reusing the pending list here for the
+			// syncing list. We need to be careful to cap the capacity so that
+			// extending this slice past the length of the pending list will result in
+			// reallocation. Otherwise we have a race between appending to this list
+			// while holding the sync lock below, and appending to the commit pending
+			// list while holding the commit lock above.
+			syncing := pending[:0:len(pending)]
+			for _, b := range pending {
+				if err != nil || !b.syncCommit {
+					b.commitErr = err
+				} else {
+					syncing = append(syncing, b)
+				}
+			}
+			close(r.commitC)
+
+			if len(syncing) > 0 {
+				// The commit was successful and one or more of the batches requires
+				// syncing: notify the sync goroutine.
+				s := &r.parent.syncer
+				s.Lock()
+				if len(s.pending) == 0 {
+					s.pending = syncing
+				} else {
+					s.pending = append(s.pending, syncing...)
+				}
+				s.doneC = append(s.doneC, r.syncC)
+				s.cond.Signal()
+				s.Unlock()
+			}
+		} else {
+			c.Unlock()
 		}
 	} else {
 		c.Unlock()
 	}
 	// Wait for the commit/sync to finish.
-	r.commitWG.Wait()
+	if r.syncCommit {
+		<-r.syncC
+	} else {
+		<-r.commitC
+	}
 	return r.commitErr
 }
 
