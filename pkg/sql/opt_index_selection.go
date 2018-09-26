@@ -21,9 +21,11 @@ import (
 
 	"github.com/pkg/errors"
 
+	"github.com/cockroachdb/cockroach/pkg/keys"
 	"github.com/cockroachdb/cockroach/pkg/roachpb"
 	"github.com/cockroachdb/cockroach/pkg/sql/opt"
 	"github.com/cockroachdb/cockroach/pkg/sql/opt/constraint"
+	"github.com/cockroachdb/cockroach/pkg/sql/opt/exec"
 	"github.com/cockroachdb/cockroach/pkg/sql/opt/exec/execbuilder"
 	"github.com/cockroachdb/cockroach/pkg/sql/opt/idxconstraint"
 	"github.com/cockroachdb/cockroach/pkg/sql/opt/memo"
@@ -32,6 +34,7 @@ import (
 	"github.com/cockroachdb/cockroach/pkg/sql/pgwire/pgerror"
 	"github.com/cockroachdb/cockroach/pkg/sql/sem/tree"
 	"github.com/cockroachdb/cockroach/pkg/sql/sqlbase"
+	"github.com/cockroachdb/cockroach/pkg/util"
 	"github.com/cockroachdb/cockroach/pkg/util/encoding"
 	"github.com/cockroachdb/cockroach/pkg/util/log"
 )
@@ -229,7 +232,7 @@ func (p *planner) selectIndex(
 	s.run.isSecondaryIndex = (c.index != &s.desc.PrimaryIndex)
 
 	var err error
-	s.spans, err = spansFromConstraint(s.desc, c.index, c.ic.Constraint())
+	s.spans, err = spansFromConstraint(s.desc, c.index, c.ic.Constraint(), exec.ColumnOrdinalSet{})
 	if err != nil {
 		return nil, errors.Wrapf(
 			err, "constraint = %s, table ID = %d, index ID = %d",
@@ -495,7 +498,7 @@ func (v *indexInfo) makeIndexConstraints(
 func unconstrainedSpans(
 	tableDesc *sqlbase.TableDescriptor, index *sqlbase.IndexDescriptor,
 ) (roachpb.Spans, error) {
-	return spansFromConstraint(tableDesc, index, nil)
+	return spansFromConstraint(tableDesc, index, nil, exec.ColumnOrdinalSet{})
 }
 
 // spansFromConstraint converts the spans in a Constraint to roachpb.Spans.
@@ -503,7 +506,10 @@ func unconstrainedSpans(
 // interstices are pieces of the key that need to be inserted after each column
 // (for interleavings).
 func spansFromConstraint(
-	tableDesc *sqlbase.TableDescriptor, index *sqlbase.IndexDescriptor, c *constraint.Constraint,
+	tableDesc *sqlbase.TableDescriptor,
+	index *sqlbase.IndexDescriptor,
+	c *constraint.Constraint,
+	needed exec.ColumnOrdinalSet,
 ) (roachpb.Spans, error) {
 	interstices := make([][]byte, len(index.ColumnDirections)+len(index.ExtraColumnIDs)+1)
 	interstices[0] = sqlbase.MakeIndexKeyPrefix(tableDesc, index.ID)
@@ -529,20 +535,21 @@ func spansFromConstraint(
 
 	if c == nil || c.IsUnconstrained() {
 		// Encode a full span.
-		sp, err := spanFromConstraintSpan(tableDesc, index, &constraint.UnconstrainedSpan, interstices)
+		sp, err := spanFromConstraintSpan(
+			tableDesc, index, &constraint.UnconstrainedSpan, interstices, needed)
 		if err != nil {
 			return nil, err
 		}
-		return roachpb.Spans{sp}, nil
+		return sp, nil
 	}
 
-	spans := make(roachpb.Spans, c.Spans.Count())
-	for i := range spans {
-		s, err := spanFromConstraintSpan(tableDesc, index, c.Spans.Get(i), interstices)
+	var spans roachpb.Spans
+	for i := 0; i < c.Spans.Count(); i++ {
+		s, err := spanFromConstraintSpan(tableDesc, index, c.Spans.Get(i), interstices, needed)
 		if err != nil {
 			return nil, err
 		}
-		spans[i] = s
+		spans = append(spans, s...)
 	}
 	return spans, nil
 }
@@ -596,13 +603,14 @@ func spanFromConstraintSpan(
 	index *sqlbase.IndexDescriptor,
 	cs *constraint.Span,
 	interstices [][]byte,
-) (roachpb.Span, error) {
+	needed exec.ColumnOrdinalSet,
+) (roachpb.Spans, error) {
 	var s roachpb.Span
 	var err error
 	// Encode each logical part of the start key.
 	s.Key, err = encodeConstraintKey(index, cs.StartKey(), interstices)
 	if err != nil {
-		return roachpb.Span{}, err
+		return nil, err
 	}
 	if cs.StartBoundary() == constraint.IncludeBoundary {
 		s.Key = append(s.Key, interstices[cs.StartKey().Length()]...)
@@ -613,9 +621,43 @@ func spanFromConstraintSpan(
 	// Encode each logical part of the end key.
 	s.EndKey, err = encodeConstraintKey(index, cs.EndKey(), interstices)
 	if err != nil {
-		return roachpb.Span{}, err
+		return nil, err
 	}
 	s.EndKey = append(s.EndKey, interstices[cs.EndKey().Length()]...)
+
+	// Optimization: for single key lookups on a table with multiple column
+	// families, only scan the relevant column families.
+	if needed.Len() > 0 &&
+		index.ID == tableDesc.PrimaryIndex.ID &&
+		len(tableDesc.Families) > 1 &&
+		cs.StartKey().Length() == len(tableDesc.PrimaryIndex.ColumnIDs) &&
+		s.Key.Equal(s.EndKey) {
+		neededFams := neededColumnFamilyIDs(tableDesc, needed)
+		if len(neededFams) == 0 {
+			// The primary key is sufficient.
+			neededFams = append(neededFams, sqlbase.FamilyID(0))
+		}
+		if len(neededFams) < len(tableDesc.Families) {
+			spans := make(roachpb.Spans, 0, len(neededFams))
+			for i, fam := range neededFams {
+				var span roachpb.Span
+				span.Key = make(roachpb.Key, len(s.Key))
+				copy(span.Key, s.Key)
+				span.Key = keys.MakeFamilyKey(span.Key, uint32(fam))
+				span.EndKey = span.Key.PrefixEnd()
+				if i > 0 && fam <= neededFams[i-1] {
+					panic(fmt.Sprintf("out of order family ID: %d", fam))
+				}
+				if i > 0 && fam == neededFams[i-1]+1 {
+					// Adjacent family IDs. We can merge this span with the previous one.
+					spans[len(spans)-1].EndKey = span.EndKey
+				} else {
+					spans = append(spans, span)
+				}
+			}
+			return spans, nil
+		}
+	}
 
 	// We tighten the end key to prevent reading interleaved children after the
 	// last parent key. If cs.End.Inclusive is true, we also advance the key as
@@ -623,8 +665,34 @@ func spanFromConstraintSpan(
 	endInclusive := cs.EndBoundary() == constraint.IncludeBoundary
 	s.EndKey, err = sqlbase.AdjustEndKeyForInterleave(tableDesc, index, s.EndKey, endInclusive)
 	if err != nil {
-		return roachpb.Span{}, err
+		return nil, err
+	}
+	return roachpb.Spans{s}, nil
+}
+
+func neededColumnFamilyIDs(
+	tableDesc *sqlbase.TableDescriptor, neededCols exec.ColumnOrdinalSet,
+) []sqlbase.FamilyID {
+	colIdxMap := tableDesc.ColumnIdxMap()
+
+	// Primary index columns are in every column family, so we can disregard them.
+	var primaryIndexCols util.FastIntSet
+	for _, colID := range tableDesc.PrimaryIndex.ColumnIDs {
+		primaryIndexCols.Add(int(colID))
 	}
 
-	return s, nil
+	var needed []sqlbase.FamilyID
+	for _, family := range tableDesc.Families {
+		for _, columnID := range family.ColumnIDs {
+			if primaryIndexCols.Contains(int(columnID)) {
+				continue
+			}
+			columnOrdinal := colIdxMap[columnID]
+			if neededCols.Contains(columnOrdinal) {
+				needed = append(needed, family.ID)
+				break
+			}
+		}
+	}
+	return needed
 }
