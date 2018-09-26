@@ -856,6 +856,7 @@ has no relationship with the commit order of concurrent transactions.</p>
 </span></td></tr>
 <tr><td><code>right(input: <a href="string.html">string</a>, return_set: <a href="int.html">int</a>) &rarr; <a href="string.html">string</a></code></td><td><span class="funcdesc"><p>Returns the last <code>return_set</code> characters from <code>input</code>.</p>
 </span></td></tr>
+<tr><td><code>roachprod_training(name: <a href="string.html">string</a>) &rarr; <a href="string.html">string</a></code></td><td></td></tr>
 <tr><td><code>rpad(string: <a href="string.html">string</a>, length: <a href="int.html">int</a>) &rarr; <a href="string.html">string</a></code></td><td><span class="funcdesc"><p>Pads <code>string</code> to <code>length</code> by adding ’ ’ to the right of string. If <code>string</code> is longer than <code>length</code> it is truncated.</p>
 </span></td></tr>
 <tr><td><code>rpad(string: <a href="string.html">string</a>, length: <a href="int.html">int</a>, fill: <a href="string.html">string</a>) &rarr; <a href="string.html">string</a></code></td><td><span class="funcdesc"><p>Pads <code>string</code> to <code>length</code> by adding <code>fill</code> to the right of <code>string</code>. If <code>string</code> is longer than <code>length</code> it is truncated.</p>

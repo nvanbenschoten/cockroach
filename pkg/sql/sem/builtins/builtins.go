@@ -384,6 +384,18 @@ var builtins = map[string]builtinDefinition{
 	// - text(inet)
 	// - inet_same_family
 
+	"roachprod_training": makeBuiltin(defProps(),
+		tree.Overload{
+			Types:      tree.ArgTypes{{"name", types.String}},
+			ReturnType: tree.FixedReturnType(types.String),
+			Fn: func(_ *tree.EvalContext, args tree.Datums) (tree.Datum, error) {
+				name := tree.MustBeDString(args[0])
+				text := fmt.Sprintf("Hello %s, welcome to the roachprod training!", name)
+				return tree.NewDString(text), nil
+			},
+		},
+	),
+
 	"abbrev": makeBuiltin(defProps(),
 		tree.Overload{
 			Types:      tree.ArgTypes{{"val", types.INet}},
