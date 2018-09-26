@@ -129,8 +129,6 @@ query T
 SELECT message FROM [SHOW KV TRACE FOR SESSION]
  WHERE message LIKE 'fetched:%' OR message LIKE 'output row%'
 ----
-fetched: /abc/primary/2/'two' -> NULL
-output row: [2 'two' NULL]
 
 statement ok
 SET tracing = on,kv,results; SELECT b FROM abc@foo; SET tracing = off
@@ -247,8 +245,6 @@ query T
 SELECT message FROM [SHOW KV TRACE FOR SESSION]
  WHERE message LIKE 'fetched:%' OR message LIKE 'output row%'
 ----
-fetched: /abc/primary/2/'two' -> NULL
-output row: [2 'two' NULL]
 
 statement ok
 SET tracing = on,kv,results; SELECT DISTINCT * FROM (VALUES (1, 2, 3), (4, 5, 6), (1, 2, 3), (1, 2, 4)) AS a; SET tracing = off
