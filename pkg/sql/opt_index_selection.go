@@ -232,7 +232,7 @@ func (p *planner) selectIndex(
 	s.run.isSecondaryIndex = (c.index != &s.desc.PrimaryIndex)
 
 	var err error
-	s.spans, err = spansFromConstraint(s.desc, c.index, c.ic.Constraint(), exec.ColumnOrdinalSet{})
+	s.spans, err = spansFromConstraint(s.desc, c.index, c.ic.Constraint(), s.valNeededForCol)
 	if err != nil {
 		return nil, errors.Wrapf(
 			err, "constraint = %s, table ID = %d, index ID = %d",

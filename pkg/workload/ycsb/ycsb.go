@@ -51,6 +51,30 @@ const (
 		FIELD8 TEXT,
 		FIELD9 TEXT
 	)`
+	usertableSchemaRelationalFamilies = `(
+		ycsb_key VARCHAR(255) PRIMARY KEY NOT NULL,
+		FIELD0 TEXT,
+		FIELD1 TEXT,
+		FIELD2 TEXT,
+		FIELD3 TEXT,
+		FIELD4 TEXT,
+		FIELD5 TEXT,
+		FIELD6 TEXT,
+		FIELD7 TEXT,
+		FIELD8 TEXT,
+		FIELD9 TEXT,
+		FAMILY (ycsb_key),
+		FAMILY (FIELD0),
+		FAMILY (FIELD1),
+		FAMILY (FIELD2),
+		FAMILY (FIELD3),
+		FAMILY (FIELD4),
+		FAMILY (FIELD5),
+		FAMILY (FIELD6),
+		FAMILY (FIELD7),
+		FAMILY (FIELD8),
+		FAMILY (FIELD9)
+	)`
 	usertableSchemaJSON = `(
 		ycsb_key VARCHAR(255) PRIMARY KEY NOT NULL,
 		FIELD JSONB
@@ -64,6 +88,7 @@ type ycsb struct {
 	seed        int64
 	initialRows int
 	json        bool
+	families    bool
 	splits      int
 
 	workload                                   string
@@ -88,6 +113,7 @@ var ycsbMeta = workload.Meta{
 		g.flags.IntVar(&g.initialRows, `initial-rows`, 10000,
 			`Initial number of rows to sequentially insert before beginning Zipfian workload`)
 		g.flags.BoolVar(&g.json, `json`, false, `Use JSONB rather than relational data`)
+		g.flags.BoolVar(&g.families, `families`, false, `Use column families`)
 		g.flags.IntVar(&g.splits, `splits`, 0, `Number of splits to perform before starting normal operations`)
 		g.flags.StringVar(&g.workload, `workload`, `B`, `Workload type. Choose from A-F.`)
 		// TODO(dan): g.flags.Uint64Var(&g.maxWrites, `max-writes`,
@@ -165,6 +191,8 @@ func (g *ycsb) Tables() []workload.Table {
 	}
 	if g.json {
 		usertable.Schema = usertableSchemaJSON
+	} else if g.families {
+		usertable.Schema = usertableSchemaRelationalFamilies
 	} else {
 		usertable.Schema = usertableSchemaRelational
 	}
