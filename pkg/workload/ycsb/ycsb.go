@@ -53,16 +53,16 @@ const (
 	)`
 	usertableSchemaRelationalFamilies = `(
 		ycsb_key VARCHAR(255) PRIMARY KEY NOT NULL,
-		FIELD0 TEXT,
-		FIELD1 TEXT,
-		FIELD2 TEXT,
-		FIELD3 TEXT,
-		FIELD4 TEXT,
-		FIELD5 TEXT,
-		FIELD6 TEXT,
-		FIELD7 TEXT,
-		FIELD8 TEXT,
-		FIELD9 TEXT,
+		FIELD0 TEXT NOT NULL DEFAULT '',
+		FIELD1 TEXT NOT NULL DEFAULT '',
+		FIELD2 TEXT NOT NULL DEFAULT '',
+		FIELD3 TEXT NOT NULL DEFAULT '',
+		FIELD4 TEXT NOT NULL DEFAULT '',
+		FIELD5 TEXT NOT NULL DEFAULT '',
+		FIELD6 TEXT NOT NULL DEFAULT '',
+		FIELD7 TEXT NOT NULL DEFAULT '',
+		FIELD8 TEXT NOT NULL DEFAULT '',
+		FIELD9 TEXT NOT NULL DEFAULT '',
 		FAMILY (ycsb_key),
 		FAMILY (FIELD0),
 		FAMILY (FIELD1),
@@ -176,7 +176,7 @@ func (g *ycsb) Tables() []workload.Table {
 				if g.json {
 					return []interface{}{key, "{}"}
 				}
-				return []interface{}{key, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil}
+				return []interface{}{key, "", "", "", "", "", "", "", "", "", ""}
 			},
 		),
 		Splits: workload.Tuples(
