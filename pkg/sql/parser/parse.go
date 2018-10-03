@@ -25,6 +25,7 @@ package parser
 
 import (
 	"fmt"
+	"reflect"
 	"strings"
 
 	"github.com/cockroachdb/cockroach/pkg/sql/coltypes"
@@ -45,19 +46,33 @@ func (p *Parser) Parse(sql string) (stmts tree.StatementList, err error) {
 }
 
 func (p *Parser) parseWithDepth(depth int, sql string) (stmts tree.StatementList, err error) {
-	p.scanner.init(sql)
-	if p.parserImpl.Parse(&p.scanner) != 0 {
-		var err *pgerror.Error
-		if feat := p.scanner.lastError.unimplementedFeature; feat != "" {
-			err = pgerror.UnimplementedWithDepth(depth+1, feat, p.scanner.lastError.msg)
-		} else {
-			err = pgerror.NewErrorWithDepth(depth+1, pgerror.CodeSyntaxError, p.scanner.lastError.msg)
+	// Parsing is tricky to get right all the time. Let's parse 100 times and
+	// verify the results are always the same, just to be sure!
+	const trials = 100
+	var stmtTrials []tree.StatementList
+	for range make([]struct{}, trials) { // fancy syntax, so fast
+		*p = Parser{} // reset
+		p.scanner.init(sql)
+		if p.parserImpl.Parse(&p.scanner) != 0 {
+			var err *pgerror.Error
+			if feat := p.scanner.lastError.unimplementedFeature; feat != "" {
+				err = pgerror.UnimplementedWithDepth(depth+1, feat, p.scanner.lastError.msg)
+			} else {
+				err = pgerror.NewErrorWithDepth(depth+1, pgerror.CodeSyntaxError, p.scanner.lastError.msg)
+			}
+			err.Hint = p.scanner.lastError.hint
+			err.Detail = p.scanner.lastError.detail
+			return nil, err
 		}
-		err.Hint = p.scanner.lastError.hint
-		err.Detail = p.scanner.lastError.detail
-		return nil, err
+		stmtCopy := append(tree.StatementList(nil), p.scanner.stmts...)
+		stmtTrials = append(stmtTrials, stmtCopy)
 	}
-	return p.scanner.stmts, nil
+	for i := range make([]struct{}, trials-1) {
+		if !reflect.DeepEqual(stmtTrials[0], stmtTrials[i+1]) {
+			panic("parsing error")
+		}
+	}
+	return stmtTrials[0], nil
 }
 
 // unaryNegation constructs an AST node for a negation. This attempts
