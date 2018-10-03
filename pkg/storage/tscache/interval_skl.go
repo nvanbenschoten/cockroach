@@ -23,6 +23,7 @@ import (
 	"sync/atomic"
 	"time"
 	"unsafe"
+	"runtime"
 
 	"github.com/andy-kimball/arenaskl"
 
@@ -275,8 +276,8 @@ func (s *intervalSkl) AddRange(from, to []byte, opt rangeOptions, val cacheValue
 func (s *intervalSkl) addRange(from, to []byte, opt rangeOptions, val cacheValue) *sklPage {
 	// Acquire the rotation mutex read lock so that the page will not be rotated
 	// while add or lookup operations are in progress.
-	s.rotMutex.RLock()
-	defer s.rotMutex.RUnlock()
+	s.rotMutex.Lock()
+	defer s.rotMutex.Unlock()
 
 	// If floor ts is >= requested timestamp, then no need to perform a search
 	// or add any records.
@@ -558,6 +559,7 @@ func (p *sklPage) lookupTimestampRange(from, to []byte, opt rangeOptions) cacheV
 func (p *sklPage) addNode(
 	it *arenaskl.Iterator, key []byte, val cacheValue, opt nodeOptions, mustInit bool,
 ) error {
+	runtime.Gosched()
 	// Array with constant size will remain on the stack.
 	var arr [encodedValSize * 2]byte
 	var keyVal, gapVal cacheValue
