@@ -154,6 +154,7 @@ CREATE TABLE bank.accounts (
 func (s *bankState) transferMoney(
 	ctx context.Context, c *cluster, idx, numAccounts, maxTransfer int,
 ) {
+	defer c.l.Printf("client %d shutting down\n", idx)
 	client := &s.clients[idx-1]
 	for !s.done(ctx) {
 		if err := client.transferMoney(numAccounts, maxTransfer); err != nil {
@@ -161,11 +162,10 @@ func (s *bankState) transferMoney(
 			if !testutils.IsSQLRetryableError(err) {
 				// Report the err and terminate.
 				s.errChan <- err
-				break
+				return
 			}
 		}
 	}
-	c.l.Printf("client %d shutting down\n", idx)
 	s.errChan <- nil
 }
 
@@ -235,13 +235,12 @@ func (s *bankState) chaosMonkey(
 				s.initClient(ctx, c, i)
 			}
 		}
+		preCount := s.counts()
 		if stopClients {
 			for i := 0; i < len(s.clients); i++ {
 				s.clients[i].Unlock()
 			}
 		}
-
-		preCount := s.counts()
 
 		madeProgress := func() bool {
 			newCounts := s.counts()
@@ -286,6 +285,8 @@ func (s *bankState) waitClientsStop(
 	for doneClients := 0; doneClients < len(s.clients); {
 		select {
 		case <-s.teardown:
+			return
+
 		case <-ctx.Done():
 			t.Fatal(ctx.Err())
 
@@ -305,6 +306,19 @@ func (s *bankState) waitClientsStop(
 						fmt.Println(stacks())
 						c.l.Printf("stall detected at round %d, no forward progress for %s\n",
 							curRound, stallDuration)
+						done := false
+						for i := 0; i < 600 && !done; i++ {
+							dur := timeutil.Now().Sub(stallTime)
+							select {
+							case err := <-s.errChan:
+								c.l.Printf("monkey unblocked %v, progress!!: %v\n", err, dur)
+								done = true
+								continue
+							default:
+							}
+							c.l.Printf("monkey still blocked, not progress: %v\n", dur)
+							time.Sleep(1 * time.Second)
+						}
 						time.Sleep(100 * time.Minute)
 					}
 				} else {

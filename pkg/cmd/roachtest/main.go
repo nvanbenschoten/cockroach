@@ -18,8 +18,14 @@ package main
 import (
 	"fmt"
 	"os"
+	"context"
+	"runtime"
+	"net/http"
 
 	"github.com/spf13/cobra"
+
+	"github.com/cockroachdb/cockroach/pkg/util/envutil"
+	"github.com/cockroachdb/cockroach/pkg/util/log"
 )
 
 func main() {
@@ -80,6 +86,26 @@ Use 'roachtest run -n' to see a list of all tests.
 				r.loadBuildVersion()
 			}
 			registerTests(r)
+
+
+			b := envutil.EnvOrDefaultInt64("COCKROACH_BLOCK_PROFILE_RATE",
+				10000000 /* 1 sample per 10 milliseconds spent blocking */)
+
+			m := envutil.EnvOrDefaultInt("COCKROACH_MUTEX_PROFILE_RATE",
+				1000 /* 1 sample per 1000 mutex contention events */)
+			runtime.SetBlockProfileRate(int(b))
+			runtime.SetMutexProfileFraction(m)
+
+			go func() {
+				err := http.ListenAndServe(":20299", nil)
+				if err != nil {
+					log.Error(context.Background(), err)
+				}
+			}()
+
+
+
+
 			os.Exit(r.Run(args))
 			return nil
 		},
