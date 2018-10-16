@@ -404,8 +404,24 @@ func (s *Store) canApplySnapshotLocked(
 		// snapshots can be applied with no further checks even if they widen the
 		// existing replica—we can't reject them at this point—but see the comments
 		// in Replica.maybeAcquireSnapshotMergeLock for how this is made safe.
-		existingDesc := (*Replica)(v).Desc()
+		r := (*Replica)(v)
+		existingDesc := r.Desc()
 		if !snapHeader.IsPreemptive() || !existingDesc.EndKey.Less(desc.EndKey) {
+			status := r.RaftStatus()
+			msg := snapHeader.RaftMessageRequest.Message
+			snapMeta := msg.Snapshot.Metadata
+			snapIndex, snapTerm := snapMeta.Index, snapMeta.Term
+			if status != nil && status.Commit >= snapIndex {
+				log.Infof(ctx, "%x [commit: %d] ignored snapshot [index: %d, term: %d]",
+					status.ID, status.Commit, snapIndex, snapTerm)
+				r.sendRaftMessage(ctx, raftpb.Message{
+					From:  status.ID,
+					To:    msg.From,
+					Type:  raftpb.MsgAppResp,
+					Index: status.Commit,
+				})
+				return nil, errors.Errorf("ignored snapshot; unneeded")
+			}
 			return nil, nil
 		}
 
