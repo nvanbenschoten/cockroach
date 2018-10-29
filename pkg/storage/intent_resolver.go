@@ -178,6 +178,7 @@ func (cq *contentionQueue) add(
 	func(newWIErr *roachpb.WriteIntentError, newIntentTxn *enginepb.TxnMeta),
 	*roachpb.WriteIntentError,
 	bool,
+	*roachpb.Error,
 ) {
 	if len(wiErr.Intents) != 1 {
 		log.Fatalf(ctx, "write intent error must contain only a single intent: %s", wiErr)
@@ -213,106 +214,9 @@ func (cq *contentionQueue) add(
 	curElement = contended.ll.PushBack(curPusher)
 	cq.mu.Unlock()
 
-	// Delay before pushing in order to detect dependency cycles.
-	const dependencyCyclePushDelay = 100 * time.Millisecond
-
-	// Wait on prior pusher, if applicable.
-	var done bool
-	if waitCh != nil {
-		var detectCh chan struct{}
-		var detectReady <-chan time.Time
-		// If the current pusher has an active txn, we need to push the
-		// transaction which owns the intent to detect dependency cycles.
-		// To avoid unnecessary push traffic, insert a delay by
-		// instantiating the detectReady, which sets detectCh when it
-		// fires. When detectCh receives, it sends a push to the most
-		// recent txn to own the intent.
-		if curPusher.detectCh != nil {
-			detectReady = time.After(dependencyCyclePushDelay)
-		}
-
-	Loop:
-		for {
-			select {
-			case txnMeta, ok := <-waitCh:
-				if !ok {
-					log.Fatalf(ctx, "the wait channel of a prior pusher was used twice (pusher=%s)", txnMeta)
-				}
-				// If the prior pusher wrote an intent, push it instead by
-				// creating a copy of the WriteIntentError with updated txn.
-				if txnMeta != nil {
-					log.VEventf(ctx, 3, "%s exiting contention queue to push %s", txnID(curPusher.txn), txnMeta.ID.Short())
-					wiErrCopy := *wiErr
-					wiErrCopy.Intents = []roachpb.Intent{
-						{
-							Span:   intent.Span,
-							Txn:    *txnMeta,
-							Status: roachpb.PENDING,
-						},
-					}
-					wiErr = &wiErrCopy
-				} else {
-					// No intent was left by the prior pusher; don't push, go
-					// immediately to retrying the conflicted request.
-					log.VEventf(ctx, 3, "%s exiting contention queue to proceed", txnID(curPusher.txn))
-					done = true
-				}
-				break Loop
-
-			case <-ctx.Done():
-				// The pusher's context is done. Return without pushing.
-				done = true
-				break Loop
-
-			case <-detectReady:
-				// When the detect timer fires, set detectCh and loop.
-				log.VEventf(ctx, 3, "%s cycle detection is ready", txnID(curPusher.txn))
-				detectCh = curPusher.detectCh
-
-			case <-detectCh:
-				cq.mu.Lock()
-				frontOfQueue := curElement == contended.ll.Front()
-				pusheeTxn := contended.lastTxnMeta
-				cq.mu.Unlock()
-				// If we're at the start of the queue, or there's no pushee
-				// transaction (the previous pusher didn't leave an intent),
-				// loop and wait for the wait channel to signal.
-				if frontOfQueue {
-					log.VEventf(ctx, 3, "%s at front of queue; breaking from loop", txnID(curPusher.txn))
-					break Loop
-				} else if pusheeTxn == nil {
-					log.VEventf(ctx, 3, "%s cycle detection skipped because there is no txn to push", txnID(curPusher.txn))
-					detectCh = nil
-					detectReady = time.After(dependencyCyclePushDelay)
-					continue
-				}
-				pushReq := &roachpb.PushTxnRequest{
-					RequestHeader: roachpb.RequestHeader{
-						Key: pusheeTxn.Key,
-					},
-					PusherTxn: getPusherTxn(h),
-					PusheeTxn: *pusheeTxn,
-					PushTo:    h.Timestamp,
-					Now:       cq.store.Clock().Now(),
-					PushType:  roachpb.PUSH_ABORT,
-				}
-				b := &client.Batch{}
-				b.AddRawRequest(pushReq)
-				log.VEventf(ctx, 3, "%s pushing %s to detect dependency cycles", txnID(curPusher.txn), pusheeTxn.ID.Short())
-				if err := cq.store.db.Run(ctx, b); err != nil {
-					log.VErrEventf(ctx, 2, "while waiting in push contention queue to push %s: %s", pusheeTxn.ID.Short(), b.MustPErr())
-					done = true // done=true to avoid uselessly trying to push and resolve
-					break Loop
-				}
-				// Note that this pusher may have aborted the pushee, but it
-				// should still wait on the previous pusher's wait channel.
-				detectCh = nil
-				detectReady = time.After(dependencyCyclePushDelay)
-			}
-		}
-	}
-
-	return func(newWIErr *roachpb.WriteIntentError, newIntentTxn *enginepb.TxnMeta) {
+	// Create the cleanup function which will be called after the original
+	// request completes.
+	cleanup := func(newWIErr *roachpb.WriteIntentError, newIntentTxn *enginepb.TxnMeta) {
 		if newWIErr == nil {
 			log.VEventf(ctx, 3, "%s finished, leaving intent? %t (owned by %s)", txnID(curPusher.txn), newIntentTxn != nil, newIntentTxn)
 		} else {
@@ -357,7 +261,105 @@ func (cq *contentionQueue) add(
 		curPusher.waitCh <- newIntentTxn
 		close(curPusher.waitCh)
 		cq.mu.Unlock()
-	}, wiErr, done
+	}
+
+	// Delay before pushing in order to detect dependency cycles.
+	const dependencyCyclePushDelay = 100 * time.Millisecond
+
+	// No prior pusher to wait on.
+	if waitCh == nil {
+		return cleanup, wiErr, false, nil
+	}
+
+	// Wait on prior pusher.
+	var detectCh chan struct{}
+	var detectReady <-chan time.Time
+	// If the current pusher has an active txn, we need to push the
+	// transaction which owns the intent to detect dependency cycles.
+	// To avoid unnecessary push traffic, insert a delay by
+	// instantiating the detectReady, which sets detectCh when it
+	// fires. When detectCh receives, it sends a push to the most
+	// recent txn to own the intent.
+	if curPusher.detectCh != nil {
+		detectReady = time.After(dependencyCyclePushDelay)
+	}
+	for {
+		select {
+		case txnMeta, ok := <-waitCh:
+			if !ok {
+				log.Fatalf(ctx, "the wait channel of a prior pusher was used twice (pusher=%s)", txnMeta)
+			}
+			// If the prior pusher wrote an intent, push it instead by
+			// creating a copy of the WriteIntentError with updated txn.
+			if txnMeta != nil {
+				log.VEventf(ctx, 3, "%s exiting contention queue to push %s", txnID(curPusher.txn), txnMeta.ID.Short())
+				wiErrCopy := *wiErr
+				wiErrCopy.Intents = []roachpb.Intent{
+					{
+						Span:   intent.Span,
+						Txn:    *txnMeta,
+						Status: roachpb.PENDING,
+					},
+				}
+				wiErr = &wiErrCopy
+				return cleanup, wiErr, false, nil
+			}
+			// No intent was left by the prior pusher; don't push, go
+			// immediately to retrying the conflicted request.
+			log.VEventf(ctx, 3, "%s exiting contention queue to proceed", txnID(curPusher.txn))
+			return cleanup, wiErr, true, nil
+
+		case <-ctx.Done():
+			// The pusher's context is done. Return without pushing.
+			cleanup(nil, nil)
+			return nil, nil, true, roachpb.NewError(errors.Wrap(ctx.Err(), "aborted during contentionQueue.add"))
+
+		case <-detectReady:
+			// When the detect timer fires, set detectCh and loop.
+			log.VEventf(ctx, 3, "%s cycle detection is ready", txnID(curPusher.txn))
+			detectCh = curPusher.detectCh
+
+		case <-detectCh:
+			cq.mu.Lock()
+			frontOfQueue := curElement == contended.ll.Front()
+			pusheeTxn := contended.lastTxnMeta
+			cq.mu.Unlock()
+			// If we're at the start of the queue, or there's no pushee
+			// transaction (the previous pusher didn't leave an intent),
+			// loop and wait for the wait channel to signal.
+			if frontOfQueue {
+				log.VEventf(ctx, 3, "%s at front of queue; breaking from loop", txnID(curPusher.txn))
+				return cleanup, wiErr, false, nil
+			} else if pusheeTxn == nil {
+				log.VEventf(ctx, 3, "%s cycle detection skipped because there is no txn to push", txnID(curPusher.txn))
+				detectCh = nil
+				detectReady = time.After(dependencyCyclePushDelay)
+				continue
+			}
+			pushReq := &roachpb.PushTxnRequest{
+				RequestHeader: roachpb.RequestHeader{
+					Key: pusheeTxn.Key,
+				},
+				PusherTxn: getPusherTxn(h),
+				PusheeTxn: *pusheeTxn,
+				PushTo:    h.Timestamp,
+				Now:       cq.store.Clock().Now(),
+				PushType:  roachpb.PUSH_ABORT,
+			}
+			b := &client.Batch{}
+			b.AddRawRequest(pushReq)
+			log.VEventf(ctx, 3, "%s pushing %s to detect dependency cycles", txnID(curPusher.txn), pusheeTxn.ID.Short())
+			if err := cq.store.db.Run(ctx, b); err != nil {
+				log.VErrEventf(ctx, 2, "while waiting in push contention queue to push %s: %s", pusheeTxn.ID.Short(), b.MustPErr())
+				cleanup(nil, nil)
+				return nil, nil, true, b.MustPErr()
+			}
+			// Note that this pusher may have aborted the pushee, but it
+			// should still wait on the previous pusher's wait channel.
+			detectCh = nil
+			detectReady = time.After(dependencyCyclePushDelay)
+		}
+	}
 }
 
 // intentResolver manages the process of pushing transactions and
@@ -421,11 +423,12 @@ func (ir *intentResolver) processWriteIntentError(
 	var cleanup func(*roachpb.WriteIntentError, *enginepb.TxnMeta)
 	if len(wiErr.Intents) == 1 && len(wiErr.Intents[0].Span.EndKey) == 0 {
 		var done bool
+		var pErr *roachpb.Error
 		// Note that the write intent error may be mutated here in the event
 		// that this pusher is queued to wait for a different transaction
 		// instead.
-		if cleanup, wiErr, done = ir.contentionQ.add(ctx, wiErr, h); done {
-			return cleanup, nil
+		if cleanup, wiErr, done, pErr = ir.contentionQ.add(ctx, wiErr, h); done || pErr != nil {
+			return cleanup, pErr
 		}
 	}
 
