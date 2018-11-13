@@ -441,11 +441,17 @@ func resolveLocalIntents(
 	}
 
 	min, max := txn.InclusiveTimeBounds()
-	iter := batch.NewIterator(engine.IterOptions{
+	opts := engine.IterOptions{
 		MinTimestampHint: min,
 		MaxTimestampHint: max,
 		UpperBound:       desc.EndKey.AsRawKey(),
-	})
+	}
+	if !timeboundIter.Get(&evalCtx.ClusterSettings().SV) {
+		opts = engine.IterOptions{
+			UpperBound: desc.EndKey.AsRawKey(),
+		}
+	}
+	iter := batch.NewIterator(opts)
 	iterAndBuf := engine.GetBufUsingIter(iter)
 	defer iterAndBuf.Cleanup()
 

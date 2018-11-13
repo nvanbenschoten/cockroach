@@ -55,7 +55,7 @@ func ResolveIntentRange(
 
 	// Use a time-bounded iterator as an optimization if indicated.
 	var iterAndBuf engine.IterAndBuf
-	if args.MinTimestamp != (hlc.Timestamp{}) {
+	if args.MinTimestamp != (hlc.Timestamp{}) && timeboundIter.Get(&cArgs.EvalCtx.ClusterSettings().SV) {
 		iter := batch.NewIterator(engine.IterOptions{
 			MinTimestampHint: args.MinTimestamp,
 			MaxTimestampHint: args.IntentTxn.Timestamp,

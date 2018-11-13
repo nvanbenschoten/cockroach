@@ -18,6 +18,7 @@ import (
 	"context"
 
 	"github.com/cockroachdb/cockroach/pkg/roachpb"
+	"github.com/cockroachdb/cockroach/pkg/settings"
 	"github.com/cockroachdb/cockroach/pkg/storage/batcheval/result"
 	"github.com/cockroachdb/cockroach/pkg/storage/engine"
 	"github.com/cockroachdb/cockroach/pkg/util/log"
@@ -27,6 +28,12 @@ import (
 func init() {
 	RegisterCommand(roachpb.RefreshRange, DefaultDeclareKeys, RefreshRange)
 }
+
+var timeboundIter = settings.RegisterBoolSetting(
+	"kv.timebound_iter.enabled",
+	"if set, timebound iterators will be used",
+	true,
+)
 
 // RefreshRange scans the key range specified by start key through end
 // key, and returns an error on any keys written more recently than
@@ -44,11 +51,17 @@ func RefreshRange(
 
 	// Use a time-bounded iterator to avoid unnecessarily iterating over
 	// older data.
-	iter := batch.NewIterator(engine.IterOptions{
+	opts := engine.IterOptions{
 		MinTimestampHint: h.Txn.OrigTimestamp,
 		MaxTimestampHint: h.Txn.Timestamp,
 		UpperBound:       args.EndKey,
-	})
+	}
+	if !timeboundIter.Get(&cArgs.EvalCtx.ClusterSettings().SV) {
+		opts = engine.IterOptions{
+			UpperBound: args.EndKey,
+		}
+	}
+	iter := batch.NewIterator(opts)
 	defer iter.Close()
 	// Iterate over values until we discover any value written at or
 	// after the original timestamp, but before or at the current
