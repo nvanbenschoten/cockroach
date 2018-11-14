@@ -118,6 +118,15 @@ func (ss *SpanSet) Add(access SpanAccess, span roachpb.Span) {
 	ss.spans[access][scope] = append(ss.spans[access][scope], span)
 }
 
+// SortAndDedup sorts the spans in the SpanSet and removes any duplicates.
+func (ss *SpanSet) SortAndDedup() {
+	for i := SpanAccess(0); i < NumSpanAccess; i++ {
+		for j := SpanScope(0); j < NumSpanScope; j++ {
+			ss.spans[i][j], _ = roachpb.MergeSpans(ss.spans[i][j])
+		}
+	}
+}
+
 // GetSpans returns a slice of spans with the given parameters.
 func (ss *SpanSet) GetSpans(access SpanAccess, scope SpanScope) []roachpb.Span {
 	return ss.spans[access][scope]

@@ -48,6 +48,7 @@ import (
 	"github.com/cockroachdb/cockroach/pkg/storage/batcheval/result"
 	"github.com/cockroachdb/cockroach/pkg/storage/closedts/ctpb"
 	ctstorage "github.com/cockroachdb/cockroach/pkg/storage/closedts/storage"
+	"github.com/cockroachdb/cockroach/pkg/storage/cmdq"
 	"github.com/cockroachdb/cockroach/pkg/storage/engine"
 	"github.com/cockroachdb/cockroach/pkg/storage/engine/enginepb"
 	"github.com/cockroachdb/cockroach/pkg/storage/rangefeed"
@@ -322,6 +323,9 @@ type Replica struct {
 		// same component.
 		queues [spanset.NumSpanScope]*CommandQueue
 	}
+
+	// WIP: replace cmdQMu entirely.
+	cmdQMu2 *cmdq.Queue
 
 	mu struct {
 		// Protects all fields in the mu struct.
@@ -712,6 +716,7 @@ func (r *Replica) initRaftMuLockedReplicaMuLocked(
 	r.cmdQMu.queues[spanset.SpanGlobal] = NewCommandQueue(true /* optimizeOverlap */)
 	r.cmdQMu.queues[spanset.SpanLocal] = NewCommandQueue(false /* optimizeOverlap */)
 	r.cmdQMu.Unlock()
+	r.cmdQMu2 = cmdq.New()
 
 	r.mu.proposals = map[storagebase.CmdIDKey]*ProposalData{}
 	r.mu.checksums = map[uuid.UUID]ReplicaChecksum{}
@@ -2162,7 +2167,7 @@ type prereqCmdSet [spanset.NumSpanAccess][spanset.NumSpanScope][]*cmd
 // command processing.
 type endCmds struct {
 	repl *Replica
-	cmds batchCmdSet
+	lock *cmdq.LockGuard
 	ba   roachpb.BatchRequest
 }
 
@@ -2180,7 +2185,9 @@ func (ec *endCmds) done(br *roachpb.BatchResponse, pErr *roachpb.Error, retry pr
 	if fn := ec.repl.store.cfg.TestingKnobs.OnCommandQueueAction; fn != nil {
 		fn(&ec.ba, storagebase.CommandQueueFinishExecuting)
 	}
-	ec.repl.removeCmdsFromCommandQueue(ec.cmds)
+	if ec.lock != nil {
+		ec.repl.cmdQMu2.Unlock(ec.lock)
+	}
 }
 
 // updateTimestampCache updates the timestamp cache in order to set a low water
@@ -2318,6 +2325,10 @@ func collectSpans(
 	if err := spans.Validate(); err != nil {
 		return nil, err
 	}
+
+	// TODO(nvanbenschoten): Do we need to do this? Should we?
+	// spans.SortAndDedup()
+
 	return spans, nil
 }
 
@@ -2334,8 +2345,7 @@ func collectSpans(
 func (r *Replica) beginCmds(
 	ctx context.Context, ba *roachpb.BatchRequest, spans *spanset.SpanSet,
 ) (*endCmds, error) {
-	var newCmds batchCmdSet
-	clocklessReads := r.store.Clock().MaxOffset() == timeutil.ClocklessMaxOffset
+	var lg *cmdq.LockGuard
 	// Don't use the command queue for inconsistent reads.
 	if ba.ReadConsistency == roachpb.CONSISTENT {
 
@@ -2349,162 +2359,10 @@ func (r *Replica) beginCmds(
 			return nil, errors.Wrap(err, "aborted before command queue")
 		}
 
-		// Get the requested timestamp for a given scope. This is used for
-		// non-interference of earlier reads with later writes, but only for
-		// the global command queue. Reads and writes to local keys are specified
-		// as having a zero timestamp which will cause them to always interfere.
-		// This is done to avoid confusion with local keys declared as part of
-		// proposer evaluated KV.
-		scopeTS := func(scope spanset.SpanScope) hlc.Timestamp {
-			switch scope {
-			case spanset.SpanGlobal:
-				// ba.Timestamp is always set appropriately, regardless of
-				// whether the batch is transactional or not.
-				return ba.Timestamp
-			case spanset.SpanLocal:
-				return hlc.Timestamp{}
-			}
-			panic(fmt.Sprintf("unexpected scope %d", scope))
-		}
-
-		r.cmdQMu.Lock()
-		var prereqs prereqCmdSet
-		var prereqCount int
-		// Collect all the channels to wait on before adding this batch to the
-		// command queue.
-		for i := spanset.SpanAccess(0); i < spanset.NumSpanAccess; i++ {
-			// With clockless reads, everything is treated as writing.
-			readOnly := i == spanset.SpanReadOnly && !clocklessReads
-			for j := spanset.SpanScope(0); j < spanset.NumSpanScope; j++ {
-				prereqs[i][j] = r.cmdQMu.queues[j].getPrereqs(readOnly, scopeTS(j), spans.GetSpans(i, j))
-				prereqCount += len(prereqs[i][j])
-			}
-		}
-		for i := spanset.SpanAccess(0); i < spanset.NumSpanAccess; i++ {
-			readOnly := i == spanset.SpanReadOnly && !clocklessReads // ditto above
-			for j := spanset.SpanScope(0); j < spanset.NumSpanScope; j++ {
-				cmd := r.cmdQMu.queues[j].add(readOnly, scopeTS(j), prereqs[i][j], spans.GetSpans(i, j))
-				if cmd != nil {
-					cmd.SetDebugInfo(ba)
-					newCmds[i][j] = cmd
-				}
-			}
-		}
-		r.cmdQMu.Unlock()
-
-		var beforeWait time.Time
-		var prereqSummary string
-		if prereqCount > 0 && log.ExpensiveLogEnabled(ctx, 2) {
-			beforeWait = timeutil.Now()
-			prereqSummary = prereqDebugSummary(prereqs)
-			log.VEventf(ctx, 2, "waiting for %d overlapping requests: %s", prereqCount, prereqSummary)
-		}
-		if fn := r.store.cfg.TestingKnobs.OnCommandQueueAction; fn != nil {
-			fn(ba, storagebase.CommandQueueWaitForPrereqs)
-		}
-
-		ctxDone := ctx.Done()
-		for _, accessCmds := range newCmds {
-			for _, newCmd := range accessCmds {
-				// If newCmd is nil it means that the BatchRequest contains no spans for this
-				// SpanAccess/spanScope permutation.
-				if newCmd == nil {
-					continue
-				}
-				// Loop until the command has no more pending prerequisites. Resolving canceled
-				// prerequisites can add new transitive dependencies to a command, so newCmd.prereqs
-				// should not be accessed directly (see ResolvePendingPrereq).
-				for {
-					pre := newCmd.PendingPrereq()
-					if pre == nil {
-						break
-					}
-					select {
-					case <-pre.pending:
-						// The prerequisite command has finished so remove it from our prereq list.
-						// If the prereq still has pending dependencies, migrate them.
-						newCmd.ResolvePendingPrereq()
-					case <-ctxDone:
-						err := ctx.Err()
-						log.VEventf(ctx, 2, "%s while in command queue: %s", err, ba)
-
-						if fn := r.store.cfg.TestingKnobs.OnCommandQueueAction; fn != nil {
-							fn(ba, storagebase.CommandQueueCancellation)
-						}
-
-						// Remove the command from the command queue immediately. New commands that
-						// would have established a dependency on this command will never see it,
-						// which is fine. Current dependents that already have a dependency on this
-						// command will transfer transitive dependencies when they try to block on
-						// this command, because our prereqs slice is not empty. This migration of
-						// dependencies will happen for each dependent in ResolvePendingPrereq,
-						// which will notice that our prereqs slice was not empty when we stopped
-						// pending and will adopt our prerequisites in turn.
-						r.removeCmdsFromCommandQueue(newCmds)
-						return nil, errors.Wrap(err, "aborted while in command queue")
-					case <-r.store.stopper.ShouldQuiesce():
-						// While shutting down, commands may have been added to the
-						// command queue that will never finish.
-						return nil, &roachpb.NodeUnavailableError{}
-					}
-				}
-			}
-		}
-
-		if prereqSummary != "" {
-			dur := timeutil.Since(beforeWait)
-			log.VEventf(ctx, 2, "waited %s for overlapping requests: %s", dur, prereqSummary)
-		}
-		if fn := r.store.cfg.TestingKnobs.OnCommandQueueAction; fn != nil {
-			fn(ba, storagebase.CommandQueueBeginExecuting)
-		}
-
-		if r.getMergeCompleteCh() != nil && !ba.IsSingleSubsumeRequest() {
-			// The replica is being merged into its left-hand neighbor. This request
-			// cannot proceed until the merge completes, signaled by the closing of
-			// the channel.
-			//
-			// It is very important that this check occur after the command queue has
-			// allowed us to proceed. Only after we exit the command queue are we
-			// guaranteed that we're not racing with a Subsume command. (Subsume
-			// commands declare a conflict with all other commands.)
-			//
-			// Note that Subsume commands are exempt from waiting on the mergeComplete
-			// channel. This is necessary to avoid deadlock. While normally a Subsume
-			// request will trigger the installation of a mergeComplete channel after
-			// it is executed, it may sometimes execute after the mergeComplete
-			// channel has been installed. Consider the case where the RHS replica
-			// acquires a new lease after the merge transaction deletes its local
-			// range descriptor but before the Subsume command is sent. The lease
-			// acquisition request will notice the intent on the local range
-			// descriptor and install a mergeComplete channel. If the forthcoming
-			// Subsume blocked on that channel, the merge transaction would deadlock.
-			//
-			// This exclusion admits a small race condition. If a Subsume request is
-			// sent to the right-hand side of a merge, outside of a merge transaction,
-			// after the merge has committed but before the RHS has noticed that the
-			// merge has committed, the request may return stale data. Since the merge
-			// has committed, the LHS may have processed writes to the keyspace
-			// previously owned by the RHS that the RHS is unaware of. This window
-			// closes quickly, as the RHS will soon notice the merge transaction has
-			// committed and mark itself as destroyed, which prevents it from serving
-			// all traffic, including Subsume requests.
-			//
-			// In our current, careful usage of Subsume, this race condition is
-			// irrelevant. Subsume is only sent from within a merge transaction, and
-			// merge transactions read the RHS descriptor at the beginning of the
-			// transaction to verify that it has not already been merged away.
-			//
-			// We can't wait for the merge to complete here, though. The replica might
-			// need to respond to a Subsume request in order for the merge to
-			// complete, and blocking here would force that Subsume request to sit in
-			// the command queue forever, deadlocking the merge. Instead, we remove
-			// the commands from the command queue and return a MergeInProgressError.
-			// The store will catch that error and resubmit the request after
-			// mergeCompleteCh closes. See #27442 for the full context.
-			log.Event(ctx, "waiting on in-progress merge")
-			r.removeCmdsFromCommandQueue(newCmds)
-			return nil, &roachpb.MergeInProgressError{}
+		var err error
+		lg, err = r.cmdQMu2.Lock(ctx, spans, ba.Timestamp)
+		if err != nil {
+			return nil, err
 		}
 	} else {
 		log.Event(ctx, "operation accepts inconsistent results")
@@ -2545,7 +2403,7 @@ func (r *Replica) beginCmds(
 
 	ec := &endCmds{
 		repl: r,
-		cmds: newCmds,
+		lock: lg,
 		ba:   *ba,
 	}
 	return ec, nil
@@ -2587,28 +2445,6 @@ func prereqDebugSummary(prereqs prereqCmdSet) string {
 		return "no prereqs"
 	}
 	return b.String()
-}
-
-// removeCmdsFromCommandQueue removes a batch's set of commands for the
-// replica's command queue.
-func (r *Replica) removeCmdsFromCommandQueue(cmds batchCmdSet) {
-	r.cmdQMu.Lock()
-	for _, accessCmds := range cmds {
-		for scope, cmd := range accessCmds {
-			if cmd.PrereqLen() > 0 {
-				// The command was canceled while it still had prerequisites to
-				// wait on. To avoid transferring already resolved prerequisites
-				// to our dependencies, we perform one last optimistic scan over
-				// our prerequisites and resolve any that are no longer pending
-				// and were not canceled themselves. This helps bound the
-				// quadratic blowup of prerequisites during cascading
-				// cancellations.
-				cmd.OptimisticallyResolvePrereqs()
-			}
-			r.cmdQMu.queues[scope].remove(cmd)
-		}
-	}
-	r.cmdQMu.Unlock()
 }
 
 // applyTimestampCache moves the batch timestamp forward depending on
