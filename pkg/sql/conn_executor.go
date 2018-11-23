@@ -458,10 +458,6 @@ func (s *Server) newConnExecutor(
 		mon:         &sessionRootMon,
 		sessionMon:  &sessionMon,
 		sessionData: sd,
-		prepStmtsNamespace: prepStmtNamespace{
-			prepStmts: make(map[string]prepStmtEntry),
-			portals:   make(map[string]portalEntry),
-		},
 		state: txnState{
 			mon:           &txnMon,
 			connCtx:       ctx,
@@ -684,10 +680,8 @@ func (ex *connExecutor) close(ctx context.Context, closeType closeType) {
 	}
 
 	if closeType != panicClose {
-		// Close all statements and prepared portals by first unifying the namespaces
-		// and the closing what remains.
-		ex.commitPrepStmtNamespace(ctx)
-		ex.prepStmtsNamespace.resetTo(ctx, &prepStmtNamespace{})
+		// Close all statements and prepared portals.
+		ex.prepStmtsNamespace.clear(ctx)
 	}
 
 	if ex.sessionTracing.Enabled() {
@@ -785,17 +779,6 @@ type connExecutor struct {
 		//
 		// Set via setTxnRewindPos().
 		txnRewindPos CmdPos
-
-		// prepStmtsNamespaceAtTxnRewindPos is a snapshot of the prep stmts/portals
-		// (ex.prepStmtsNamespace) before processing the command at position
-		// txnRewindPos.
-		// Here's the deal: prepared statements are not transactional, but they do
-		// need to interact properly with automatic retries (i.e. rewinding the
-		// command buffer). When doing a rewind, we need to be able to restore the
-		// prep stmts as they were. We do this by taking a snapshot every time
-		// txnRewindPos is advanced. Prepared statements are shared between the two
-		// collections, but these collections are periodically reconciled.
-		prepStmtsNamespaceAtTxnRewindPos prepStmtNamespace
 	}
 
 	// sessionData contains the user-configurable connection variables.
@@ -836,8 +819,13 @@ type connExecutor struct {
 	parallelizeQueue ParallelizeQueue
 
 	// prepStmtNamespace contains the prepared statements and portals that the
-	// session currently has access to.
-	prepStmtsNamespace prepStmtNamespace
+	// session currently has access to. The structure can be checkpointed and
+	// reverted, which is important because prepared statements are not
+	// transactional, but they do need to interact properly with automatic
+	// retries (i.e. rewinding the command buffer). When doing a rewind, we need
+	// to be able to restore the prep stmts as they were. We do this by taking a
+	// snapshot every time txnRewindPos is advanced.
+	prepStmtsNamespace checkpointedPrepStmtNamespace
 
 	// mu contains of all elements of the struct that can be changed
 	// after initialization, and may be accessed from another thread.
@@ -1053,7 +1041,7 @@ func (ex *connExecutor) run(
 			// ExecPortal is handled like ExecStmt, except that the placeholder info
 			// is taken from the portal.
 
-			portal, ok := ex.prepStmtsNamespace.portals[tcmd.Name]
+			portal, ok := ex.prepStmtsNamespace.getPortal(tcmd.Name)
 			if !ok {
 				err := pgerror.NewErrorf(
 					pgerror.CodeInvalidCursorNameError, "unknown portal %q", tcmd.Name)
@@ -1226,7 +1214,7 @@ func (ex *connExecutor) run(
 				return err
 			}
 		case rewind:
-			ex.rewindPrepStmtNamespace(ex.Ctx())
+			ex.prepStmtsNamespace.rewind(ex.Ctx())
 			advInfo.rewCap.rewindAndUnlock(ex.Ctx())
 		case stayInPlace:
 			// Nothing to do. The same statement will be executed again.
@@ -1298,7 +1286,7 @@ func (ex *connExecutor) updateTxnRewindPosMaybe(
 			case ExecStmt:
 				canAdvance = ex.stmtDoesntNeedRetry(tcmd.Stmt)
 			case ExecPortal:
-				portal := ex.prepStmtsNamespace.portals[tcmd.Name]
+				portal, _ := ex.prepStmtsNamespace.getPortal(tcmd.Name)
 				canAdvance = ex.stmtDoesntNeedRetry(portal.Stmt.Statement)
 			case PrepareStmt:
 				canAdvance = true
@@ -1340,7 +1328,7 @@ func (ex *connExecutor) setTxnRewindPos(ctx context.Context, pos CmdPos) {
 	}
 	ex.extraTxnState.txnRewindPos = pos
 	ex.stmtBuf.ltrim(ctx, pos)
-	ex.commitPrepStmtNamespace(ctx)
+	ex.prepStmtsNamespace.snapshot(ctx)
 }
 
 // stmtDoesntNeedRetry returns true if the given statement does not need to be
@@ -2075,6 +2063,7 @@ func (sc *StatementCounters) incrementCount(stmt tree.Statement) {
 
 // connExPrepStmtsAccessor is an implementation of preparedStatementsAccessor
 // that gives access to a connExecutor's prepared statements.
+// TODO(nvanbenschoten): replace this.
 type connExPrepStmtsAccessor struct {
 	ex *connExecutor
 }
@@ -2083,7 +2072,7 @@ var _ preparedStatementsAccessor = connExPrepStmtsAccessor{}
 
 // Get is part of the preparedStatementsAccessor interface.
 func (ps connExPrepStmtsAccessor) Get(name string) (*PreparedStatement, bool) {
-	s, ok := ps.ex.prepStmtsNamespace.prepStmts[name]
+	s, ok := ps.ex.prepStmtsNamespace.getPrepStmt(name)
 	return s.PreparedStatement, ok
 }
 
@@ -2093,16 +2082,13 @@ func (ps connExPrepStmtsAccessor) Delete(ctx context.Context, name string) bool 
 	if !ok {
 		return false
 	}
-	ps.ex.deletePreparedStmt(ctx, name)
+	ps.ex.prepStmtsNamespace.delPrepStmt(ctx, name)
 	return true
 }
 
 // DeleteAll is part of the preparedStatementsAccessor interface.
 func (ps connExPrepStmtsAccessor) DeleteAll(ctx context.Context) {
-	ps.ex.prepStmtsNamespace = prepStmtNamespace{
-		prepStmts: make(map[string]prepStmtEntry),
-		portals:   make(map[string]portalEntry),
-	}
+	ps.ex.prepStmtsNamespace.clear(ctx)
 }
 
 // contextStatementKey is an empty type for the handle associated with the

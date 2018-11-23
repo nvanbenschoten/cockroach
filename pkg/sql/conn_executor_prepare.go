@@ -20,35 +20,88 @@ import (
 	"strconv"
 	"unsafe"
 
+	"github.com/lib/pq/oid"
+	"github.com/pkg/errors"
+
 	"github.com/cockroachdb/cockroach/pkg/internal/client"
 	"github.com/cockroachdb/cockroach/pkg/sql/pgwire/pgerror"
 	"github.com/cockroachdb/cockroach/pkg/sql/pgwire/pgwirebase"
 	"github.com/cockroachdb/cockroach/pkg/sql/sem/tree"
 	"github.com/cockroachdb/cockroach/pkg/util/fsm"
 	"github.com/cockroachdb/cockroach/pkg/util/log"
-	"github.com/lib/pq/oid"
-	"github.com/pkg/errors"
 )
-
-type prepStmtNamespace struct {
-	// prepStmts contains the prepared statements currently available on the
-	// session.
-	prepStmts map[string]prepStmtEntry
-	// portals contains the portals currently available on the session.
-	portals map[string]portalEntry
-}
 
 type prepStmtEntry struct {
 	*PreparedStatement
 	portals map[string]struct{}
 }
 
-func (pe *prepStmtEntry) copy() prepStmtEntry {
+func (ps *prepStmtEntry) copy() prepStmtEntry {
 	cpy := prepStmtEntry{}
-	cpy.PreparedStatement = pe.PreparedStatement
-	cpy.portals = make(map[string]struct{})
-	for pname := range pe.portals {
+	cpy.PreparedStatement = ps.PreparedStatement
+	cpy.portals = make(map[string]struct{}, len(ps.portals))
+	for pname := range ps.portals {
 		cpy.portals[pname] = struct{}{}
+	}
+	return cpy
+}
+
+type prepStmtEntries struct {
+	// unnamed special-cases access to the unnamed prepared statement.
+	unnamed struct {
+		prepStmtEntry
+		set bool
+	}
+	// m contains all other prepared statements.
+	m map[string]prepStmtEntry
+}
+
+func (pse *prepStmtEntries) get(name string) (prepStmtEntry, bool) {
+	if name == "" {
+		return pse.unnamed.prepStmtEntry, pse.unnamed.set
+	}
+	ps, ok := pse.m[name]
+	return ps, ok
+}
+
+func (pse *prepStmtEntries) add(name string, ps prepStmtEntry) {
+	if name == "" {
+		pse.unnamed.prepStmtEntry = ps
+		pse.unnamed.set = true
+		return
+	}
+	if pse.m == nil {
+		pse.m = make(map[string]prepStmtEntry)
+	}
+	pse.m[name] = ps
+}
+
+func (pse *prepStmtEntries) del(name string) (prepStmtEntry, bool) {
+	if name == "" {
+		if !pse.unnamed.set {
+			return prepStmtEntry{}, false
+		}
+		ps := pse.unnamed.prepStmtEntry
+		pse.unnamed.prepStmtEntry = prepStmtEntry{}
+		pse.unnamed.set = false
+		return ps, true
+	}
+	ps, ok := pse.m[name]
+	if !ok {
+		return prepStmtEntry{}, false
+	}
+	delete(pse.m, name)
+	return ps, true
+}
+
+func (pse *prepStmtEntries) copy() prepStmtEntries {
+	cpy := prepStmtEntries{}
+	cpy.unnamed = pse.unnamed
+	if len(pse.m) > 0 {
+		cpy.m = make(map[string]prepStmtEntry, len(pse.m))
+		for name, ps := range pse.m {
+			cpy.m[name] = ps.copy()
+		}
 	}
 	return cpy
 }
@@ -58,55 +111,215 @@ type portalEntry struct {
 	psName string
 }
 
-// resetTo resets a namespace to equate another one (`to`). Prep stmts and portals
-// that are present in ns but not in to are deallocated.
-//
-// A (pointer to) empty `to` can be passed in to deallocate everything.
-func (ns *prepStmtNamespace) resetTo(ctx context.Context, to *prepStmtNamespace) {
-	for name, ps := range ns.prepStmts {
-		bps, ok := to.prepStmts[name]
-		// If the prepared statement didn't exist before (including if a statement
-		// with the same name existed, but it was different), close it.
-		if !ok || bps.PreparedStatement != ps.PreparedStatement {
-			ps.close(ctx)
-		}
+type portalEntries struct {
+	// unnamed special-cases access to the unnamed portal.
+	unnamed struct {
+		portalEntry
+		set bool
 	}
-	for name, p := range ns.portals {
-		bp, ok := to.portals[name]
-		// If the prepared statement didn't exist before (including if a statement
-		// with the same name existed, but it was different), close it.
-		if !ok || bp.PreparedPortal != p.PreparedPortal {
-			p.close(ctx)
-		}
-	}
-	*ns = to.copy()
+	// m contains all other portals.
+	m map[string]portalEntry
 }
 
-func (ns *prepStmtNamespace) copy() prepStmtNamespace {
-	var cpy prepStmtNamespace
-	cpy.prepStmts = make(map[string]prepStmtEntry)
-	for name, psEntry := range ns.prepStmts {
-		cpy.prepStmts[name] = psEntry.copy()
+func (pe *portalEntries) get(name string) (portalEntry, bool) {
+	if name == "" {
+		return pe.unnamed.portalEntry, pe.unnamed.set
 	}
-	cpy.portals = make(map[string]portalEntry)
-	for name, p := range ns.portals {
-		cpy.portals[name] = p
+	p, ok := pe.m[name]
+	return p, ok
+}
+
+func (pe *portalEntries) add(name string, p portalEntry) {
+	if name == "" {
+		pe.unnamed.portalEntry = p
+		pe.unnamed.set = true
+		return
+	}
+	if pe.m == nil {
+		pe.m = make(map[string]portalEntry)
+	}
+	pe.m[name] = p
+}
+
+func (pe *portalEntries) del(name string) (portalEntry, bool) {
+	if name == "" {
+		if !pe.unnamed.set {
+			return portalEntry{}, false
+		}
+		p := pe.unnamed.portalEntry
+		pe.unnamed.portalEntry = portalEntry{}
+		pe.unnamed.set = false
+		return p, true
+	}
+	p, ok := pe.m[name]
+	if !ok {
+		return portalEntry{}, false
+	}
+	delete(pe.m, name)
+	return p, true
+}
+
+func (pe *portalEntries) copy() portalEntries {
+	cpy := portalEntries{}
+	cpy.unnamed = pe.unnamed
+	if len(pe.m) > 0 {
+		cpy.m = make(map[string]portalEntry, len(pe.m))
+		for name, p := range pe.m {
+			cpy.m[name] = p
+		}
 	}
 	return cpy
 }
 
-// commitPrepStmtNamespace deallocates everything in
-// prepStmtsNamespaceAtTxnRewindPos that's not part of prepStmtsNamespace.
-func (ex *connExecutor) commitPrepStmtNamespace(ctx context.Context) {
-	ex.extraTxnState.prepStmtsNamespaceAtTxnRewindPos.resetTo(
-		ctx, &ex.prepStmtsNamespace)
+type prepStmtNamespace struct {
+	prepStmts prepStmtEntries
+	portals   portalEntries
 }
 
-// commitPrepStmtNamespace deallocates everything in prepStmtsNamespace that's
-// not part of prepStmtsNamespaceAtTxnRewindPos.
-func (ex *connExecutor) rewindPrepStmtNamespace(ctx context.Context) {
-	ex.prepStmtsNamespace.resetTo(
-		ctx, &ex.extraTxnState.prepStmtsNamespaceAtTxnRewindPos)
+func (ns *prepStmtNamespace) copy() prepStmtNamespace {
+	var cpy prepStmtNamespace
+	cpy.prepStmts = ns.prepStmts.copy()
+	cpy.portals = ns.portals.copy()
+	return cpy
+}
+
+// clear clears all prepared statements and portals from ns. It closes any
+// prepared statement or portal that isn't also in dontClose.
+func (ns *prepStmtNamespace) clear(ctx context.Context, dontClose prepStmtNamespace) {
+	// If the unnamed prepared statement isn't the same, close it.
+	if ns.prepStmts.unnamed.set {
+		if ns.prepStmts.unnamed.PreparedStatement != dontClose.prepStmts.unnamed.PreparedStatement {
+			ns.prepStmts.unnamed.close(ctx)
+		}
+	}
+	// Close each other prepared statement from ns that differs.
+	for name, ps := range ns.prepStmts.m {
+		notPS, ok := dontClose.prepStmts.m[name]
+		if !ok || ps.PreparedStatement != notPS.PreparedStatement {
+			ps.close(ctx)
+		}
+	}
+	// If the unnamed portal isn't the same, close it.
+	if ns.portals.unnamed.set {
+		if ns.portals.unnamed.PreparedPortal != dontClose.portals.unnamed.PreparedPortal {
+			ns.portals.unnamed.close(ctx)
+		}
+	}
+	// Close each other prepared statement from ns that differs.
+	for name, p := range ns.portals.m {
+		notP, ok := dontClose.portals.m[name]
+		if !ok || p.PreparedPortal != notP.PreparedPortal {
+			p.close(ctx)
+		}
+	}
+	*ns = prepStmtNamespace{}
+}
+
+// checkpointedPrepStmtNamespace is a prepared statement namespace that is
+// capable of taking a snapshot and restoring to that snapshot.
+// checkpointedPrepStmtNamespace's zero value can be used directly.
+type checkpointedPrepStmtNamespace struct {
+	// checkpoint is the checkpointed prepStmtNamespace. It is treated as
+	// immutable and is only modified when replaced by workspace.
+	checkpoint prepStmtNamespace
+	// workspace is a prepStmtNamespace that is used for modifications. When
+	// in use, it replaces checkpoint when the namespace is checkpointed and
+	// it is discarded when the namespace is rewind.
+	workspace struct {
+		prepStmtNamespace
+		inUse bool
+	}
+}
+
+// snapshot captures a snapshot of the prepared statement namespace. Future
+// calls to rewind will return the namespace to this state.
+func (cns *checkpointedPrepStmtNamespace) snapshot(ctx context.Context) {
+	if !cns.workspace.inUse {
+		return
+	}
+	// Clear the checkpoint and replace with the workspace.
+	cns.checkpoint.clear(ctx, cns.workspace.prepStmtNamespace)
+	cns.checkpoint = cns.workspace.prepStmtNamespace
+	cns.workspace.prepStmtNamespace = prepStmtNamespace{}
+	cns.workspace.inUse = false
+}
+
+// Rewind reverts the namespace to the state of the last snapshot.
+func (cns *checkpointedPrepStmtNamespace) rewind(ctx context.Context) {
+	if !cns.workspace.inUse {
+		return
+	}
+	// Clear the workspace.
+	cns.workspace.clear(ctx, cns.checkpoint)
+	cns.workspace.prepStmtNamespace = prepStmtNamespace{}
+	cns.workspace.inUse = false
+}
+
+// clear clears all prepared statements in the namespace.
+func (cns *checkpointedPrepStmtNamespace) clear(ctx context.Context) {
+	// Reconcile the namespaces and clear.
+	cns.snapshot(ctx)
+	cns.checkpoint.clear(ctx, prepStmtNamespace{})
+}
+
+func (cns *checkpointedPrepStmtNamespace) ns(mut bool) *prepStmtNamespace {
+	if cns.workspace.inUse {
+		return &cns.workspace.prepStmtNamespace
+	}
+	if mut {
+		cns.workspace.prepStmtNamespace = cns.checkpoint.copy()
+		cns.workspace.inUse = true
+		return &cns.workspace.prepStmtNamespace
+	}
+	return &cns.checkpoint
+}
+
+func (cns *checkpointedPrepStmtNamespace) getPrepStmt(name string) (prepStmtEntry, bool) {
+	return cns.ns(false).prepStmts.get(name)
+}
+
+func (cns *checkpointedPrepStmtNamespace) getMutablePrepStmt(name string) (prepStmtEntry, bool) {
+	return cns.ns(true).prepStmts.get(name)
+}
+
+func (cns *checkpointedPrepStmtNamespace) addPrepStmt(name string, p prepStmtEntry) {
+	cns.ns(true).prepStmts.add(name, p)
+}
+
+func (cns *checkpointedPrepStmtNamespace) delPrepStmt(ctx context.Context, name string) {
+	ps, ok := cns.ns(true).prepStmts.del(name)
+	if !ok {
+		return
+	}
+	ps2, ok := cns.checkpoint.prepStmts.get(name)
+	if !ok || ps.PreparedStatement != ps2.PreparedStatement {
+		ps.close(ctx)
+	}
+	for portalName := range ps.portals {
+		cns.delPortal(ctx, portalName)
+	}
+}
+
+func (cns *checkpointedPrepStmtNamespace) getPortal(name string) (portalEntry, bool) {
+	return cns.ns(false).portals.get(name)
+}
+
+func (cns *checkpointedPrepStmtNamespace) addPortal(name string, p portalEntry) {
+	cns.ns(true).portals.add(name, p)
+}
+
+func (cns *checkpointedPrepStmtNamespace) delPortal(ctx context.Context, name string) {
+	p, ok := cns.ns(true).portals.del(name)
+	if !ok {
+		return
+	}
+	p2, ok := cns.checkpoint.portals.get(name)
+	if !ok || p.PreparedPortal != p2.PreparedPortal {
+		p.close(ctx)
+	}
+	if ps, ok := cns.getMutablePrepStmt(p.psName); ok {
+		delete(ps.portals, name)
+	}
 }
 
 // addPreparedStmt creates a new PreparedStatement with the provided name using
@@ -118,7 +331,7 @@ func (ex *connExecutor) rewindPrepStmtNamespace(ctx context.Context) {
 func (ex *connExecutor) addPreparedStmt(
 	ctx context.Context, name string, stmt Statement, placeholderHints tree.PlaceholderTypes,
 ) (*PreparedStatement, error) {
-	if _, ok := ex.prepStmtsNamespace.prepStmts[name]; ok {
+	if _, ok := ex.prepStmtsNamespace.getPrepStmt(name); ok {
 		panic(fmt.Sprintf("prepared statement already exists: %q", name))
 	}
 
@@ -131,10 +344,10 @@ func (ex *connExecutor) addPreparedStmt(
 	if err := prepared.memAcc.Grow(ctx, int64(len(name))); err != nil {
 		return nil, err
 	}
-	ex.prepStmtsNamespace.prepStmts[name] = prepStmtEntry{
+	ex.prepStmtsNamespace.addPrepStmt(name, prepStmtEntry{
 		PreparedStatement: prepared,
 		portals:           make(map[string]struct{}),
-	}
+	})
 	return prepared, nil
 }
 
@@ -150,7 +363,7 @@ func (ex *connExecutor) addPortal(
 	qargs tree.QueryArguments,
 	outFormats []pgwirebase.FormatCode,
 ) error {
-	if _, ok := ex.prepStmtsNamespace.portals[portalName]; ok {
+	if _, ok := ex.prepStmtsNamespace.getPortal(portalName); ok {
 		panic(fmt.Sprintf("portal already exists: %q", portalName))
 	}
 
@@ -159,43 +372,16 @@ func (ex *connExecutor) addPortal(
 		return err
 	}
 
-	ex.prepStmtsNamespace.portals[portalName] = portalEntry{
+	ex.prepStmtsNamespace.addPortal(portalName, portalEntry{
 		PreparedPortal: portal,
 		psName:         psName,
+	})
+	ps, ok := ex.prepStmtsNamespace.getMutablePrepStmt(psName)
+	if !ok {
+		panic(fmt.Sprintf("prepared statement does not exist: %q", psName))
 	}
-	ex.prepStmtsNamespace.prepStmts[psName].portals[portalName] = struct{}{}
+	ps.portals[portalName] = struct{}{}
 	return nil
-}
-
-func (ex *connExecutor) deletePreparedStmt(ctx context.Context, name string) {
-	psEntry, ok := ex.prepStmtsNamespace.prepStmts[name]
-	if !ok {
-		return
-	}
-	// If the prepared statement only exists in prepStmtsNamespace, it's up to us
-	// to close it.
-	baseP, inBase := ex.extraTxnState.prepStmtsNamespaceAtTxnRewindPos.prepStmts[name]
-	if !inBase || (baseP.PreparedStatement != psEntry.PreparedStatement) {
-		psEntry.close(ctx)
-	}
-	for portalName := range psEntry.portals {
-		ex.deletePortal(ctx, portalName)
-	}
-	delete(ex.prepStmtsNamespace.prepStmts, name)
-}
-
-func (ex *connExecutor) deletePortal(ctx context.Context, name string) {
-	portalEntry, ok := ex.prepStmtsNamespace.portals[name]
-	if !ok {
-		return
-	}
-	// If the portal only exists in prepStmtsNamespace, it's up to us to close it.
-	baseP, inBase := ex.extraTxnState.prepStmtsNamespaceAtTxnRewindPos.portals[name]
-	if !inBase || (baseP.PreparedPortal != portalEntry.PreparedPortal) {
-		portalEntry.close(ctx)
-	}
-	delete(ex.prepStmtsNamespace.portals, name)
-	delete(ex.prepStmtsNamespace.prepStmts[portalEntry.psName].portals, name)
 }
 
 func (ex *connExecutor) execPrepare(
@@ -206,9 +392,9 @@ func (ex *connExecutor) execPrepare(
 		return eventNonRetriableErr{IsCommit: fsm.False}, eventNonRetriableErrPayload{err: err}
 	}
 
-	// The anonymous statement can be overwritter.
+	// The anonymous statement can be overwritten.
 	if parseCmd.Name != "" {
-		if _, ok := ex.prepStmtsNamespace.prepStmts[parseCmd.Name]; ok {
+		if _, ok := ex.prepStmtsNamespace.getPrepStmt(parseCmd.Name); ok {
 			err := pgerror.NewErrorf(
 				pgerror.CodeDuplicatePreparedStatementError,
 				"prepared statement %q already exists", parseCmd.Name,
@@ -217,7 +403,7 @@ func (ex *connExecutor) execPrepare(
 		}
 	} else {
 		// Deallocate the unnamed statement, if it exists.
-		ex.deletePreparedStmt(ctx, "")
+		ex.prepStmtsNamespace.delPrepStmt(ctx, "")
 	}
 
 	ps, err := ex.addPreparedStmt(
@@ -406,16 +592,16 @@ func (ex *connExecutor) execBind(
 	portalName := bindCmd.PortalName
 	// The unnamed portal can be freely overwritten.
 	if portalName != "" {
-		if _, ok := ex.prepStmtsNamespace.portals[portalName]; ok {
+		if _, ok := ex.prepStmtsNamespace.getPortal(portalName); ok {
 			return retErr(pgerror.NewErrorf(
 				pgerror.CodeDuplicateCursorError, "portal %q already exists", portalName))
 		}
 	} else {
 		// Deallocate the unnamed portal, if it exists.
-		ex.deletePortal(ctx, "")
+		ex.prepStmtsNamespace.delPortal(ctx, "")
 	}
 
-	ps, ok := ex.prepStmtsNamespace.prepStmts[bindCmd.PreparedStatementName]
+	ps, ok := ex.prepStmtsNamespace.getPrepStmt(bindCmd.PreparedStatementName)
 	if !ok {
 		return retErr(pgerror.NewErrorf(
 			pgerror.CodeInvalidSQLStatementNameError,
@@ -527,7 +713,7 @@ func (ex *connExecutor) execDelPrepStmt(
 ) (fsm.Event, fsm.EventPayload) {
 	switch delCmd.Type {
 	case pgwirebase.PrepareStatement:
-		_, ok := ex.prepStmtsNamespace.prepStmts[delCmd.Name]
+		_, ok := ex.prepStmtsNamespace.getPrepStmt(delCmd.Name)
 		if !ok {
 			// The spec says "It is not an error to issue Close against a nonexistent
 			// statement or portal name". See
@@ -535,13 +721,13 @@ func (ex *connExecutor) execDelPrepStmt(
 			break
 		}
 
-		ex.deletePreparedStmt(ctx, delCmd.Name)
+		ex.prepStmtsNamespace.delPrepStmt(ctx, delCmd.Name)
 	case pgwirebase.PreparePortal:
-		_, ok := ex.prepStmtsNamespace.portals[delCmd.Name]
+		_, ok := ex.prepStmtsNamespace.getPortal(delCmd.Name)
 		if !ok {
 			break
 		}
-		ex.deletePortal(ctx, delCmd.Name)
+		ex.prepStmtsNamespace.delPortal(ctx, delCmd.Name)
 	default:
 		panic(fmt.Sprintf("unknown del type: %s", delCmd.Type))
 	}
@@ -558,7 +744,7 @@ func (ex *connExecutor) execDescribe(
 
 	switch descCmd.Type {
 	case pgwirebase.PrepareStatement:
-		ps, ok := ex.prepStmtsNamespace.prepStmts[descCmd.Name]
+		ps, ok := ex.prepStmtsNamespace.getPrepStmt(descCmd.Name)
 		if !ok {
 			return retErr(pgerror.NewErrorf(
 				pgerror.CodeInvalidSQLStatementNameError,
@@ -573,7 +759,7 @@ func (ex *connExecutor) execDescribe(
 			res.SetPrepStmtOutput(ctx, ps.Columns)
 		}
 	case pgwirebase.PreparePortal:
-		portal, ok := ex.prepStmtsNamespace.portals[descCmd.Name]
+		portal, ok := ex.prepStmtsNamespace.getPortal(descCmd.Name)
 		if !ok {
 			return retErr(pgerror.NewErrorf(
 				pgerror.CodeInvalidCursorNameError, "unknown portal %q", descCmd.Name))

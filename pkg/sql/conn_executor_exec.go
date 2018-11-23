@@ -284,7 +284,7 @@ func (ex *connExecutor) execStmtInOpenState(
 		// This is handling the SQL statement "PREPARE". See execPrepare for
 		// handling of the protocol-level command for preparing statements.
 		name := s.Name.String()
-		if _, ok := ex.prepStmtsNamespace.prepStmts[name]; ok {
+		if _, ok := ex.prepStmtsNamespace.getPrepStmt(name); ok {
 			err := pgerror.NewErrorf(
 				pgerror.CodeDuplicatePreparedStatementError,
 				"prepared statement %q already exists", name,
@@ -304,7 +304,7 @@ func (ex *connExecutor) execStmtInOpenState(
 		// Replace the `EXECUTE foo` statement with the prepared statement, and
 		// continue execution below.
 		name := s.Name.String()
-		ps, ok := ex.prepStmtsNamespace.prepStmts[name]
+		ps, ok := ex.prepStmtsNamespace.getPrepStmt(name)
 		if !ok {
 			err := pgerror.NewErrorf(
 				pgerror.CodeInvalidSQLStatementNameError,
