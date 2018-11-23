@@ -95,7 +95,6 @@ func (ns *prepStmtNamespace) copy() prepStmtNamespace {
 	return cpy
 }
 
-
 // commitPrepStmtNamespace deallocates everything in
 // prepStmtsNamespaceAtTxnRewindPos that's not part of prepStmtsNamespace.
 func (ex *connExecutor) commitPrepStmtNamespace(ctx context.Context) {
@@ -108,6 +107,95 @@ func (ex *connExecutor) commitPrepStmtNamespace(ctx context.Context) {
 func (ex *connExecutor) rewindPrepStmtNamespace(ctx context.Context) {
 	ex.prepStmtsNamespace.resetTo(
 		ctx, &ex.extraTxnState.prepStmtsNamespaceAtTxnRewindPos)
+}
+
+// addPreparedStmt creates a new PreparedStatement with the provided name using
+// the given query. The new prepared statement is added to the connExecutor and
+// also returned. It is illegal to call this when a statement with that name
+// already exists (even for anonymous prepared statements).
+//
+// placeholderHints are used to assist in inferring placeholder types.
+func (ex *connExecutor) addPreparedStmt(
+	ctx context.Context, name string, stmt Statement, placeholderHints tree.PlaceholderTypes,
+) (*PreparedStatement, error) {
+	if _, ok := ex.prepStmtsNamespace.prepStmts[name]; ok {
+		panic(fmt.Sprintf("prepared statement already exists: %q", name))
+	}
+
+	// Prepare the query. This completes the typing of placeholders.
+	prepared, err := ex.prepare(ctx, stmt, placeholderHints)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := prepared.memAcc.Grow(ctx, int64(len(name))); err != nil {
+		return nil, err
+	}
+	ex.prepStmtsNamespace.prepStmts[name] = prepStmtEntry{
+		PreparedStatement: prepared,
+		portals:           make(map[string]struct{}),
+	}
+	return prepared, nil
+}
+
+// addPortal creates a new PreparedPortal on the connExecutor.
+//
+// It is illegal to call this when a portal with that name already exists (even
+// for anonymous portals).
+func (ex *connExecutor) addPortal(
+	ctx context.Context,
+	portalName string,
+	psName string,
+	stmt *PreparedStatement,
+	qargs tree.QueryArguments,
+	outFormats []pgwirebase.FormatCode,
+) error {
+	if _, ok := ex.prepStmtsNamespace.portals[portalName]; ok {
+		panic(fmt.Sprintf("portal already exists: %q", portalName))
+	}
+
+	portal, err := ex.newPreparedPortal(ctx, portalName, stmt, qargs, outFormats)
+	if err != nil {
+		return err
+	}
+
+	ex.prepStmtsNamespace.portals[portalName] = portalEntry{
+		PreparedPortal: portal,
+		psName:         psName,
+	}
+	ex.prepStmtsNamespace.prepStmts[psName].portals[portalName] = struct{}{}
+	return nil
+}
+
+func (ex *connExecutor) deletePreparedStmt(ctx context.Context, name string) {
+	psEntry, ok := ex.prepStmtsNamespace.prepStmts[name]
+	if !ok {
+		return
+	}
+	// If the prepared statement only exists in prepStmtsNamespace, it's up to us
+	// to close it.
+	baseP, inBase := ex.extraTxnState.prepStmtsNamespaceAtTxnRewindPos.prepStmts[name]
+	if !inBase || (baseP.PreparedStatement != psEntry.PreparedStatement) {
+		psEntry.close(ctx)
+	}
+	for portalName := range psEntry.portals {
+		ex.deletePortal(ctx, portalName)
+	}
+	delete(ex.prepStmtsNamespace.prepStmts, name)
+}
+
+func (ex *connExecutor) deletePortal(ctx context.Context, name string) {
+	portalEntry, ok := ex.prepStmtsNamespace.portals[name]
+	if !ok {
+		return
+	}
+	// If the portal only exists in prepStmtsNamespace, it's up to us to close it.
+	baseP, inBase := ex.extraTxnState.prepStmtsNamespaceAtTxnRewindPos.portals[name]
+	if !inBase || (baseP.PreparedPortal != portalEntry.PreparedPortal) {
+		portalEntry.close(ctx)
+	}
+	delete(ex.prepStmtsNamespace.portals, name)
+	delete(ex.prepStmtsNamespace.prepStmts[portalEntry.psName].portals, name)
 }
 
 func (ex *connExecutor) execPrepare(
@@ -183,35 +271,6 @@ func (ex *connExecutor) execPrepare(
 	// Describe.
 	ps.InTypes = inTypes
 	return nil, nil
-}
-
-// addPreparedStmt creates a new PreparedStatement with the provided name using
-// the given query. The new prepared statement is added to the connExecutor and
-// also returned. It is illegal to call this when a statement with that name
-// already exists (even for anonymous prepared statements).
-//
-// placeholderHints are used to assist in inferring placeholder types.
-func (ex *connExecutor) addPreparedStmt(
-	ctx context.Context, name string, stmt Statement, placeholderHints tree.PlaceholderTypes,
-) (*PreparedStatement, error) {
-	if _, ok := ex.prepStmtsNamespace.prepStmts[name]; ok {
-		panic(fmt.Sprintf("prepared statement already exists: %q", name))
-	}
-
-	// Prepare the query. This completes the typing of placeholders.
-	prepared, err := ex.prepare(ctx, stmt, placeholderHints)
-	if err != nil {
-		return nil, err
-	}
-
-	if err := prepared.memAcc.Grow(ctx, int64(len(name))); err != nil {
-		return nil, err
-	}
-	ex.prepStmtsNamespace.prepStmts[name] = prepStmtEntry{
-		PreparedStatement: prepared,
-		portals:           make(map[string]struct{}),
-	}
-	return prepared, nil
 }
 
 // prepare prepares the given statement.
@@ -461,66 +520,6 @@ func (ex *connExecutor) execBind(
 	}
 
 	return nil, nil
-}
-
-// addPortal creates a new PreparedPortal on the connExecutor.
-//
-// It is illegal to call this when a portal with that name already exists (even
-// for anonymous portals).
-func (ex *connExecutor) addPortal(
-	ctx context.Context,
-	portalName string,
-	psName string,
-	stmt *PreparedStatement,
-	qargs tree.QueryArguments,
-	outFormats []pgwirebase.FormatCode,
-) error {
-	if _, ok := ex.prepStmtsNamespace.portals[portalName]; ok {
-		panic(fmt.Sprintf("portal already exists: %q", portalName))
-	}
-
-	portal, err := ex.newPreparedPortal(ctx, portalName, stmt, qargs, outFormats)
-	if err != nil {
-		return err
-	}
-
-	ex.prepStmtsNamespace.portals[portalName] = portalEntry{
-		PreparedPortal: portal,
-		psName:         psName,
-	}
-	ex.prepStmtsNamespace.prepStmts[psName].portals[portalName] = struct{}{}
-	return nil
-}
-
-func (ex *connExecutor) deletePreparedStmt(ctx context.Context, name string) {
-	psEntry, ok := ex.prepStmtsNamespace.prepStmts[name]
-	if !ok {
-		return
-	}
-	// If the prepared statement only exists in prepStmtsNamespace, it's up to us
-	// to close it.
-	baseP, inBase := ex.extraTxnState.prepStmtsNamespaceAtTxnRewindPos.prepStmts[name]
-	if !inBase || (baseP.PreparedStatement != psEntry.PreparedStatement) {
-		psEntry.close(ctx)
-	}
-	for portalName := range psEntry.portals {
-		ex.deletePortal(ctx, portalName)
-	}
-	delete(ex.prepStmtsNamespace.prepStmts, name)
-}
-
-func (ex *connExecutor) deletePortal(ctx context.Context, name string) {
-	portalEntry, ok := ex.prepStmtsNamespace.portals[name]
-	if !ok {
-		return
-	}
-	// If the portal only exists in prepStmtsNamespace, it's up to us to close it.
-	baseP, inBase := ex.extraTxnState.prepStmtsNamespaceAtTxnRewindPos.portals[name]
-	if !inBase || (baseP.PreparedPortal != portalEntry.PreparedPortal) {
-		portalEntry.close(ctx)
-	}
-	delete(ex.prepStmtsNamespace.portals, name)
-	delete(ex.prepStmtsNamespace.prepStmts[portalEntry.psName].portals, name)
 }
 
 func (ex *connExecutor) execDelPrepStmt(
