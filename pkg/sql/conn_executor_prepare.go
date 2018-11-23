@@ -30,6 +30,86 @@ import (
 	"github.com/pkg/errors"
 )
 
+type prepStmtNamespace struct {
+	// prepStmts contains the prepared statements currently available on the
+	// session.
+	prepStmts map[string]prepStmtEntry
+	// portals contains the portals currently available on the session.
+	portals map[string]portalEntry
+}
+
+type prepStmtEntry struct {
+	*PreparedStatement
+	portals map[string]struct{}
+}
+
+func (pe *prepStmtEntry) copy() prepStmtEntry {
+	cpy := prepStmtEntry{}
+	cpy.PreparedStatement = pe.PreparedStatement
+	cpy.portals = make(map[string]struct{})
+	for pname := range pe.portals {
+		cpy.portals[pname] = struct{}{}
+	}
+	return cpy
+}
+
+type portalEntry struct {
+	*PreparedPortal
+	psName string
+}
+
+// resetTo resets a namespace to equate another one (`to`). Prep stmts and portals
+// that are present in ns but not in to are deallocated.
+//
+// A (pointer to) empty `to` can be passed in to deallocate everything.
+func (ns *prepStmtNamespace) resetTo(ctx context.Context, to *prepStmtNamespace) {
+	for name, ps := range ns.prepStmts {
+		bps, ok := to.prepStmts[name]
+		// If the prepared statement didn't exist before (including if a statement
+		// with the same name existed, but it was different), close it.
+		if !ok || bps.PreparedStatement != ps.PreparedStatement {
+			ps.close(ctx)
+		}
+	}
+	for name, p := range ns.portals {
+		bp, ok := to.portals[name]
+		// If the prepared statement didn't exist before (including if a statement
+		// with the same name existed, but it was different), close it.
+		if !ok || bp.PreparedPortal != p.PreparedPortal {
+			p.close(ctx)
+		}
+	}
+	*ns = to.copy()
+}
+
+func (ns *prepStmtNamespace) copy() prepStmtNamespace {
+	var cpy prepStmtNamespace
+	cpy.prepStmts = make(map[string]prepStmtEntry)
+	for name, psEntry := range ns.prepStmts {
+		cpy.prepStmts[name] = psEntry.copy()
+	}
+	cpy.portals = make(map[string]portalEntry)
+	for name, p := range ns.portals {
+		cpy.portals[name] = p
+	}
+	return cpy
+}
+
+
+// commitPrepStmtNamespace deallocates everything in
+// prepStmtsNamespaceAtTxnRewindPos that's not part of prepStmtsNamespace.
+func (ex *connExecutor) commitPrepStmtNamespace(ctx context.Context) {
+	ex.extraTxnState.prepStmtsNamespaceAtTxnRewindPos.resetTo(
+		ctx, &ex.prepStmtsNamespace)
+}
+
+// commitPrepStmtNamespace deallocates everything in prepStmtsNamespace that's
+// not part of prepStmtsNamespaceAtTxnRewindPos.
+func (ex *connExecutor) rewindPrepStmtNamespace(ctx context.Context) {
+	ex.prepStmtsNamespace.resetTo(
+		ctx, &ex.extraTxnState.prepStmtsNamespaceAtTxnRewindPos)
+}
+
 func (ex *connExecutor) execPrepare(
 	ctx context.Context, parseCmd PrepareStmt,
 ) (fsm.Event, fsm.EventPayload) {
