@@ -1770,7 +1770,7 @@ func (ex *connExecutor) resetPlanner(
 	p.extendedEvalCtx.ReCache = ex.server.reCache
 
 	p.sessionDataMutator = &ex.dataMutator
-	p.preparedStatements = ex.getPrepStmtsAccessor()
+	p.preparedStatements = &ex.prepStmtsNamespace
 	p.autoCommit = false
 	p.isPreparing = false
 	p.avoidCachedDescriptors = false
@@ -1983,12 +1983,6 @@ func (ex *connExecutor) serialize() serverpb.Session {
 	}
 }
 
-func (ex *connExecutor) getPrepStmtsAccessor() preparedStatementsAccessor {
-	return connExPrepStmtsAccessor{
-		ex: ex,
-	}
-}
-
 // sessionEventf logs a message to the session event log (if any).
 func (ex *connExecutor) sessionEventf(ctx context.Context, format string, args ...interface{}) {
 	if log.ExpensiveLogEnabled(ex.Ctx(), 2) {
@@ -2059,36 +2053,6 @@ func (sc *StatementCounters) incrementCount(stmt tree.Statement) {
 			sc.MiscCount.Inc(1)
 		}
 	}
-}
-
-// connExPrepStmtsAccessor is an implementation of preparedStatementsAccessor
-// that gives access to a connExecutor's prepared statements.
-// TODO(nvanbenschoten): replace this.
-type connExPrepStmtsAccessor struct {
-	ex *connExecutor
-}
-
-var _ preparedStatementsAccessor = connExPrepStmtsAccessor{}
-
-// Get is part of the preparedStatementsAccessor interface.
-func (ps connExPrepStmtsAccessor) Get(name string) (*PreparedStatement, bool) {
-	s, ok := ps.ex.prepStmtsNamespace.getPrepStmt(name)
-	return s.PreparedStatement, ok
-}
-
-// Delete is part of the preparedStatementsAccessor interface.
-func (ps connExPrepStmtsAccessor) Delete(ctx context.Context, name string) bool {
-	_, ok := ps.Get(name)
-	if !ok {
-		return false
-	}
-	ps.ex.prepStmtsNamespace.delPrepStmt(ctx, name)
-	return true
-}
-
-// DeleteAll is part of the preparedStatementsAccessor interface.
-func (ps connExPrepStmtsAccessor) DeleteAll(ctx context.Context) {
-	ps.ex.prepStmtsNamespace.clear(ctx)
 }
 
 // contextStatementKey is an empty type for the handle associated with the

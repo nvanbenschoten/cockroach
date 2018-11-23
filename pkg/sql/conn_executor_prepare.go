@@ -322,6 +322,29 @@ func (cns *checkpointedPrepStmtNamespace) delPortal(ctx context.Context, name st
 	}
 }
 
+var _ preparedStatementsAccessor = &checkpointedPrepStmtNamespace{}
+
+// Get is part of the preparedStatementsAccessor interface.
+func (cns *checkpointedPrepStmtNamespace) Get(name string) (*PreparedStatement, bool) {
+	s, ok := cns.getPrepStmt(name)
+	return s.PreparedStatement, ok
+}
+
+// Delete is part of the preparedStatementsAccessor interface.
+func (cns *checkpointedPrepStmtNamespace) Delete(ctx context.Context, name string) bool {
+	_, ok := cns.getPrepStmt(name)
+	if !ok {
+		return false
+	}
+	cns.delPrepStmt(ctx, name)
+	return true
+}
+
+// DeleteAll is part of the preparedStatementsAccessor interface.
+func (cns *checkpointedPrepStmtNamespace) DeleteAll(ctx context.Context) {
+	cns.clear(ctx)
+}
+
 // addPreparedStmt creates a new PreparedStatement with the provided name using
 // the given query. The new prepared statement is added to the connExecutor and
 // also returned. It is illegal to call this when a statement with that name
