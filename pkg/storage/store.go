@@ -19,7 +19,6 @@ import (
 	"context"
 	"fmt"
 	"math"
-	"math/rand"
 	"runtime"
 	"sort"
 	"strings"
@@ -3033,6 +3032,7 @@ func (s *Store) Send(
 
 			// Enqueue unsuccessfully pushed transaction on the txnWaitQueue and
 			// retry the command.
+			fmt.Println("ENQUEU", t.PusheeTxn)
 			repl.txnWaitQueue.Enqueue(&t.PusheeTxn)
 			pErr = nil
 
@@ -3067,9 +3067,6 @@ func (s *Store) Send(
 					clonedTxn := h.Txn.Clone()
 					h.Txn = &clonedTxn
 				}
-
-				time.Sleep((time.Duration(rand.Intn(5)) * time.Millisecond))
-
 				// Handle the case where we get more than one write intent error;
 				// we need to cleanup the previous attempt to handle it to allow
 				// any other pusher queued up behind this RPC to proceed.
@@ -3087,8 +3084,6 @@ func (s *Store) Send(
 					pErr = nil
 				}
 				// We've resolved the write intent; retry command.
-
-				time.Sleep((time.Duration(rand.Intn(5)) * time.Millisecond))
 			}
 
 		case *roachpb.MergeInProgressError:

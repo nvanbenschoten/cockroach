@@ -331,6 +331,116 @@ func TestContendedIntentChanges(t *testing.T) {
 		})
 	}
 
+	// Send txn4's puts in a single batch, followed by an end transaction.
+	// This txn will hit a WriteIntentError on its second request during the
+	// first time that it evaluates the batch and will hit a WriteIntentError
+	// on its first request during the second time that it evaluates. This
+	// second WriteIntentError must not be entangled with the contentionQueue
+	// entry for the first key.
+	{
+		go func() {
+			putC := putArgs(keyC, []byte("value")) // will hit intent on 2nd iter
+			putB := putArgs(keyB, []byte("value")) // will hit intent on 1st iter
+			assignSeqNumsForReqs(txn4, &putC)
+			assignSeqNumsForReqs(txn4, &putB)
+			ba := roachpb.BatchRequest{}
+			ba.Header = roachpb.Header{Txn: txn4}
+			ba.Add(&putC, &putB)
+			br, pErr := store.TestSender().Send(ctx, ba)
+			if pErr != nil {
+				txnCh4 <- pErr.GoError()
+				return
+			}
+			txn4.Update(br.Txn)
+
+			et, _ := endTxnArgs(txn4, true)
+			et.IntentSpans = []roachpb.Span{spanB, spanC}
+			et.NoRefreshSpans = true
+			assignSeqNumsForReqs(txn4, &et)
+			_, pErr = client.SendWrappedWith(ctx, store.TestSender(), roachpb.Header{Txn: txn4}, &et)
+			txnCh4 <- pErr.GoError()
+		}()
+
+		waitForContended(keyB, 1)
+		t.Log("txn4 in contentionQueue")
+	}
+
+	// Send txn5's put, followed by an end transaction. This request will
+	// wait at the head of the contention queue TODO.
+	{
+		go func() {
+			// Write keyB to create a cycle with txn3.
+			putB := putArgs(keyB, []byte("value"))
+			assignSeqNumsForReqs(txn5, &putB)
+			repl, pErr := client.SendWrappedWith(ctx, store.TestSender(), roachpb.Header{Txn: txn5}, &putB)
+			if pErr != nil {
+				txnCh5 <- pErr.GoError()
+				return
+			}
+			txn5.Update(repl.Header().Txn)
+
+			et, _ := endTxnArgs(txn5, true)
+			et.IntentSpans = []roachpb.Span{spanB}
+			et.NoRefreshSpans = true
+			assignSeqNumsForReqs(txn5, &et)
+			_, pErr = client.SendWrappedWith(ctx, store.TestSender(), roachpb.Header{Txn: txn5}, &et)
+			txnCh5 <- pErr.GoError()
+		}()
+
+		waitForContended(keyB, 2)
+		t.Log("txn5 in contentionQueue")
+	}
+
+	// Send txn1 puts, followed by an end transaction. TODO.
+	{
+		go func() {
+			// Write keyB to create a cycle with txn3.
+			putB := putArgs(keyB, []byte("value"))
+			assignSeqNumsForReqs(txn1, &putB)
+			repl, pErr := client.SendWrappedWith(ctx, store.TestSender(), roachpb.Header{Txn: txn1}, &putB)
+			if pErr != nil {
+				txnCh1 <- pErr.GoError()
+				return
+			}
+			txn1.Update(repl.Header().Txn)
+
+			et, _ := endTxnArgs(txn1, true)
+			et.IntentSpans = []roachpb.Span{spanB}
+			et.NoRefreshSpans = true
+			assignSeqNumsForReqs(txn1, &et)
+			_, pErr = client.SendWrappedWith(ctx, store.TestSender(), roachpb.Header{Txn: txn1}, &et)
+			txnCh1 <- pErr.GoError()
+		}()
+
+		waitForContended(keyB, 3)
+		t.Log("txn1 in contentionQueue")
+	}
+
+	// Write to keyC, which will block txn4 on its re-evaluation.
+	putC := putArgs(keyC, []byte("value"))
+	assignSeqNumsForReqs(txn6, &putC)
+	if _, pErr := client.SendWrappedWith(ctx, store.TestSender(), roachpb.Header{Txn: txn6}, &putC); pErr != nil {
+		t.Fatal(pErr)
+	}
+
+	// time.Sleep(100 * time.Millisecond)
+
+	// Commit txn2, which should set off a chain reaction of movement. txn3 should
+	// write an intent at keyB and go on to write at keyA. In doing so, it should
+	// create a cycle with txn1. This cycle should be detected.
+	//
+	// In #32582 we saw a case where txn4 would hit a different WriteIntentError
+	// during its re-evaluation (keyC instead of keyB). This caused it to remove
+	// the lastTxnMeta from keyB's contendedKey record, which prevented txn1 from
+	// pushing txn3 and in turn prevented cycle detection from finding the deadlock.
+	et, _ := endTxnArgs(txn2, true)
+	et.IntentSpans = []roachpb.Span{spanB}
+	et.NoRefreshSpans = true
+	assignSeqNumsForReqs(txn2, &et)
+	if _, pErr := client.SendWrappedWith(ctx, store.TestSender(), roachpb.Header{Txn: txn2}, &et); pErr != nil {
+		t.Fatal(pErr)
+	}
+
 	// Send txn3's two put requests, followed by an end transaction. This txn
 	// will first wait on keyB before writing to keyA. When writing to keyB
 	// it should get stuck behind txn2. Once txn2 is committed it moves on to
@@ -366,129 +476,11 @@ func TestContendedIntentChanges(t *testing.T) {
 			txnCh3 <- pErr.GoError()
 		}()
 
-		waitForContended(keyB, 1)
-		t.Log("txn3 in contentionQueue")
+		// waitForContended(keyB, 1)
+		// t.Log("txn3 in contentionQueue")
 	}
 
-	// Send txn4's puts in a single batch, followed by an end transaction.
-	// This txn will hit a WriteIntentError on its second request during the
-	// first time that it evaluates the batch and will hit a WriteIntentError
-	// on its first request during the second time that it evaluates. This
-	// second WriteIntentError must not be entangled with the contentionQueue
-	// entry for the first key.
-	{
-		go func() {
-			putC := putArgs(keyC, []byte("value")) // will hit intent on 2nd iter
-			putB := putArgs(keyB, []byte("value")) // will hit intent on 1st iter
-			assignSeqNumsForReqs(txn4, &putC)
-			assignSeqNumsForReqs(txn4, &putB)
-			ba := roachpb.BatchRequest{}
-			ba.Header = roachpb.Header{Txn: txn4}
-			ba.Add(&putC, &putB)
-			br, pErr := store.TestSender().Send(ctx, ba)
-			if pErr != nil {
-				txnCh4 <- pErr.GoError()
-				return
-			}
-			txn4.Update(br.Txn)
-
-			et, _ := endTxnArgs(txn4, true)
-			et.IntentSpans = []roachpb.Span{spanB, spanC}
-			et.NoRefreshSpans = true
-			assignSeqNumsForReqs(txn4, &et)
-			_, pErr = client.SendWrappedWith(ctx, store.TestSender(), roachpb.Header{Txn: txn4}, &et)
-			txnCh4 <- pErr.GoError()
-		}()
-
-		waitForContended(keyB, 2)
-		t.Log("txn4 in contentionQueue")
-	}
-
-	// Send txn5's put, followed by an end transaction. This request will
-	// wait at the head of the contention queue TODO.
-	{
-		go func() {
-			// Write keyB to create a cycle with txn3.
-			putB := putArgs(keyB, []byte("value"))
-			assignSeqNumsForReqs(txn5, &putB)
-			repl, pErr := client.SendWrappedWith(ctx, store.TestSender(), roachpb.Header{Txn: txn5}, &putB)
-			if pErr != nil {
-				txnCh5 <- pErr.GoError()
-				return
-			}
-			txn5.Update(repl.Header().Txn)
-
-			et, _ := endTxnArgs(txn5, true)
-			et.IntentSpans = []roachpb.Span{spanB}
-			et.NoRefreshSpans = true
-			assignSeqNumsForReqs(txn5, &et)
-			_, pErr = client.SendWrappedWith(ctx, store.TestSender(), roachpb.Header{Txn: txn5}, &et)
-			txnCh5 <- pErr.GoError()
-		}()
-
-		waitForContended(keyB, 3)
-		t.Log("txn5 in contentionQueue")
-	}
-
-	// Send txn1 puts, followed by an end transaction. TODO.
-	{
-		go func() {
-			// Write keyB to create a cycle with txn3.
-			putB := putArgs(keyB, []byte("value"))
-			assignSeqNumsForReqs(txn1, &putB)
-			repl, pErr := client.SendWrappedWith(ctx, store.TestSender(), roachpb.Header{Txn: txn1}, &putB)
-			if pErr != nil {
-				txnCh1 <- pErr.GoError()
-				return
-			}
-			txn1.Update(repl.Header().Txn)
-
-			et, _ := endTxnArgs(txn1, true)
-			et.IntentSpans = []roachpb.Span{spanB}
-			et.NoRefreshSpans = true
-			assignSeqNumsForReqs(txn1, &et)
-			_, pErr = client.SendWrappedWith(ctx, store.TestSender(), roachpb.Header{Txn: txn1}, &et)
-			txnCh1 <- pErr.GoError()
-		}()
-
-		waitForContended(keyB, 4)
-		t.Log("txn1 in contentionQueue")
-	}
-
-	// Write to keyC, which will block txn4 on its re-evaluation.
-	putC := putArgs(keyC, []byte("value"))
-	assignSeqNumsForReqs(txn6, &putC)
-	if _, pErr := client.SendWrappedWith(ctx, store.TestSender(), roachpb.Header{Txn: txn6}, &putC); pErr != nil {
-		t.Fatal(pErr)
-	}
-
-	time.Sleep(100 * time.Millisecond)
-
-	// Commit txn2, which should set off a chain reaction of movement. txn3 should
-	// write an intent at keyB and go on to write at keyA. In doing so, it should
-	// create a cycle with txn1. This cycle should be detected.
-	//
-	// In #32582 we saw a case where txn4 would hit a different WriteIntentError
-	// during its re-evaluation (keyC instead of keyB). This caused it to remove
-	// the lastTxnMeta from keyB's contendedKey record, which prevented txn1 from
-	// pushing txn3 and in turn prevented cycle detection from finding the deadlock.
-	et, _ := endTxnArgs(txn2, true)
-	et.IntentSpans = []roachpb.Span{spanB}
-	et.NoRefreshSpans = true
-	assignSeqNumsForReqs(txn2, &et)
-	if _, pErr := client.SendWrappedWith(ctx, store.TestSender(), roachpb.Header{Txn: txn2}, &et); pErr != nil {
-		t.Fatal(pErr)
-	}
-
-	time.Sleep(100 * time.Millisecond)
-
-	et, _ = endTxnArgs(txn6, true)
-	et.IntentSpans = []roachpb.Span{spanC}
-	et.NoRefreshSpans = true
-	assignSeqNumsForReqs(txn6, &et)
-	if _, pErr := client.SendWrappedWith(ctx, store.TestSender(), roachpb.Header{Txn: txn6}, &et); pErr != nil {
-		t.Fatal(pErr)
-	}
+	// time.Sleep(100 * time.Millisecond)
 
 	// The third transaction will always be aborted because it has
 	// a lower priority than the first.
@@ -499,15 +491,24 @@ func TestContendedIntentChanges(t *testing.T) {
 	if err := <-txnCh1; err != nil {
 		t.Fatal(err)
 	}
-	if err := <-txnCh4; err != nil {
-		// Txn4 can be aborted due to a detected deadlock in some valid
+	if err := <-txnCh5; err != nil {
+		// Txn5 can be aborted due to a detected deadlock in some valid
 		// timelines. This isn't important to the test.
 		if _, ok := err.(*roachpb.UnhandledRetryableError); !ok {
 			t.Fatal(err)
 		}
 	}
-	if err := <-txnCh5; err != nil {
-		// Txn5 can be aborted due to a detected deadlock in some valid
+
+	et, _ = endTxnArgs(txn6, true)
+	et.IntentSpans = []roachpb.Span{spanC}
+	et.NoRefreshSpans = true
+	assignSeqNumsForReqs(txn6, &et)
+	if _, pErr := client.SendWrappedWith(ctx, store.TestSender(), roachpb.Header{Txn: txn6}, &et); pErr != nil {
+		t.Fatal(pErr)
+	}
+
+	if err := <-txnCh4; err != nil {
+		// Txn4 can be aborted due to a detected deadlock in some valid
 		// timelines. This isn't important to the test.
 		if _, ok := err.(*roachpb.UnhandledRetryableError); !ok {
 			t.Fatal(err)
