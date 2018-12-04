@@ -18,6 +18,8 @@ package storage
 import (
 	"container/list"
 	"context"
+	"fmt"
+	"math/rand"
 	"sort"
 	"time"
 
@@ -185,6 +187,7 @@ func (cq *contentionQueue) add(
 	intent := wiErr.Intents[0]
 	key := string(intent.Span.Key)
 	curPusher := newPusher(h.Txn)
+	fmt.Printf("adding %s to contention queue on intent %s @%s\n", txnID(h.Txn), intent.Key, intent.Txn.ID.Short())
 	log.VEventf(ctx, 3, "adding %s to contention queue on intent %s @%s", txnID(h.Txn), intent.Key, intent.Txn.ID.Short())
 
 	// Consider prior pushers in reverse arrival order to build queue
@@ -214,7 +217,7 @@ func (cq *contentionQueue) add(
 	cq.mu.Unlock()
 
 	// Delay before pushing in order to detect dependency cycles.
-	const dependencyCyclePushDelay = 100 * time.Millisecond
+	dependencyCyclePushDelay := 90*time.Millisecond + (time.Duration(rand.Intn(20)) * time.Millisecond)
 
 	// Wait on prior pusher, if applicable.
 	var done bool
@@ -238,6 +241,7 @@ func (cq *contentionQueue) add(
 				if !ok {
 					log.Fatalf(ctx, "the wait channel of a prior pusher was used twice (pusher=%s)", txnMeta)
 				}
+				fmt.Printf("%v KEY OUT %v\n", txnID(h.Txn), key)
 				// If the prior pusher wrote an intent, push it instead by
 				// creating a copy of the WriteIntentError with updated txn.
 				if txnMeta != nil {
@@ -270,6 +274,7 @@ func (cq *contentionQueue) add(
 				detectCh = curPusher.detectCh
 
 			case <-detectCh:
+				time.Sleep((time.Duration(rand.Intn(10)) * time.Millisecond))
 				cq.mu.Lock()
 				frontOfQueue := curElement == contended.ll.Front()
 				pusheeTxn := contended.lastTxnMeta
@@ -281,7 +286,8 @@ func (cq *contentionQueue) add(
 					log.VEventf(ctx, 3, "%s at front of queue; breaking from loop", txnID(curPusher.txn))
 					break Loop
 				} else if pusheeTxn == nil {
-					log.VEventf(ctx, 3, "%s cycle detection skipped because there is no txn to push", txnID(curPusher.txn))
+					fmt.Printf("%s cycle detection skipped because there is no txn to push\n", txnID(curPusher.txn))
+					// log.VEventf(ctx, 3, "%s cycle detection skipped because there is no txn to push", txnID(curPusher.txn))
 					detectCh = nil
 					detectReady = time.After(dependencyCyclePushDelay)
 					continue
@@ -296,11 +302,13 @@ func (cq *contentionQueue) add(
 					Now:       cq.store.Clock().Now(),
 					PushType:  roachpb.PUSH_ABORT,
 				}
+				fmt.Printf("%v pushing %v\n", txnID(h.Txn), pusheeTxn)
 				b := &client.Batch{}
 				b.AddRawRequest(pushReq)
 				log.VEventf(ctx, 3, "%s pushing %s to detect dependency cycles", txnID(curPusher.txn), pusheeTxn.ID.Short())
 				if err := cq.store.db.Run(ctx, b); err != nil {
 					log.VErrEventf(ctx, 2, "while waiting in push contention queue to push %s: %s", pusheeTxn.ID.Short(), b.MustPErr())
+					fmt.Printf("while waiting in push contention queue to push %s: %s\n", pusheeTxn.ID.Short(), b.MustPErr())
 					done = true // done=true to avoid uselessly trying to push and resolve
 					break Loop
 				}
@@ -340,11 +348,13 @@ func (cq *contentionQueue) add(
 		if contended.ll.Len() == 0 {
 			delete(cq.mu.keys, key)
 		} else if newIntentTxn != nil {
+			fmt.Println("NOT HERE!", newIntentTxn)
 			contended.setLastTxnMeta(newIntentTxn)
 		} else if newWIErr != nil {
 			// Note that we don't update last txn meta unless we know for
 			// sure the txn which has written the most recent intent to the
 			// contended key (i.e. newWIErr != nil).
+			fmt.Println("HERE")
 			contended.setLastTxnMeta(nil)
 		}
 		if newIntentTxn != nil {

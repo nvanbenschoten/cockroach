@@ -17,6 +17,7 @@ package batcheval
 import (
 	"bytes"
 	"context"
+	"fmt"
 
 	"github.com/cockroachdb/cockroach/pkg/keys"
 	"github.com/cockroachdb/cockroach/pkg/roachpb"
@@ -111,6 +112,7 @@ func PushTxn(
 	ok, err := engine.MVCCGetProto(ctx, batch, key, hlc.Timestamp{},
 		true /* consistent */, nil /* txn */, existTxn)
 	if err != nil {
+		fmt.Println("push 1")
 		return result.Result{}, err
 	}
 	// There are three cases in which there is no transaction entry:
@@ -148,6 +150,7 @@ func PushTxn(
 		reply.PusheeTxn.OrigTimestamp = args.Now
 		result := result.Result{}
 		result.Local.UpdatedTxns = &[]*roachpb.Transaction{&reply.PusheeTxn}
+		fmt.Println("push 2")
 		return result, engine.MVCCPutProto(ctx, batch, cArgs.Stats, key, hlc.Timestamp{}, nil, &reply.PusheeTxn)
 	}
 	// Start with the persisted transaction record as final transaction.
@@ -156,6 +159,7 @@ func PushTxn(
 	// If already committed or aborted, return success.
 	if reply.PusheeTxn.Status != roachpb.PENDING {
 		// Trivial noop.
+		fmt.Println("push 3")
 		return result.Result{}, nil
 	}
 
@@ -163,6 +167,7 @@ func PushTxn(
 	// far enough forward, return success.
 	if args.PushType == roachpb.PUSH_TIMESTAMP && args.PushTo.Less(reply.PusheeTxn.Timestamp) {
 		// Trivial noop.
+		fmt.Println("push 4")
 		return result.Result{}, nil
 	}
 
@@ -200,12 +205,13 @@ func PushTxn(
 		pusherWins = true
 	}
 
-	if log.V(1) && reason != "" {
+	if true {
 		s := "pushed"
 		if !pusherWins {
 			s = "failed to push"
 		}
-		log.Infof(ctx, "%s "+s+" (push type=%s) %s: %s (pushee last active: %s)",
+		// log.Infof(ctx, "%s "+s+" (push type=%s) %s: %s (pushee last active: %s)",
+		fmt.Printf("%s "+s+" (push type=%s) %s: %s (pushee last active: %s)\n",
 			args.PusherTxn.Short(), args.PushType, args.PusheeTxn.Short(),
 			reason, reply.PusheeTxn.LastActive())
 	}
@@ -215,8 +221,10 @@ func PushTxn(
 		if log.V(1) {
 			log.Infof(ctx, "%v", err)
 		}
+		fmt.Println("push 5")
 		return result.Result{}, err
 	}
+	fmt.Println("push 6")
 
 	// Upgrade priority of pushed transaction to one less than pusher's.
 	reply.PusheeTxn.UpgradePriority(args.PusherTxn.Priority - 1)

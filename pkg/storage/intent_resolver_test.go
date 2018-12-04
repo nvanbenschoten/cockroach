@@ -280,7 +280,8 @@ func TestContendedIntentWithDependencyCycle(t *testing.T) {
 // and then a WriteIntentError for a different key doesn't pollute the
 // old key's contentionQueue state.
 //
-//
+// This also serves as a regression test for #32582. In that issue, we
+// saw a transaction wait in the contention
 func TestContendedIntentChanges(t *testing.T) {
 	defer leaktest.AfterTest(t)()
 	stopper := stop.NewStopper()
@@ -291,6 +292,7 @@ func TestContendedIntentChanges(t *testing.T) {
 	keyA := roachpb.Key("a")
 	keyB := roachpb.Key("b")
 	keyC := roachpb.Key("c")
+	keyD := roachpb.Key("d")
 	spanA := roachpb.Span{Key: keyA}
 	spanB := roachpb.Span{Key: keyB}
 	spanC := roachpb.Span{Key: keyC}
@@ -299,9 +301,12 @@ func TestContendedIntentChanges(t *testing.T) {
 	// conflicts. Txn1 has written "a", Txn2 has written "b".
 	txn1 := beginTransaction(t, store, -5, keyA, true /* putKey */)
 	txn2 := beginTransaction(t, store, -4, keyB, true /* putKey */)
-	txn3 := beginTransaction(t, store, -3, keyC, false /* putKey */)
+	txn3 := beginTransaction(t, store, -3, keyD, false /* putKey */)
 	txn4 := beginTransaction(t, store, -2, keyC, false /* putKey */)
-	txn5 := beginTransaction(t, store, -5, keyC, false /* putKey */)
+	txn5 := beginTransaction(t, store, -1, keyC, false /* putKey */)
+	txn6 := beginTransaction(t, store, -1, keyC, false /* putKey */)
+
+	fmt.Println(txn1.ID, txn2.ID, txn3.ID, txn4.ID, txn5.ID, txn6.ID)
 
 	txnCh1 := make(chan error, 1)
 	txnCh3 := make(chan error, 1)
@@ -428,20 +433,10 @@ func TestContendedIntentChanges(t *testing.T) {
 	// Send txn1 puts, followed by an end transaction. TODO.
 	{
 		go func() {
-			// Write to keyC, which will block txn4 on its re-evaluation.
-			putC := putArgs(keyC, []byte("value"))
-			assignSeqNumsForReqs(txn1, &putC)
-			repl, pErr := client.SendWrappedWith(ctx, store.TestSender(), roachpb.Header{Txn: txn1}, &putC)
-			if pErr != nil {
-				txnCh1 <- pErr.GoError()
-				return
-			}
-			txn1.Update(repl.Header().Txn)
-
 			// Write keyB to create a cycle with txn3.
 			putB := putArgs(keyB, []byte("value"))
 			assignSeqNumsForReqs(txn1, &putB)
-			repl, pErr = client.SendWrappedWith(ctx, store.TestSender(), roachpb.Header{Txn: txn1}, &putB)
+			repl, pErr := client.SendWrappedWith(ctx, store.TestSender(), roachpb.Header{Txn: txn1}, &putB)
 			if pErr != nil {
 				txnCh1 <- pErr.GoError()
 				return
@@ -449,7 +444,7 @@ func TestContendedIntentChanges(t *testing.T) {
 			txn1.Update(repl.Header().Txn)
 
 			et, _ := endTxnArgs(txn1, true)
-			et.IntentSpans = []roachpb.Span{spanB, spanC}
+			et.IntentSpans = []roachpb.Span{spanB}
 			et.NoRefreshSpans = true
 			assignSeqNumsForReqs(txn1, &et)
 			_, pErr = client.SendWrappedWith(ctx, store.TestSender(), roachpb.Header{Txn: txn1}, &et)
@@ -459,6 +454,15 @@ func TestContendedIntentChanges(t *testing.T) {
 		waitForContended(keyB, 4)
 		t.Log("txn1 in contentionQueue")
 	}
+
+	// Write to keyC, which will block txn4 on its re-evaluation.
+	putC := putArgs(keyC, []byte("value"))
+	assignSeqNumsForReqs(txn6, &putC)
+	if _, pErr := client.SendWrappedWith(ctx, store.TestSender(), roachpb.Header{Txn: txn6}, &putC); pErr != nil {
+		t.Fatal(pErr)
+	}
+
+	time.Sleep(100 * time.Millisecond)
 
 	// Commit txn2, which should set off a chain reaction of movement. txn3 should
 	// write an intent at keyB and go on to write at keyA. In doing so, it should
@@ -476,7 +480,15 @@ func TestContendedIntentChanges(t *testing.T) {
 		t.Fatal(pErr)
 	}
 
-	fmt.Println(store.Clock().Now())
+	time.Sleep(100 * time.Millisecond)
+
+	et, _ = endTxnArgs(txn6, true)
+	et.IntentSpans = []roachpb.Span{spanC}
+	et.NoRefreshSpans = true
+	assignSeqNumsForReqs(txn6, &et)
+	if _, pErr := client.SendWrappedWith(ctx, store.TestSender(), roachpb.Header{Txn: txn6}, &et); pErr != nil {
+		t.Fatal(pErr)
+	}
 
 	// The third transaction will always be aborted because it has
 	// a lower priority than the first.
@@ -488,7 +500,11 @@ func TestContendedIntentChanges(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := <-txnCh4; err != nil {
-		t.Fatal(err)
+		// Txn4 can be aborted due to a detected deadlock in some valid
+		// timelines. This isn't important to the test.
+		if _, ok := err.(*roachpb.UnhandledRetryableError); !ok {
+			t.Fatal(err)
+		}
 	}
 	if err := <-txnCh5; err != nil {
 		// Txn5 can be aborted due to a detected deadlock in some valid

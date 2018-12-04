@@ -267,6 +267,8 @@ func evalEndTransaction(
 	// Set transaction status to COMMITTED or ABORTED as per the
 	// args.Commit parameter.
 	if args.Commit {
+		fmt.Println("COMMIT", h.Txn)
+
 		if retry, reason := IsEndTransactionTriggeringRetryError(reply.Txn, *args); retry {
 			return result.Result{}, roachpb.NewTransactionRetryError(reason)
 		}
@@ -310,6 +312,7 @@ func evalEndTransaction(
 			}
 		}
 	} else {
+		fmt.Println("ABORT", h.Txn)
 		reply.Txn.Status = roachpb.ABORTED
 	}
 

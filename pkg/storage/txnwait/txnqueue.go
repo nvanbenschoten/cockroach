@@ -17,6 +17,7 @@ package txnwait
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"sync/atomic"
 	"time"
 
@@ -579,6 +580,12 @@ func (q *Queue) MaybeWaitForPush(
 						ctx,
 						1,
 						"%s breaking deadlock by force push of %s; dependencies=%s",
+						req.PusherTxn.ID.Short(),
+						req.PusheeTxn.ID.Short(),
+						dependents,
+					)
+					fmt.Printf(
+						"%s breaking deadlock by force push of %s; dependencies=%s\n",
 						req.PusherTxn.ID.Short(),
 						req.PusheeTxn.ID.Short(),
 						dependents,
