@@ -259,6 +259,7 @@ func (cq *contentionQueue) add(
 					// No intent was left by the prior pusher; don't push, go
 					// immediately to retrying the conflicted request.
 					log.VEventf(ctx, 3, "%s exiting contention queue to proceed", txnID(curPusher.txn))
+					fmt.Printf("%s exiting contention queue to proceed\n", txnID(curPusher.txn))
 					done = true
 				}
 				break Loop
@@ -274,11 +275,11 @@ func (cq *contentionQueue) add(
 				detectCh = curPusher.detectCh
 
 			case <-detectCh:
-				time.Sleep((time.Duration(rand.Intn(10)) * time.Millisecond))
 				cq.mu.Lock()
 				frontOfQueue := curElement == contended.ll.Front()
 				pusheeTxn := contended.lastTxnMeta
 				cq.mu.Unlock()
+				time.Sleep((time.Duration(rand.Intn(30)) * time.Millisecond))
 				// If we're at the start of the queue, or there's no pushee
 				// transaction (the previous pusher didn't leave an intent),
 				// loop and wait for the wait channel to signal.
@@ -348,14 +349,14 @@ func (cq *contentionQueue) add(
 		if contended.ll.Len() == 0 {
 			delete(cq.mu.keys, key)
 		} else if newIntentTxn != nil {
-			fmt.Println("NOT HERE!", newIntentTxn)
+			fmt.Println("NOT HERE!", newWIErr, newIntentTxn)
 			contended.setLastTxnMeta(newIntentTxn)
 		} else if newWIErr != nil {
 			// Note that we don't update last txn meta unless we know for
 			// sure the txn which has written the most recent intent to the
 			// contended key (i.e. newWIErr != nil).
 			fmt.Println("HERE")
-			contended.setLastTxnMeta(nil)
+			// contended.setLastTxnMeta(nil)
 		}
 		if newIntentTxn != nil {
 			// Shallow copy the TxnMeta. After this request returns (i.e. now), we might

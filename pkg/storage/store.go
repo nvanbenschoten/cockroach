@@ -3165,6 +3165,7 @@ func (s *Store) maybeWaitForPushee(
 	// txn response or else allow this request to proceed.
 	if ba.IsSinglePushTxnRequest() {
 		pushReq := ba.Requests[0].GetInner().(*roachpb.PushTxnRequest)
+		fmt.Println("MAYBE WAIT", pushReq)
 		pushResp, pErr := repl.txnWaitQueue.MaybeWaitForPush(repl.AnnotateCtx(ctx), repl, pushReq)
 		// Copy the request in anticipation of setting the force arg and
 		// updating the Now timestamp (see below).
