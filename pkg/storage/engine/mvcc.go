@@ -979,11 +979,16 @@ func (b *putBuffer) marshalMeta(meta *enginepb.MVCCMetadata) (_ []byte, err erro
 }
 
 func (b *putBuffer) putMeta(
-	engine Writer, key MVCCKey, meta *enginepb.MVCCMetadata,
+	engine Writer, key MVCCKey, meta *enginepb.MVCCMetadata, singleDel bool,
 ) (keyBytes, valBytes int64, err error) {
 	bytes, err := b.marshalMeta(meta)
 	if err != nil {
 		return 0, 0, err
+	}
+	if singleDel {
+		if err := engine.SingleClear(key); err != nil {
+			return 0, 0, err
+		}
 	}
 	if err := engine.Put(key, bytes); err != nil {
 		return 0, 0, err
@@ -1307,7 +1312,7 @@ func mvccPutInternal(
 			metaKeySize, metaValSize, err = 0, 0, engine.Clear(metaKey)
 		} else {
 			buf.meta = enginepb.MVCCMetadata{RawBytes: value}
-			metaKeySize, metaValSize, err = buf.putMeta(engine, metaKey, &buf.meta)
+			metaKeySize, metaValSize, err = buf.putMeta(engine, metaKey, &buf.meta, false /* singleDel */)
 		}
 		if ms != nil {
 			updateStatsForInline(ms, key, origMetaKeySize, origMetaValSize, metaKeySize, metaValSize)
@@ -1542,7 +1547,7 @@ func mvccPutInternal(
 
 	var metaKeySize, metaValSize int64
 	if newMeta.Txn != nil {
-		metaKeySize, metaValSize, err = buf.putMeta(engine, metaKey, newMeta)
+		metaKeySize, metaValSize, err = buf.putMeta(engine, metaKey, newMeta, ok /* singleDel */)
 		if err != nil {
 			return err
 		}
@@ -2340,10 +2345,10 @@ func mvccResolveWriteIntent(
 			// to avoid overwriting a newer epoch (see comments above). The
 			// pusher's job isn't to do anything to update the intent but
 			// to move the timestamp forward, even if it can.
-			metaKeySize, metaValSize, err = buf.putMeta(engine, metaKey, &buf.newMeta)
+			metaKeySize, metaValSize, err = buf.putMeta(engine, metaKey, &buf.newMeta, true /* singleDel */)
 		} else {
 			metaKeySize = int64(metaKey.EncodedSize())
-			err = engine.Clear(metaKey)
+			err = engine.SingleClear(metaKey)
 		}
 		if err != nil {
 			return false, err
@@ -2436,7 +2441,7 @@ func mvccResolveWriteIntent(
 
 	if !ok {
 		// If there is no other version, we should just clean up the key entirely.
-		if err = engine.Clear(metaKey); err != nil {
+		if err = engine.SingleClear(metaKey); err != nil {
 			return false, err
 		}
 		// Clear stat counters attributable to the intent we're aborting.
@@ -2454,7 +2459,7 @@ func mvccResolveWriteIntent(
 		KeyBytes: mvccVersionTimestampSize,
 		ValBytes: valueSize,
 	}
-	if err := engine.Clear(metaKey); err != nil {
+	if err := engine.SingleClear(metaKey); err != nil {
 		return false, err
 	}
 	metaKeySize := int64(metaKey.EncodedSize())
