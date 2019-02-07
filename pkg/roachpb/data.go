@@ -732,6 +732,13 @@ func (v Value) PrettyPrint() string {
 	return buf.String()
 }
 
+// IsFinalized determines whether the transaction status is in a finalized
+// state. A finalized state is terminal, meaning that once a transaction
+// enters one of these states, it will never leave it.
+func (ts TransactionStatus) IsFinalized() bool {
+	return ts == COMMITTED || ts == ABORTED
+}
+
 var _ log.SafeMessager = Transaction{}
 
 const (
@@ -824,7 +831,8 @@ func (t Transaction) Clone() Transaction {
 	}
 	// Note that we're not cloning the span keys under the assumption that the
 	// keys themselves are not mutable.
-	t.Intents = append([]Span(nil), t.Intents...)
+	t.WrittenIntents = append([]Span(nil), t.WrittenIntents...)
+	t.PromisedIntents = append([]SequencedWrite(nil), t.PromisedIntents...)
 	return t
 }
 
@@ -986,6 +994,7 @@ func (t *Transaction) Update(o *Transaction) {
 		t.Key = o.Key
 	}
 	if o.Status != PENDING {
+		// TODO(nvanbenschoten): What should we do here?
 		t.Status = o.Status
 	}
 
@@ -1022,8 +1031,11 @@ func (t *Transaction) Update(o *Transaction) {
 	if t.Sequence < o.Sequence {
 		t.Sequence = o.Sequence
 	}
-	if len(o.Intents) > 0 {
-		t.Intents = o.Intents
+	if len(o.WrittenIntents) > 0 {
+		t.WrittenIntents = o.WrittenIntents
+	}
+	if len(o.PromisedIntents) > 0 {
+		t.PromisedIntents = o.PromisedIntents
 	}
 	// On update, set epoch zero timestamp to the minimum seen by either txn.
 	if o.EpochZeroTimestamp != (hlc.Timestamp{}) {
@@ -1057,8 +1069,11 @@ func (t Transaction) String() string {
 		"ts=%s orig=%s max=%s wto=%t seq=%d",
 		t.Short(), Key(t.Key), t.Writing, floatPri, t.Status, t.Epoch, t.Timestamp,
 		t.OrigTimestamp, t.MaxTimestamp, t.WriteTooOld, t.Sequence)
-	if ni := len(t.Intents); t.Status != PENDING && ni > 0 {
+	if ni := len(t.WrittenIntents); t.Status != PENDING && ni > 0 {
 		fmt.Fprintf(&buf, " int=%d", ni)
+	}
+	if npi := len(t.PromisedIntents); t.Status != PENDING && npi > 0 {
+		fmt.Fprintf(&buf, " prom=%d", npi)
 	}
 	return buf.String()
 }
@@ -1078,8 +1093,11 @@ func (t Transaction) SafeMessage() string {
 		"ts=%s orig=%s max=%s wto=%t seq=%d",
 		t.Short(), t.Writing, floatPri, t.Status, t.Epoch, t.Timestamp,
 		t.OrigTimestamp, t.MaxTimestamp, t.WriteTooOld, t.Sequence)
-	if ni := len(t.Intents); t.Status != PENDING && ni > 0 {
+	if ni := len(t.WrittenIntents); t.Status != PENDING && ni > 0 {
 		fmt.Fprintf(&buf, " int=%d", ni)
+	}
+	if npi := len(t.PromisedIntents); t.Status != PENDING && npi > 0 {
+		fmt.Fprintf(&buf, " prom=%d", npi)
 	}
 	return buf.String()
 }
@@ -1126,7 +1144,8 @@ func (t *Transaction) AsRecord() TransactionRecord {
 	tr.Status = t.Status
 	tr.LastHeartbeat = t.LastHeartbeat
 	tr.OrigTimestamp = t.OrigTimestamp
-	tr.Intents = t.Intents
+	tr.WrittenIntents = t.WrittenIntents
+	tr.PromisedIntents = t.PromisedIntents
 	return tr
 }
 
@@ -1139,7 +1158,8 @@ func (tr *TransactionRecord) AsTransaction() Transaction {
 	t.Status = tr.Status
 	t.LastHeartbeat = tr.LastHeartbeat
 	t.OrigTimestamp = tr.OrigTimestamp
-	t.Intents = tr.Intents
+	t.WrittenIntents = tr.WrittenIntents
+	t.PromisedIntents = tr.PromisedIntents
 	return t
 }
 

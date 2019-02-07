@@ -272,7 +272,7 @@ func (ir *IntentResolver) MaybePushIntents(
 	// Attempt to push the transaction(s) which created the conflicting intent(s).
 	pushTxns := make(map[uuid.UUID]enginepb.TxnMeta)
 	for _, intent := range intents {
-		if intent.Status != roachpb.PENDING {
+		if intent.Status.IsFinalized() {
 			// The current intent does not need conflict resolution
 			// because the transaction is already finalized.
 			// This shouldn't happen as all intents created are in
@@ -512,7 +512,7 @@ func (ir *IntentResolver) CleanupTxnIntentsAsync(
 				return
 			}
 			defer release()
-			intents := roachpb.AsIntents(et.Txn.Intents, &et.Txn)
+			intents := roachpb.AsIntents(et.Txn.WrittenIntents, &et.Txn)
 			if err := ir.cleanupFinishedTxnIntents(ctx, rangeID, &et.Txn, intents, now, et.Poison, nil); err != nil {
 				if ir.every.ShouldLog() {
 					log.Warningf(ctx, "failed to cleanup transaction intents: %s", err)
@@ -547,13 +547,12 @@ func (ir *IntentResolver) lockInFlightTxnCleanup(
 	}
 }
 
-// CleanupTxnIntentsOnGCAsync cleans up extant intents owned by a
-// single transaction, asynchronously (but returning an error if the
-// IntentResolver's semaphore is maxed out). If the transaction is
-// PENDING, but expired, it is pushed first to abort it. onComplete is
-// called if non-nil upon completion of async task with the intention that
-// it be used as a hook to update metrics. It will not be called if an error
-// is returned.
+// CleanupTxnIntentsOnGCAsync cleans up extant intents owned by a single
+// transaction, asynchronously (but returning an error if the IntentResolver's
+// semaphore is maxed out). If the transaction is not finalized but is expired,
+// it is pushed first to abort it. onComplete is called if non-nil upon
+// completion of async task with the intention that it be used as a hook to
+// update metrics. It will not be called if an error is returned.
 func (ir *IntentResolver) CleanupTxnIntentsOnGCAsync(
 	ctx context.Context,
 	rangeID roachpb.RangeID,
@@ -590,6 +589,7 @@ func (ir *IntentResolver) CleanupTxnIntentsOnGCAsync(
 			defer release()
 			// If the transaction is still pending, but expired, push it
 			// before resolving the intents.
+			// TODO(nvanbenschoten): Think this through.
 			if txn.Status == roachpb.PENDING {
 				if !txnwait.IsExpired(now, txn) {
 					log.VErrEventf(ctx, 3, "cannot push a PENDING transaction which is not expired: %s", txn)

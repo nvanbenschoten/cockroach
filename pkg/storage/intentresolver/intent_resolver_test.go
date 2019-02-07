@@ -57,6 +57,7 @@ func TestPushTransactionsWithNonPendingIntent(t *testing.T) {
 		Clock:   clock,
 	})
 
+	// TODO(nvanbenschoten): Add another test case here.
 	testCases := [][]roachpb.Intent{
 		{{Span: roachpb.Span{Key: roachpb.Key("a")}, Status: roachpb.PENDING},
 			{Span: roachpb.Span{Key: roachpb.Key("b")}, Status: roachpb.ABORTED}},

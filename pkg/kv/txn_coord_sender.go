@@ -143,13 +143,14 @@ type TxnCoordSender struct {
 	// is embedded in the interceptorAlloc struct, so the entire stack is
 	// allocated together with TxnCoordSender without any additional heap
 	// allocations necessary.
-	interceptorStack [6]txnInterceptor
+	interceptorStack [7]txnInterceptor
 	interceptorAlloc struct {
 		txnHeartbeat
+		txnSeqNumAllocator
 		txnIntentCollector
 		txnPipeliner
 		txnSpanRefresher
-		txnSeqNumAllocator
+		txnCommitter
 		txnMetrics
 		txnLockGatekeeper // not in interceptorStack array.
 	}
@@ -411,7 +412,8 @@ func (tcf *TxnCoordSenderFactory) TransactionalSender(
 	// this stack are pre-allocated on the TxnCoordSender struct, so this just
 	// initializes the interceptors and pieces them together. It then adds a
 	// txnLockGatekeeper at the bottom of the stack to connect it with the
-	// TxnCoordSender's wrapped sender.
+	// TxnCoordSender's wrapped sender. First, each of the interceptor objects
+	// is initialized.
 	var ri *RangeIterator
 	if ds, ok := tcf.wrapped.(*DistSender); ok {
 		ri = NewRangeIterator(ds)
@@ -427,7 +429,6 @@ func (tcf *TxnCoordSenderFactory) TransactionalSender(
 		tcs.stopper,
 		tcs.cleanupTxnLocked,
 	)
-	tcs.interceptorAlloc.txnMetrics.init(&tcs.mu.txn, tcs.clock, &tcs.metrics)
 	tcs.interceptorAlloc.txnIntentCollector = txnIntentCollector{
 		st: tcf.st,
 		ri: ri,
@@ -445,20 +446,37 @@ func (tcf *TxnCoordSenderFactory) TransactionalSender(
 		canAutoRetry:     typ == client.RootTxn,
 		autoRetryCounter: tcs.metrics.AutoRetries,
 	}
+	tcs.interceptorAlloc.txnCommitter = txnCommitter{
+		st:      tcf.st,
+		stopper: tcs.stopper,
+		mu:      &tcs.mu.Mutex,
+	}
+	tcs.interceptorAlloc.txnMetrics = txnMetrics{
+		metrics: &tcs.metrics,
+		clock:   tcs.clock,
+		txn:     &tcs.mu.txn,
+	}
 	tcs.interceptorAlloc.txnLockGatekeeper = txnLockGatekeeper{
 		wrapped: tcs.wrapped,
-		mu:      &tcs.mu,
+		mu:      &tcs.mu.Mutex,
 	}
+
+	// Once the interceptors are initialized, piece them all together in the
+	// correct order.
 	tcs.interceptorStack = [...]txnInterceptor{
 		&tcs.interceptorAlloc.txnHeartbeat,
-		// The seq num allocator is the below the txnHeartbeat so that it sees the
-		// BeginTransaction prepended by that interceptor. (An alternative would be
-		// to not assign seq nums to BeginTransaction; it doesn't need it.)
-		// Note though that it skips assigning seq nums to heartbeats.
+		// Various interceptors below rely on sequence number allocation,
+		// so the sequence number allocator is near the top of the stack.
 		&tcs.interceptorAlloc.txnSeqNumAllocator,
 		&tcs.interceptorAlloc.txnIntentCollector,
 		&tcs.interceptorAlloc.txnPipeliner,
+		// The span refresher may resend entire batches to avoid transaction
+		// retries. Because of that, we need to be careful which interceptors
+		// sit below it in the stack.
 		&tcs.interceptorAlloc.txnSpanRefresher,
+		// The committer sits beneath the span refresher so that ...
+		&tcs.interceptorAlloc.txnCommitter,
+		//
 		&tcs.interceptorAlloc.txnMetrics,
 	}
 	for i, reqInt := range tcs.interceptorStack {
@@ -495,7 +513,7 @@ func (tc *TxnCoordSender) GetMeta(
 	for _, reqInt := range tc.interceptorStack {
 		reqInt.populateMetaLocked(&meta)
 	}
-	if opt == client.OnlyPending && meta.Txn.Status != roachpb.PENDING {
+	if opt == client.OnlyPending && meta.Txn.Status.IsFinalized() {
 		rejectErr := tc.maybeRejectClientLocked(ctx, nil /* ba */)
 		if rejectErr == nil {
 			log.Fatal(ctx, "expected non-nil rejectErr")
@@ -595,7 +613,7 @@ func (tc *TxnCoordSender) Send(
 		return nil, pErr
 	}
 
-	if ba.IsSingleEndTransactionRequest() && !tc.interceptorAlloc.txnHeartbeat.mu.everWroteIntents {
+	if ba.IsSingleEndTransactionRequest() && len(tc.interceptorAlloc.txnIntentCollector.intents) == 0 {
 		return nil, tc.commitReadOnlyTxnLocked(ctx, ba.Requests[0].GetEndTransaction().Deadline)
 	}
 
@@ -777,7 +795,7 @@ func (tc *TxnCoordSender) maybeRejectClientLocked(
 			abortedErr.Message, tc.mu.txn.ID, newTxn))
 	}
 
-	if tc.mu.txn.Status != roachpb.PENDING {
+	if tc.mu.txn.Status.IsFinalized() {
 		log.Fatalf(ctx, "unexpected txn state: %s", tc.mu.txn)
 	}
 	return nil

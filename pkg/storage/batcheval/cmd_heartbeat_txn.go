@@ -46,10 +46,9 @@ func HeartbeatTxn(
 	h := cArgs.Header
 	reply := resp.(*roachpb.HeartbeatTxnResponse)
 
-	if err := VerifyTransaction(h, args); err != nil {
+	if err := VerifyTransaction(h, args, roachpb.PENDING); err != nil {
 		return result.Result{}, err
 	}
-
 	if args.Now.IsEmpty() {
 		return result.Result{}, fmt.Errorf("Now not specified for heartbeat")
 	}
@@ -65,11 +64,6 @@ func HeartbeatTxn(
 		// No existing transaction record was found - create one by writing
 		// it below.
 		txn = h.Txn.Clone()
-		if txn.Status != roachpb.PENDING {
-			return result.Result{}, roachpb.NewTransactionStatusError(
-				fmt.Sprintf("cannot heartbeat txn with status %v: %s", txn.Status, txn),
-			)
-		}
 
 		// Verify that it is safe to create the transaction record.
 		if err := CanCreateTxnRecord(cArgs.EvalCtx, &txn); err != nil {
@@ -77,7 +71,8 @@ func HeartbeatTxn(
 		}
 	}
 
-	if txn.Status == roachpb.PENDING {
+	// TODO(nvanbenschoten): TestCanHeartbeatStaging txn.
+	if !txn.Status.IsFinalized() {
 		txn.LastHeartbeat.Forward(args.Now)
 		txnRecord := txn.AsRecord()
 		if err := engine.MVCCPutProto(ctx, batch, cArgs.Stats, key, hlc.Timestamp{}, nil, &txnRecord); err != nil {

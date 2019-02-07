@@ -1392,6 +1392,8 @@ func (r *Replica) maybeWatchForMerge(ctx context.Context) error {
 		case roachpb.PENDING:
 			log.Fatalf(ctx, "PushTxn returned while merge transaction %s was still pending",
 				intent.Txn.ID.Short())
+		case roachpb.STAGING:
+			// TODO(nvanbenschoten): No clue? Can we rely on a merge txn never staging?
 		case roachpb.COMMITTED:
 			// If PushTxn claims that the transaction committed, then the transaction
 			// definitely committed.

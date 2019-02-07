@@ -65,7 +65,7 @@ func (ic *txnIntentCollector) SendLocked(
 ) (*roachpb.BatchResponse, *roachpb.Error) {
 	if rArgs, hasET := ba.GetArg(roachpb.EndTransaction); hasET {
 		et := rArgs.(*roachpb.EndTransactionRequest)
-		if len(et.IntentSpans) > 0 {
+		if len(et.WrittenIntents) > 0 {
 			return nil, roachpb.NewErrorf("client must not pass intents to EndTransaction")
 		}
 		if len(et.Key) != 0 {
@@ -87,15 +87,15 @@ func (ic *txnIntentCollector) SendLocked(
 
 		// Populate et.IntentSpans, taking into account both any existing
 		// and new writes, and taking care to perform proper deduplication.
-		et.IntentSpans = append([]roachpb.Span(nil), ic.intents...)
+		et.WrittenIntents = append([]roachpb.Span(nil), ic.intents...)
 		// TODO(peter): Populate DistinctSpans on all batches, not just batches
 		// which contain an EndTransactionRequest.
 		var distinct bool
-		et.IntentSpans, distinct = roachpb.MergeSpans(et.IntentSpans)
+		et.WrittenIntents, distinct = roachpb.MergeSpans(et.WrittenIntents)
 		ba.Header.DistinctSpans = distinct && distinctSpans
 
 		if log.V(3) {
-			for _, intent := range et.IntentSpans {
+			for _, intent := range et.WrittenIntents {
 				log.Infof(ctx, "intent: [%s,%s)", intent.Key, intent.EndKey)
 			}
 		}

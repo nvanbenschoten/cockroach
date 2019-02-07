@@ -276,6 +276,10 @@ func (r *Replica) evaluateWriteBatch(
 	ctx context.Context, idKey storagebase.CmdIDKey, ba roachpb.BatchRequest, spans *spanset.SpanSet,
 ) (engine.Batch, enginepb.MVCCStats, *roachpb.BatchResponse, result.Result, *roachpb.Error) {
 	ms := enginepb.MVCCStats{}
+
+	// TODO(nvanbenschoten): add transformer that removes promised intents from EndTransaction request
+	// that are in this range.
+
 	// If not transactional or there are indications that the batch's txn will
 	// require restart or retry, execute as normal.
 	if isOnePhaseCommit(ba, r.store.TestingKnobs()) {

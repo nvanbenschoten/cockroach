@@ -19,11 +19,17 @@ import (
 
 	"github.com/cockroachdb/cockroach/pkg/roachpb"
 	"github.com/cockroachdb/cockroach/pkg/util/hlc"
+	"github.com/cockroachdb/cockroach/pkg/util/log"
 	"github.com/cockroachdb/cockroach/pkg/util/timeutil"
 )
 
-// txnMetrics is a txnInterceptor in charge of updating some metrics in response
-// of transactions going through it.
+// txnMetrics is a txnInterceptor in charge of updating metrics about the
+// behavior and outcome of a transaction. It records information about the
+// requests that a transaction sends and updates counters and histograms when
+// the transaction completes.
+//
+// TODO(nvanbenschoten): Rename to txnMetricRecorder.
+// TODO(nvanbenschoten): Unit test this file.
 type txnMetrics struct {
 	wrapped lockedSender
 	metrics *TxnMetrics
@@ -32,15 +38,6 @@ type txnMetrics struct {
 	txn           *roachpb.Transaction
 	txnStartNanos int64
 	onePCCommit   bool
-	closed        bool
-}
-
-// init initializes the txnMetrics. This method exists instead of a constructor
-// because txnMetrics lives in a pool in the TxnCoordSender.
-func (m *txnMetrics) init(txn *roachpb.Transaction, clock *hlc.Clock, metrics *TxnMetrics) {
-	m.clock = clock
-	m.metrics = metrics
-	m.txn = txn
 }
 
 // SendLocked is part of the txnInterceptor interface.
@@ -70,11 +67,6 @@ func (*txnMetrics) epochBumpedLocked() {}
 
 // closeLocked is part of the txnInterceptor interface.
 func (m *txnMetrics) closeLocked() {
-	if m.closed {
-		return
-	}
-	m.closed = true
-
 	if m.onePCCommit {
 		m.metrics.Commits1PC.Inc(1)
 	}
@@ -98,13 +90,18 @@ func (m *txnMetrics) closeLocked() {
 		m.metrics.Restarts.RecordValue(restarts)
 	}
 	switch status {
-	case roachpb.ABORTED:
-		m.metrics.Aborts.Inc(1)
 	case roachpb.PENDING:
 		// NOTE(andrei): Getting a PENDING status here is possible when this
 		// interceptor is closed without a rollback ever succeeding.
 		// We increment the Aborts metric nevertheless; not sure how these
 		// transactions should be accounted.
+		m.metrics.Aborts.Inc(1)
+	case roachpb.STAGING:
+		// This should never be possible, as the STAGING status should never
+		// be propagated above the txnCommitter.
+		ctx := context.Background()
+		log.Warningf(ctx, "txnMetrics.closeLocked called with a STAGING txn: %v", m.txn)
+	case roachpb.ABORTED:
 		m.metrics.Aborts.Inc(1)
 	case roachpb.COMMITTED:
 		// Note that successful read-only txn are also counted as committed, even

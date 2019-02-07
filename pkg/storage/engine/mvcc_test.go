@@ -3679,6 +3679,7 @@ func TestMVCCResolveWithPushedTimestamp(t *testing.T) {
 	}
 }
 
+// TODO(nvanbenschoten): Add some protection from resolving an intent with status STAGING.
 func TestMVCCResolveTxnNoOps(t *testing.T) {
 	defer leaktest.AfterTest(t)()
 

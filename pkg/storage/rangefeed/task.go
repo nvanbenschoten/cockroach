@@ -190,6 +190,9 @@ func (a *txnPushAttempt) pushOldTxns(ctx context.Context) error {
 				TxnID:     txn.ID,
 				Timestamp: txn.Timestamp,
 			})
+		case roachpb.STAGING:
+			// TODO(nvanbenschoten): Not sure we actually need this, but think this
+			// through.
 		case roachpb.COMMITTED:
 			// The intent is committed and its timestamp may have moved forward
 			// since we last saw an intent. Inform the Processor immediately in case

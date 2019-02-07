@@ -3060,7 +3060,7 @@ func (s *Store) Send(
 			// This request wrote an intent only if there was no error, the request
 			// is transactional, the transaction is still pending, and the request
 			// wasn't read-only.
-			if pErr == nil && ba.Txn != nil && br.Txn.Status == roachpb.PENDING && !ba.IsReadOnly() {
+			if pErr == nil && ba.Txn != nil && !br.Txn.Status.IsFinalized() && !ba.IsReadOnly() {
 				cleanupAfterWriteIntentError(nil, &br.Txn.TxnMeta)
 			} else {
 				cleanupAfterWriteIntentError(nil, nil)

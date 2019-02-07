@@ -46,8 +46,8 @@ const (
 	VersionLeaseSequence            // unused
 	VersionUnreplicatedTombstoneKey // unused
 	VersionRecomputeStats
-	VersionNoRaftProposalKeys // unused
-	VersionTxnSpanRefresh
+	VersionNoRaftProposalKeys          // unused
+	VersionTxnSpanRefresh              // TODO(nvanbenschoten): remove.
 	VersionReadUncommittedRangeLookups // unused
 	VersionPerReplicaZoneConstraints
 	VersionLeasePreferences

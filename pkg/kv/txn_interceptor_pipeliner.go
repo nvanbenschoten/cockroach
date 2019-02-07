@@ -327,7 +327,8 @@ func (tp *txnPipeliner) updateOutstandingWrites(
 ) *roachpb.BatchResponse {
 	// If the transaction is no longer pending, clear the outstanding writes
 	// tree. This will turn maybeRemoveProvenWriteLocked into a quick no-op.
-	if br.Txn != nil && br.Txn.Status != roachpb.PENDING && tp.outstandingWrites != nil {
+	// TODO(nvanbenschoten): Do we have to handle missing Txn's anymore?
+	if br.Txn != nil && br.Txn.Status.IsFinalized() && tp.outstandingWrites != nil {
 		tp.outstandingWrites.Clear(false /* addNodesToFreelist */)
 	}
 

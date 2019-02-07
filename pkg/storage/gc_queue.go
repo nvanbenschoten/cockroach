@@ -365,8 +365,9 @@ func processLocalKeyRange(
 	handleTxnIntents := func(key roachpb.Key, txn *roachpb.Transaction) error {
 		// If the transaction needs to be pushed or there are intents to
 		// resolve, invoke the cleanup function.
-		if txn.Status == roachpb.PENDING || len(txn.Intents) > 0 {
-			return cleanupTxnIntentsAsyncFn(ctx, txn, roachpb.AsIntents(txn.Intents, txn))
+		// TODO(nvanbenschoten): Need to do something here with STAGING txns.
+		if txn.Status == roachpb.PENDING || len(txn.WrittenIntents) > 0 {
+			return cleanupTxnIntentsAsyncFn(ctx, txn, roachpb.AsIntents(txn.WrittenIntents, txn))
 		}
 		gcKeys = append(gcKeys, roachpb.GCRequest_GCKey{Key: key}) // zero timestamp
 		return nil
@@ -386,6 +387,8 @@ func processLocalKeyRange(
 		switch txn.Status {
 		case roachpb.PENDING:
 			infoMu.TransactionSpanGCPending++
+		case roachpb.STAGING:
+			// TODO(nvanbenschoten): Need this.
 		case roachpb.ABORTED:
 			infoMu.TransactionSpanGCAborted++
 		case roachpb.COMMITTED:
@@ -483,8 +486,9 @@ func processAbortSpan(
 // 2) collect these intents' transactions
 // 3) scan the transaction table, collecting abandoned or completed txns
 // 4) push all of these transactions (possibly recreating entries)
-// 5) resolve all intents (unless the txn is still PENDING), which will recreate
-//    AbortSpan entries (but with the txn timestamp; i.e. likely GC'able)
+// 5) resolve all intents (unless the txn is not yet finalized), which
+//    will recreate AbortSpan entries (but with the txn timestamp; i.e.
+//    likely GC'able)
 // 6) scan the AbortSpan table for old entries
 // 7) push these transactions (again, recreating txn entries).
 // 8) send a GCRequest.

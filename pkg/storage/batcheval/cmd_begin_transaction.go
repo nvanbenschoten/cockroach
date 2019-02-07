@@ -68,7 +68,7 @@ func BeginTransaction(
 	h := cArgs.Header
 	reply := resp.(*roachpb.BeginTransactionResponse)
 
-	if err := VerifyTransaction(h, args); err != nil {
+	if err := VerifyTransaction(h, args, roachpb.PENDING); err != nil {
 		return result.Result{}, err
 	}
 	key := keys.TransactionKey(h.Txn.Key, h.Txn.ID)
@@ -89,12 +89,8 @@ func BeginTransaction(
 		}
 	} else {
 		switch existingTxn.Status {
-		case roachpb.ABORTED:
-			// Check whether someone has come in ahead and already aborted the
-			// txn.
-			return result.Result{}, roachpb.NewTransactionAbortedError(roachpb.ABORT_REASON_ABORTED_RECORD_FOUND)
-
-		case roachpb.PENDING:
+		// TODO(nvanbenschoten): TestBumpEpochForStaging txn.
+		case roachpb.PENDING, roachpb.STAGING:
 			if h.Txn.Epoch > existingTxn.Epoch {
 				// On a transaction retry there will be an extant txn record
 				// but this run should have an upgraded epoch. The extant txn
@@ -113,6 +109,13 @@ func BeginTransaction(
 		case roachpb.COMMITTED:
 			return result.Result{}, roachpb.NewTransactionStatusError(
 				fmt.Sprintf("BeginTransaction can't overwrite %s", existingTxn),
+			)
+
+		case roachpb.ABORTED:
+			// Check whether someone has come in ahead and already aborted the
+			// txn.
+			return result.Result{}, roachpb.NewTransactionAbortedError(
+				roachpb.ABORT_REASON_ABORTED_RECORD_FOUND,
 			)
 
 		default:

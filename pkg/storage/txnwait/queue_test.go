@@ -87,6 +87,7 @@ func makeTS(w int64, l int32) hlc.Timestamp {
 
 func TestIsPushed(t *testing.T) {
 	defer leaktest.AfterTest(t)()
+	// TODO(nvanbenschoten): Add some cases here.
 	testCases := []struct {
 		typ          roachpb.PushTxnType
 		pushTo       hlc.Timestamp

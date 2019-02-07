@@ -100,6 +100,9 @@ func (r *Replica) updateTimestampCache(
 					// No need to update the timestamp cache. It was already
 					// updated by the corresponding EndTransaction request.
 					continue
+				case roachpb.STAGING:
+					// TODO(nvanbenschoten): Think this through. I don't think
+					// there is anything to do.
 				}
 				key := keys.TransactionKey(start, pushee.ID)
 				tc.Add(key, nil, pushee.Timestamp, t.PusherTxn.ID, readCache)

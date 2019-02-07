@@ -66,6 +66,10 @@ func (ba *BatchRequest) SetActiveTimestamp(nowFn func() hlc.Timestamp) error {
 			ba.Timestamp = nowFn()
 		}
 	}
+	if ba.IsSinglePushTxnRequest() {
+		pushReq := ba.Requests[0].GetInner().(*PushTxnRequest)
+		ba.Timestamp = pushReq.Now
+	}
 	return nil
 }
 

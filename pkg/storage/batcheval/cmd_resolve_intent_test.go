@@ -141,6 +141,7 @@ func TestDeclareKeysResolveIntent(t *testing.T) {
 		StartKey: roachpb.RKey("a"),
 		EndKey:   roachpb.RKey("a"),
 	}
+	// TODO(nvanbenschoten): extend this test.
 	tests := []struct {
 		status      roachpb.TransactionStatus
 		poison      bool

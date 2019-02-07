@@ -33,11 +33,13 @@ const (
 
 // txnHeartbeat is a txnInterceptor in charge of the txn's heartbeat loop.
 // The heartbeat loop is started upon the first write. txnHeartbeat is also in
-// charge of prepending a BeginTransaction to the first write batch and possibly
-// eliding EndTransaction requests on read-only transactions.
+// charge of prepending a BeginTransaction to the first write batch and choosing
+// the key to write the transaction record at.
 //
 // txnHeartbeat should only be used for root transactions; leafs don't perform
 // writes and don't need any of the functionality here.
+// TODO(nvanbenschoten): Rename to txnHeartbeat.
+// TODO(nvanbenschoten): Unit test this file.
 type txnHeartbeat struct {
 	log.AmbientContext
 
@@ -95,19 +97,7 @@ type txnHeartbeat struct {
 		// BeginTxn with a higher epoch if a transaction record already exists.
 		// TODO(nvanbenschoten): Once we stop sending BeginTxn entirely (v2.3)
 		// we can get rid of this. For now, we keep it to ensure compatibility.
-		// It can't be collapsed into everWroteIntents because 2.1 nodes expect
-		// a new BeginTxn request on each epoch (e.g. to detect 1PC txns).
 		needBeginTxn bool
-
-		// everWroteIntents is set once the transaction's first write is sent to
-		// the server. If a write was ever sent, then an EndTransaction needs to
-		// eventually be sent and cannot be elided. Note that simply looking at
-		// txnEnd == nil to see if a heartbeat loop is currently running is not
-		// always sufficient for deciding whether an EndTransaction can be
-		// elided - we want to allow multiple rollback attempts to be sent and
-		// the first one stops the heartbeat loop.
-		// TODO(nvanbenschoten): Can this be replaced with h.mu.txn.Writing?
-		everWroteIntents bool
 	}
 }
 
@@ -154,17 +144,12 @@ func (h *txnHeartbeat) SendLocked(
 		return nil, pErr
 	}
 	haveTxnWrite := firstWriteIdx != -1
-	et, haveEndTxn := ba.GetArg(roachpb.EndTransaction)
-	var etReq *roachpb.EndTransactionRequest
-	if haveEndTxn {
-		etReq = et.(*roachpb.EndTransactionRequest)
-	}
+	_, haveEndTxn := ba.GetArg(roachpb.EndTransaction)
 
 	addedBeginTxn := false
 	needBeginTxn := haveTxnWrite && h.mu.needBeginTxn
 	if needBeginTxn {
 		h.mu.needBeginTxn = false
-		h.mu.everWroteIntents = true
 		// From now on, all requests need to be checked against the AbortCache on
 		// the server side. We also conservatively update the current request,
 		// although I'm not sure if that's necessary.
@@ -217,29 +202,6 @@ func (h *txnHeartbeat) SendLocked(
 		}
 	}
 
-	// See if we can elide an EndTxn. We can elide it for read-only transactions.
-	lastIndex := int32(len(ba.Requests) - 1)
-	var elideEndTxn bool
-	var commitTurnedToRollback bool
-	if haveEndTxn {
-		// Are we writing now or have we written in the past?
-		elideEndTxn = !h.mu.everWroteIntents
-		if elideEndTxn {
-			ba.Requests = ba.Requests[:lastIndex]
-		} else if etReq.Commit {
-			// If all the writes were part of old epochs, we can turn the commit into
-			// a rollback. Besides the rollback being potentially cheaper, this
-			// transformation is important in situations where it's unclear if the txn
-			// record exist: if it doesn't, then a commit would return a
-			// TransactionStatusError where a rollback returns success.
-			if h.mu.needBeginTxn {
-				log.VEventf(ctx, 2, turningCommitToRollbackMsg)
-				etReq.Commit = false
-				commitTurnedToRollback = true
-			}
-		}
-	}
-
 	// Forward the request.
 	// If we've elided the EndTxn and there's no other requests, we can't send an
 	// empty batch.
@@ -257,7 +219,6 @@ func (h *txnHeartbeat) SendLocked(
 		if br != nil && br.Responses != nil {
 			br.Responses = append(br.Responses[:firstWriteIdx], br.Responses[firstWriteIdx+1:]...)
 		}
-		lastIndex--
 		// Handle case where inserted begin txn confused an indexed error.
 		if pErr != nil && pErr.Index != nil {
 			idx := pErr.Index.Index
@@ -270,56 +231,7 @@ func (h *txnHeartbeat) SendLocked(
 			}
 		}
 	}
-
-	if pErr != nil {
-		return nil, pErr
-	}
-
-	if elideEndTxn {
-		// Check if the (read-only) txn was pushed above its timestamp.
-		// Note that we compare the deadline to br.Txn.Timestamp, not
-		// h.mu.txn.Timestamp; the last batch might have been the pushed one, so br
-		// has the most up to date timestamp.
-		if etReq.Deadline != nil && etReq.Deadline.Less(br.Txn.Timestamp) {
-			return nil, roachpb.NewErrorWithTxn(roachpb.NewTransactionStatusError(
-				"deadline exceeded before transaction finalization"), br.Txn)
-		}
-		// This normally happens on the server and sent back in response
-		// headers, but this transaction was optimized away. The caller may
-		// still inspect the transaction struct, so we manually update it
-		// here to emulate a true transaction.
-		var status roachpb.TransactionStatus
-		if etReq.Commit {
-			status = roachpb.COMMITTED
-		} else {
-			status = roachpb.ABORTED
-		}
-		if br.Txn == nil {
-			txn := ba.Txn.Clone()
-			br.Txn = &txn
-		} else {
-			clone := br.Txn.Clone()
-			br.Txn = &clone
-		}
-		br.Txn.Status = status
-		// Synthesize an EndTransactionResponse.
-		resp := &roachpb.EndTransactionResponse{}
-		resp.Txn = br.Txn
-		br.Add(resp)
-	} else if commitTurnedToRollback {
-		// If we transformed a commit into a rollback, flip the status so that it
-		// looks like a successful commit to the higher layers. In particular, the
-		// SQL module looks at this status and wants it to be COMMITTED after a "1pc
-		// planNode" runs.
-		//
-		// Note: if we sent an EndTransaction and got back a successful response, we
-		// expect br.Txn to be filled.
-		clone := br.Txn.Clone()
-		br.Txn = &clone
-		br.Txn.Status = roachpb.COMMITTED
-	}
-
-	return br, nil
+	return br, pErr
 }
 
 // setWrapped is part of the txnInteceptor interface.
@@ -439,10 +351,10 @@ func (h *txnHeartbeat) heartbeat(ctx context.Context) bool {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
-	// If the txn is no longer pending, there's nothing for us to heartbeat.
+	// If the txn is already finalized, there's nothing for us to heartbeat.
 	// This h.heartbeat() call could have raced with a response that updated the
 	// status. That response is supposed to have closed the txnHeartbeat.
-	if h.mu.txn.Status != roachpb.PENDING {
+	if h.mu.txn.Status.IsFinalized() {
 		if h.mu.txnEnd != nil {
 			log.Fatalf(ctx,
 				"txn committed or aborted but heartbeat loop hasn't been signaled to stop. txn: %s",
@@ -515,7 +427,7 @@ func (h *txnHeartbeat) heartbeat(ctx context.Context) bool {
 	// ever causes any issues, we'll need to be smarter about detecting this race
 	// on the client and conditionally ignoring the result of heartbeat responses.
 	h.mu.txn.Update(respTxn)
-	if h.mu.txn.Status != roachpb.PENDING {
+	if h.mu.txn.Status.IsFinalized() {
 		if h.mu.txn.Status == roachpb.ABORTED {
 			log.VEventf(ctx, 1, "Heartbeat detected aborted txn. Cleaning up.")
 			h.abortTxnAsyncLocked(ctx)

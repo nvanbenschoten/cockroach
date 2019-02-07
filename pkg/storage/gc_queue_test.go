@@ -601,6 +601,7 @@ func TestGCQueueTransactionTable(t *testing.T) {
 
 	gcExpiration := now - storagebase.TxnCleanupThreshold.Nanoseconds()
 
+	// TODO(nvanbenschoten): Add to this test.
 	type spec struct {
 		status      roachpb.TransactionStatus
 		orig        int64

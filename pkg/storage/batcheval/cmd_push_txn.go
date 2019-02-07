@@ -177,7 +177,7 @@ func PushTxn(
 	}
 
 	// If already committed or aborted, return success.
-	if reply.PusheeTxn.Status != roachpb.PENDING {
+	if reply.PusheeTxn.Status.IsFinalized() {
 		// Trivial noop.
 		return result.Result{}, nil
 	}
@@ -266,6 +266,8 @@ func PushTxn(
 	default:
 		return result.Result{}, errors.Errorf("unexpected push type: %v", args.PushType)
 	}
+
+	// TODO(nvanbenschoten): What if we're STAGING?!
 
 	// If the transaction record was already present, persist the updates to it.
 	// If not, then we don't want to create it. This could allow for finalized

@@ -105,7 +105,7 @@ func (sr *txnSpanRefresher) SendLocked(
 
 	// If the transaction is no longer pending, just return without
 	// attempting to record its refresh spans.
-	if br.Txn.Status != roachpb.PENDING {
+	if br.Txn.Status.IsFinalized() {
 		return br, nil
 	}
 
@@ -181,6 +181,8 @@ func (sr *txnSpanRefresher) maybeRetrySend(
 	// splits up batches to send to multiple ranges in parallel, and
 	// then combines the results, partial success makes it very
 	// difficult to determine what can be retried.
+	// TODO(nvanbenschoten): Can we get rid of this limitation now that
+	// writes are idempotent?
 	if aPSErr, ok := pErr.GetDetail().(*roachpb.MixedSuccessError); ok {
 		log.VEventf(ctx, 2, "got partial success; cannot retry %s (pErr=%s)", ba, aPSErr.Wrapped)
 		return nil, aPSErr.Wrapped, hlc.Timestamp{}

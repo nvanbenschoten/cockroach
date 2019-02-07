@@ -619,10 +619,12 @@ func splitBatchAndCheckForRefreshSpans(
 	lastReq := lastPart[len(lastPart)-1].GetInner()
 	if et, ok := lastReq.(*roachpb.EndTransactionRequest); ok && et.NoRefreshSpans {
 		hasRefreshSpans := false
+	Loop:
 		for _, part := range parts[:len(parts)-1] {
 			for _, req := range part {
 				if roachpb.NeedsRefresh(req.GetInner()) {
 					hasRefreshSpans = true
+					break Loop
 				}
 			}
 		}
@@ -919,8 +921,10 @@ func (ds *DistSender) divideAndSendBatchToRanges(
 			// want the caller to come again with the EndTransaction in an
 			// extra call.
 			if l := len(ba.Requests) - 1; l > 0 && ba.Requests[l].GetInner().Method() == roachpb.EndTransaction {
-				responseCh <- response{pErr: errNo1PCTxn}
-				return
+				if len(ba.Requests[l].GetInner().(*roachpb.EndTransactionRequest).PromisedIntents) == 0 {
+					responseCh <- response{pErr: errNo1PCTxn}
+					return
+				}
 			}
 		}
 

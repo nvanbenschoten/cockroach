@@ -218,7 +218,7 @@ func (rts *resolvedTimestamp) assertOpAboveRTS(op enginepb.MVCCLogicalOp, opTS h
 // that may at some point in the future result in a RangeFeedValue publication.
 // Based on this definition, there are two possible states that an extent intent
 // can be in while fitting the requirement to be an "unresolved intent":
-// 1. part of a PENDING transaction
+// 1. part of a PENDING/STAGING transaction
 // 2. part of a COMMITTED transaction but not yet resolved due to the
 //     asynchronous nature of intent resolution
 // Notably, this means that an intent that exists but that is known to be part

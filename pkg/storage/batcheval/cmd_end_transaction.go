@@ -58,7 +58,7 @@ func declareKeysEndTransaction(
 	// The spans may extend beyond this Range, but it's ok for the
 	// purpose of acquiring latches. The parts in our Range will
 	// be resolved eagerly.
-	for _, span := range et.IntentSpans {
+	for _, span := range et.WrittenIntents {
 		spans.Add(spanset.SpanReadWrite, span)
 	}
 	if header.Txn != nil {
@@ -159,7 +159,7 @@ func evalEndTransaction(
 	ms := cArgs.Stats
 	reply := resp.(*roachpb.EndTransactionResponse)
 
-	if err := VerifyTransaction(h, args); err != nil {
+	if err := VerifyTransaction(h, args, roachpb.PENDING, roachpb.STAGING); err != nil {
 		return result.Result{}, err
 	}
 
@@ -202,6 +202,31 @@ func evalEndTransaction(
 		// to args.Commit), and also that the Timestamp and Epoch have
 		// not suffered regression.
 		switch reply.Txn.Status {
+		case roachpb.PENDING:
+			if h.Txn.Epoch < reply.Txn.Epoch {
+				// TODO(tschottdorf): this leaves the Txn record (and more
+				// importantly, intents) dangling; we can't currently write on
+				// error. Would panic, but that makes TestEndTransactionWithErrors
+				// awkward.
+				return result.Result{}, roachpb.NewTransactionStatusError(
+					fmt.Sprintf("epoch regression: %d", h.Txn.Epoch),
+				)
+			} else if h.Txn.Epoch == reply.Txn.Epoch && reply.Txn.Timestamp.Less(h.Txn.OrigTimestamp) {
+				// The transaction record can only ever be pushed forward, so it's an
+				// error if somehow the transaction record has an earlier timestamp
+				// than the original transaction timestamp.
+
+				// TODO(tschottdorf): see above comment on epoch regression.
+				return result.Result{}, roachpb.NewTransactionStatusError(
+					fmt.Sprintf("timestamp regression: %s", h.Txn.OrigTimestamp),
+				)
+			}
+
+		case roachpb.STAGING:
+			// TODO(nvanbenschoten): Perform some checks here.
+			// TODO(nvanbenschoten): TestCommitStagingTxn.
+			// TODO(nvanbenschoten): TestAbortStagingTxn.
+
 		case roachpb.COMMITTED:
 			return result.Result{}, roachpb.NewTransactionCommittedStatusError()
 
@@ -232,29 +257,9 @@ func evalEndTransaction(
 			// Similarly to above, use alwaysReturn==true. The caller isn't trying
 			// to abort, but the transaction is definitely aborted and its intents
 			// can go.
-			reply.Txn.Intents = args.IntentSpans
+			reply.Txn.WrittenIntents = args.WrittenIntents
 			return result.FromEndTxn(reply.Txn, true /* alwaysReturn */, args.Poison),
 				roachpb.NewTransactionAbortedError(roachpb.ABORT_REASON_ABORTED_RECORD_FOUND)
-
-		case roachpb.PENDING:
-			if h.Txn.Epoch < reply.Txn.Epoch {
-				// TODO(tschottdorf): this leaves the Txn record (and more
-				// importantly, intents) dangling; we can't currently write on
-				// error. Would panic, but that makes TestEndTransactionWithErrors
-				// awkward.
-				return result.Result{}, roachpb.NewTransactionStatusError(
-					fmt.Sprintf("epoch regression: %d", h.Txn.Epoch),
-				)
-			} else if h.Txn.Epoch == reply.Txn.Epoch && reply.Txn.Timestamp.Less(h.Txn.OrigTimestamp) {
-				// The transaction record can only ever be pushed forward, so it's an
-				// error if somehow the transaction record has an earlier timestamp
-				// than the original transaction timestamp.
-
-				// TODO(tschottdorf): see above comment on epoch regression.
-				return result.Result{}, roachpb.NewTransactionStatusError(
-					fmt.Sprintf("timestamp regression: %s", h.Txn.OrigTimestamp),
-				)
-			}
 
 		default:
 			return result.Result{}, roachpb.NewTransactionStatusError(
@@ -383,6 +388,7 @@ func IsEndTransactionTriggeringRetryError(
 	// If we saw any WriteTooOldErrors, we must restart to avoid lost
 	// update anomalies.
 	if txn.WriteTooOld {
+		// TODO(nvanbenschoten): Why keep this around?
 		retry, reason = true, roachpb.RETRY_WRITE_TOO_OLD
 	} else {
 		origTimestamp := txn.OrigTimestamp
@@ -453,7 +459,7 @@ func resolveLocalIntents(
 		// These transactions rely on having their intents resolved synchronously.
 		resolveAllowance = math.MaxInt64
 	}
-	for _, span := range args.IntentSpans {
+	for _, span := range args.WrittenIntents {
 		if err := func() error {
 			if resolveAllowance == 0 {
 				externalIntents = append(externalIntents, span)
@@ -524,11 +530,11 @@ func updateTxnWithExternalIntents(
 	key := keys.TransactionKey(txn.Key, txn.ID)
 	if TxnAutoGC && len(externalIntents) == 0 {
 		if log.V(2) {
-			log.Infof(ctx, "auto-gc'ed %s (%d intents)", txn.Short(), len(args.IntentSpans))
+			log.Infof(ctx, "auto-gc'ed %s (%d intents)", txn.Short(), len(args.WrittenIntents))
 		}
 		return engine.MVCCDelete(ctx, batch, ms, key, hlc.Timestamp{}, nil /* txn */)
 	}
-	txn.Intents = externalIntents
+	txn.WrittenIntents = externalIntents
 	txnRecord := txn.AsRecord()
 	return engine.MVCCPutProto(ctx, batch, ms, key, hlc.Timestamp{}, nil /* txn */, &txnRecord)
 }
