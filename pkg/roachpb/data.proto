@@ -366,8 +366,8 @@ message Transaction {
   //
   // TODO DURING REIVEW: I'd like to get this naming right the first time, so
   // I'm happy to bikeshed this. How about stable_intents?
-  repeated Span           written_intents  = 11 [(gogoproto.nullable) = false];
-  repeated SequencedWrite promised_intents = 17 [(gogoproto.nullable) = false];
+  repeated Span     written_intents  = 11 [(gogoproto.nullable) = false];
+  map<int32, int32> promised_intents = 17 [(gogoproto.nullable) = false];
   // Epoch zero timestamp is used to keep track of the earliest timestamp
   // that any epoch of the transaction used. This is set only if the
   // transaction is restarted and the epoch is bumped. It is used during
@@ -407,9 +407,9 @@ message TransactionRecord {
   // intents, so we'd like to avoid ever needing to synthesize it. 2.1 nodes
   // will assert that it is set, so we set it for now, but we should stop doing
   // that in the future. Removing this in 2.3 shouldn't cause any issues.
-  util.hlc.Timestamp orig_timestamp    = 6  [(gogoproto.nullable) = false];
-  repeated Span           written_intents  = 11 [(gogoproto.nullable) = false];
-  repeated SequencedWrite promised_intents = 17 [(gogoproto.nullable) = false];
+  util.hlc.Timestamp orig_timestamp   = 6  [(gogoproto.nullable) = false];
+  repeated Span      written_intents  = 11 [(gogoproto.nullable) = false];
+  map<int32, int32>  promised_intents = 17 [(gogoproto.nullable) = false];
 
   // Fields on Transaction that are not present in a transaction record.
   reserved 2, 3, 7, 8, 9, 10, 12, 13, 14, 15, 16;

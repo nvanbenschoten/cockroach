@@ -68,6 +68,8 @@ func (ic *txnIntentCollector) SendLocked(
 		if len(et.WrittenIntents) > 0 {
 			return nil, roachpb.NewErrorf("client must not pass intents to EndTransaction")
 		}
+
+		// TODO(nvanbenschoten): move this into the committer.
 		if len(et.Key) != 0 {
 			return nil, roachpb.NewErrorf("EndTransaction must not have a Key set")
 		}

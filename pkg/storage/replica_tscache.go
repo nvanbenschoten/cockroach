@@ -56,17 +56,19 @@ func (r *Replica) updateTimestampCache(
 			start, end := header.Key, header.EndKey
 			switch t := args.(type) {
 			case *roachpb.EndTransactionRequest:
-				// EndTransaction adds the transaction key to the write
-				// timestamp cache as a tombstone to ensure replays and
-				// concurrent requests aren't able to create a new
-				// transaction record.
+				// EndTransaction requests that finalize their transaction add the
+				// transaction key to the write timestamp cache as a tombstone to
+				// ensure replays and concurrent requests aren't able to create a
+				// new transaction record.
 				//
-				// It inserts the timestamp of the final batch in the
-				// transaction. This timestamp must necessarily be equal
-				// to or greater than the transaction's OrigTimestamp,
-				// which is consulted in CanCreateTxnRecord.
-				key := keys.TransactionKey(start, txnID)
-				tc.Add(key, nil, ts, txnID, false /* readCache */)
+				// It inserts the timestamp of the final batch in the transaction.
+				// This timestamp must necessarily be equal to or greater than the
+				// transaction's OrigTimestamp, which is consulted in
+				// CanCreateTxnRecord.
+				if br.Txn.Status.IsFinalized() {
+					key := keys.TransactionKey(start, txnID)
+					tc.Add(key, nil, ts, txnID, false /* readCache */)
+				}
 			case *roachpb.PushTxnRequest:
 				// A successful PushTxn request bumps the timestamp cache for
 				// the pushee's transaction key. The pushee will consult the

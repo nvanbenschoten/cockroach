@@ -186,9 +186,8 @@ func evaluateBatch(
 			// has already been aborted.
 			// - heartbeats don't check the abort span. If the txn is aborted, they'll
 			// return an aborted proto in their otherwise successful response.
-			singleAbort := ba.IsSingleEndTransactionRequest() &&
-				!ba.Requests[0].GetInner().(*roachpb.EndTransactionRequest).Commit
-			if !singleAbort && !ba.IsSingleHeartbeatTxnRequest() {
+			_, hasET := ba.GetArg(roachpb.EndTransaction)
+			if !hasET && !ba.IsSingleHeartbeatTxnRequest() {
 				if pErr := checkIfTxnAborted(ctx, rec, batch, *ba.Txn); pErr != nil {
 					return nil, result.Result{}, pErr
 				}

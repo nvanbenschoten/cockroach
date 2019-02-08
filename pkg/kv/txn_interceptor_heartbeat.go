@@ -202,6 +202,9 @@ func (h *txnHeartbeat) SendLocked(
 		}
 	}
 
+	// TODO(nvanbenschoten): if we see an EndTransaction request here, should we
+	// instruct the heartbeat loop to stop async abortTxnAsyncLocked.
+
 	// Forward the request.
 	// If we've elided the EndTxn and there's no other requests, we can't send an
 	// empty batch.

@@ -29,6 +29,9 @@
 #include <google/protobuf/message_lite.h>
 #include <google/protobuf/repeated_field.h>  // IWYU pragma: export
 #include <google/protobuf/extension_set.h>  // IWYU pragma: export
+#include <google/protobuf/map.h>  // IWYU pragma: export
+#include <google/protobuf/map_entry_lite.h>
+#include <google/protobuf/map_field_lite.h>
 #include <google/protobuf/generated_enum_util.h>
 #include "roachpb/metadata.pb.h"
 #include "storage/engine/enginepb/mvcc.pb.h"
@@ -42,7 +45,7 @@ namespace protobuf_roachpb_2fdata_2eproto {
 struct TableStruct {
   static const ::google::protobuf::internal::ParseTableField entries[];
   static const ::google::protobuf::internal::AuxillaryParseTableField aux[];
-  static const ::google::protobuf::internal::ParseTable schema[17];
+  static const ::google::protobuf::internal::ParseTable schema[19];
   static const ::google::protobuf::internal::FieldMetadata field_metadata[];
   static const ::google::protobuf::internal::SerializationTable serialization_table[];
   static const ::google::protobuf::uint32 offsets[];
@@ -95,6 +98,12 @@ extern TransactionDefaultTypeInternal _Transaction_default_instance_;
 class TransactionRecord;
 class TransactionRecordDefaultTypeInternal;
 extern TransactionRecordDefaultTypeInternal _TransactionRecord_default_instance_;
+class TransactionRecord_PromisedIntentsEntry_DoNotUse;
+class TransactionRecord_PromisedIntentsEntry_DoNotUseDefaultTypeInternal;
+extern TransactionRecord_PromisedIntentsEntry_DoNotUseDefaultTypeInternal _TransactionRecord_PromisedIntentsEntry_DoNotUse_default_instance_;
+class Transaction_PromisedIntentsEntry_DoNotUse;
+class Transaction_PromisedIntentsEntry_DoNotUseDefaultTypeInternal;
+extern Transaction_PromisedIntentsEntry_DoNotUseDefaultTypeInternal _Transaction_PromisedIntentsEntry_DoNotUse_default_instance_;
 class TxnCoordMeta;
 class TxnCoordMetaDefaultTypeInternal;
 extern TxnCoordMetaDefaultTypeInternal _TxnCoordMeta_default_instance_;
@@ -120,6 +129,8 @@ template<> ::cockroach::roachpb::SplitTrigger* Arena::CreateMaybeMessage<::cockr
 template<> ::cockroach::roachpb::StoreIdent* Arena::CreateMaybeMessage<::cockroach::roachpb::StoreIdent>(Arena*);
 template<> ::cockroach::roachpb::Transaction* Arena::CreateMaybeMessage<::cockroach::roachpb::Transaction>(Arena*);
 template<> ::cockroach::roachpb::TransactionRecord* Arena::CreateMaybeMessage<::cockroach::roachpb::TransactionRecord>(Arena*);
+template<> ::cockroach::roachpb::TransactionRecord_PromisedIntentsEntry_DoNotUse* Arena::CreateMaybeMessage<::cockroach::roachpb::TransactionRecord_PromisedIntentsEntry_DoNotUse>(Arena*);
+template<> ::cockroach::roachpb::Transaction_PromisedIntentsEntry_DoNotUse* Arena::CreateMaybeMessage<::cockroach::roachpb::Transaction_PromisedIntentsEntry_DoNotUse>(Arena*);
 template<> ::cockroach::roachpb::TxnCoordMeta* Arena::CreateMaybeMessage<::cockroach::roachpb::TxnCoordMeta>(Arena*);
 template<> ::cockroach::roachpb::Value* Arena::CreateMaybeMessage<::cockroach::roachpb::Value>(Arena*);
 }  // namespace protobuf
@@ -1420,6 +1431,25 @@ class ObservedTimestamp : public ::google::protobuf::MessageLite /* @@protoc_ins
 };
 // -------------------------------------------------------------------
 
+class Transaction_PromisedIntentsEntry_DoNotUse : public ::google::protobuf::internal::MapEntryLite<Transaction_PromisedIntentsEntry_DoNotUse, 
+    ::google::protobuf::int32, ::google::protobuf::int32,
+    ::google::protobuf::internal::WireFormatLite::TYPE_INT32,
+    ::google::protobuf::internal::WireFormatLite::TYPE_INT32,
+    0 > {
+public:
+  typedef ::google::protobuf::internal::MapEntryLite<Transaction_PromisedIntentsEntry_DoNotUse, 
+    ::google::protobuf::int32, ::google::protobuf::int32,
+    ::google::protobuf::internal::WireFormatLite::TYPE_INT32,
+    ::google::protobuf::internal::WireFormatLite::TYPE_INT32,
+    0 > SuperType;
+  Transaction_PromisedIntentsEntry_DoNotUse();
+  Transaction_PromisedIntentsEntry_DoNotUse(::google::protobuf::Arena* arena);
+  void MergeFrom(const Transaction_PromisedIntentsEntry_DoNotUse& other);
+  static const Transaction_PromisedIntentsEntry_DoNotUse* internal_default_instance() { return reinterpret_cast<const Transaction_PromisedIntentsEntry_DoNotUse*>(&_Transaction_PromisedIntentsEntry_DoNotUse_default_instance_); }
+};
+
+// -------------------------------------------------------------------
+
 class Transaction : public ::google::protobuf::MessageLite /* @@protoc_insertion_point(class_definition:cockroach.roachpb.Transaction) */ {
  public:
   Transaction();
@@ -1454,7 +1484,7 @@ class Transaction : public ::google::protobuf::MessageLite /* @@protoc_insertion
                &_Transaction_default_instance_);
   }
   static constexpr int kIndexInFileMessages =
-    10;
+    11;
 
   void Swap(Transaction* other);
   friend void swap(Transaction& a, Transaction& b) {
@@ -1503,6 +1533,7 @@ class Transaction : public ::google::protobuf::MessageLite /* @@protoc_insertion
 
   // nested types ----------------------------------------------------
 
+
   // accessors -------------------------------------------------------
 
   int observed_timestamps_size() const;
@@ -1530,13 +1561,10 @@ class Transaction : public ::google::protobuf::MessageLite /* @@protoc_insertion
   int promised_intents_size() const;
   void clear_promised_intents();
   static const int kPromisedIntentsFieldNumber = 17;
-  ::cockroach::roachpb::SequencedWrite* mutable_promised_intents(int index);
-  ::google::protobuf::RepeatedPtrField< ::cockroach::roachpb::SequencedWrite >*
-      mutable_promised_intents();
-  const ::cockroach::roachpb::SequencedWrite& promised_intents(int index) const;
-  ::cockroach::roachpb::SequencedWrite* add_promised_intents();
-  const ::google::protobuf::RepeatedPtrField< ::cockroach::roachpb::SequencedWrite >&
+  const ::google::protobuf::Map< ::google::protobuf::int32, ::google::protobuf::int32 >&
       promised_intents() const;
+  ::google::protobuf::Map< ::google::protobuf::int32, ::google::protobuf::int32 >*
+      mutable_promised_intents();
 
   // string name = 2;
   void clear_name();
@@ -1648,7 +1676,12 @@ class Transaction : public ::google::protobuf::MessageLite /* @@protoc_insertion
   ::google::protobuf::internal::InternalMetadataWithArenaLite _internal_metadata_;
   ::google::protobuf::RepeatedPtrField< ::cockroach::roachpb::ObservedTimestamp > observed_timestamps_;
   ::google::protobuf::RepeatedPtrField< ::cockroach::roachpb::Span > written_intents_;
-  ::google::protobuf::RepeatedPtrField< ::cockroach::roachpb::SequencedWrite > promised_intents_;
+  ::google::protobuf::internal::MapFieldLite<
+      Transaction_PromisedIntentsEntry_DoNotUse,
+      ::google::protobuf::int32, ::google::protobuf::int32,
+      ::google::protobuf::internal::WireFormatLite::TYPE_INT32,
+      ::google::protobuf::internal::WireFormatLite::TYPE_INT32,
+      0 > promised_intents_;
   ::google::protobuf::internal::ArenaStringPtr name_;
   ::cockroach::storage::engine::enginepb::TxnMeta* meta_;
   ::cockroach::util::hlc::Timestamp* last_heartbeat_;
@@ -1663,6 +1696,25 @@ class Transaction : public ::google::protobuf::MessageLite /* @@protoc_insertion
   mutable ::google::protobuf::internal::CachedSize _cached_size_;
   friend struct ::protobuf_roachpb_2fdata_2eproto::TableStruct;
 };
+// -------------------------------------------------------------------
+
+class TransactionRecord_PromisedIntentsEntry_DoNotUse : public ::google::protobuf::internal::MapEntryLite<TransactionRecord_PromisedIntentsEntry_DoNotUse, 
+    ::google::protobuf::int32, ::google::protobuf::int32,
+    ::google::protobuf::internal::WireFormatLite::TYPE_INT32,
+    ::google::protobuf::internal::WireFormatLite::TYPE_INT32,
+    0 > {
+public:
+  typedef ::google::protobuf::internal::MapEntryLite<TransactionRecord_PromisedIntentsEntry_DoNotUse, 
+    ::google::protobuf::int32, ::google::protobuf::int32,
+    ::google::protobuf::internal::WireFormatLite::TYPE_INT32,
+    ::google::protobuf::internal::WireFormatLite::TYPE_INT32,
+    0 > SuperType;
+  TransactionRecord_PromisedIntentsEntry_DoNotUse();
+  TransactionRecord_PromisedIntentsEntry_DoNotUse(::google::protobuf::Arena* arena);
+  void MergeFrom(const TransactionRecord_PromisedIntentsEntry_DoNotUse& other);
+  static const TransactionRecord_PromisedIntentsEntry_DoNotUse* internal_default_instance() { return reinterpret_cast<const TransactionRecord_PromisedIntentsEntry_DoNotUse*>(&_TransactionRecord_PromisedIntentsEntry_DoNotUse_default_instance_); }
+};
+
 // -------------------------------------------------------------------
 
 class TransactionRecord : public ::google::protobuf::MessageLite /* @@protoc_insertion_point(class_definition:cockroach.roachpb.TransactionRecord) */ {
@@ -1699,7 +1751,7 @@ class TransactionRecord : public ::google::protobuf::MessageLite /* @@protoc_ins
                &_TransactionRecord_default_instance_);
   }
   static constexpr int kIndexInFileMessages =
-    11;
+    13;
 
   void Swap(TransactionRecord* other);
   friend void swap(TransactionRecord& a, TransactionRecord& b) {
@@ -1748,6 +1800,7 @@ class TransactionRecord : public ::google::protobuf::MessageLite /* @@protoc_ins
 
   // nested types ----------------------------------------------------
 
+
   // accessors -------------------------------------------------------
 
   int written_intents_size() const;
@@ -1764,13 +1817,10 @@ class TransactionRecord : public ::google::protobuf::MessageLite /* @@protoc_ins
   int promised_intents_size() const;
   void clear_promised_intents();
   static const int kPromisedIntentsFieldNumber = 17;
-  ::cockroach::roachpb::SequencedWrite* mutable_promised_intents(int index);
-  ::google::protobuf::RepeatedPtrField< ::cockroach::roachpb::SequencedWrite >*
-      mutable_promised_intents();
-  const ::cockroach::roachpb::SequencedWrite& promised_intents(int index) const;
-  ::cockroach::roachpb::SequencedWrite* add_promised_intents();
-  const ::google::protobuf::RepeatedPtrField< ::cockroach::roachpb::SequencedWrite >&
+  const ::google::protobuf::Map< ::google::protobuf::int32, ::google::protobuf::int32 >&
       promised_intents() const;
+  ::google::protobuf::Map< ::google::protobuf::int32, ::google::protobuf::int32 >*
+      mutable_promised_intents();
 
   bool has_meta() const;
   void clear_meta();
@@ -1816,7 +1866,12 @@ class TransactionRecord : public ::google::protobuf::MessageLite /* @@protoc_ins
 
   ::google::protobuf::internal::InternalMetadataWithArenaLite _internal_metadata_;
   ::google::protobuf::RepeatedPtrField< ::cockroach::roachpb::Span > written_intents_;
-  ::google::protobuf::RepeatedPtrField< ::cockroach::roachpb::SequencedWrite > promised_intents_;
+  ::google::protobuf::internal::MapFieldLite<
+      TransactionRecord_PromisedIntentsEntry_DoNotUse,
+      ::google::protobuf::int32, ::google::protobuf::int32,
+      ::google::protobuf::internal::WireFormatLite::TYPE_INT32,
+      ::google::protobuf::internal::WireFormatLite::TYPE_INT32,
+      0 > promised_intents_;
   ::cockroach::storage::engine::enginepb::TxnMeta* meta_;
   ::cockroach::util::hlc::Timestamp* last_heartbeat_;
   ::cockroach::util::hlc::Timestamp* orig_timestamp_;
@@ -1860,7 +1915,7 @@ class SequencedWrite : public ::google::protobuf::MessageLite /* @@protoc_insert
                &_SequencedWrite_default_instance_);
   }
   static constexpr int kIndexInFileMessages =
-    12;
+    14;
 
   void Swap(SequencedWrite* other);
   friend void swap(SequencedWrite& a, SequencedWrite& b) {
@@ -1975,7 +2030,7 @@ class Intent : public ::google::protobuf::MessageLite /* @@protoc_insertion_poin
                &_Intent_default_instance_);
   }
   static constexpr int kIndexInFileMessages =
-    13;
+    15;
 
   void Swap(Intent* other);
   friend void swap(Intent& a, Intent& b) {
@@ -2100,7 +2155,7 @@ class Lease : public ::google::protobuf::MessageLite /* @@protoc_insertion_point
                &_Lease_default_instance_);
   }
   static constexpr int kIndexInFileMessages =
-    14;
+    16;
 
   void Swap(Lease* other);
   friend void swap(Lease& a, Lease& b) {
@@ -2267,7 +2322,7 @@ class AbortSpanEntry : public ::google::protobuf::MessageLite /* @@protoc_insert
                &_AbortSpanEntry_default_instance_);
   }
   static constexpr int kIndexInFileMessages =
-    15;
+    17;
 
   void Swap(AbortSpanEntry* other);
   friend void swap(AbortSpanEntry& a, AbortSpanEntry& b) {
@@ -2394,7 +2449,7 @@ class TxnCoordMeta : public ::google::protobuf::MessageLite /* @@protoc_insertio
                &_TxnCoordMeta_default_instance_);
   }
   static constexpr int kIndexInFileMessages =
-    16;
+    18;
 
   void Swap(TxnCoordMeta* other);
   friend void swap(TxnCoordMeta& a, TxnCoordMeta& b) {
@@ -3688,6 +3743,8 @@ inline void ObservedTimestamp::set_allocated_timestamp(::cockroach::util::hlc::T
 
 // -------------------------------------------------------------------
 
+// -------------------------------------------------------------------
+
 // Transaction
 
 inline bool Transaction::has_meta() const {
@@ -4084,27 +4141,15 @@ inline int Transaction::promised_intents_size() const {
 inline void Transaction::clear_promised_intents() {
   promised_intents_.Clear();
 }
-inline ::cockroach::roachpb::SequencedWrite* Transaction::mutable_promised_intents(int index) {
-  // @@protoc_insertion_point(field_mutable:cockroach.roachpb.Transaction.promised_intents)
-  return promised_intents_.Mutable(index);
-}
-inline ::google::protobuf::RepeatedPtrField< ::cockroach::roachpb::SequencedWrite >*
-Transaction::mutable_promised_intents() {
-  // @@protoc_insertion_point(field_mutable_list:cockroach.roachpb.Transaction.promised_intents)
-  return &promised_intents_;
-}
-inline const ::cockroach::roachpb::SequencedWrite& Transaction::promised_intents(int index) const {
-  // @@protoc_insertion_point(field_get:cockroach.roachpb.Transaction.promised_intents)
-  return promised_intents_.Get(index);
-}
-inline ::cockroach::roachpb::SequencedWrite* Transaction::add_promised_intents() {
-  // @@protoc_insertion_point(field_add:cockroach.roachpb.Transaction.promised_intents)
-  return promised_intents_.Add();
-}
-inline const ::google::protobuf::RepeatedPtrField< ::cockroach::roachpb::SequencedWrite >&
+inline const ::google::protobuf::Map< ::google::protobuf::int32, ::google::protobuf::int32 >&
 Transaction::promised_intents() const {
-  // @@protoc_insertion_point(field_list:cockroach.roachpb.Transaction.promised_intents)
-  return promised_intents_;
+  // @@protoc_insertion_point(field_map:cockroach.roachpb.Transaction.promised_intents)
+  return promised_intents_.GetMap();
+}
+inline ::google::protobuf::Map< ::google::protobuf::int32, ::google::protobuf::int32 >*
+Transaction::mutable_promised_intents() {
+  // @@protoc_insertion_point(field_mutable_map:cockroach.roachpb.Transaction.promised_intents)
+  return promised_intents_.MutableMap();
 }
 
 inline bool Transaction::has_epoch_zero_timestamp() const {
@@ -4167,6 +4212,8 @@ inline void Transaction::set_orig_timestamp_was_observed(bool value) {
   orig_timestamp_was_observed_ = value;
   // @@protoc_insertion_point(field_set:cockroach.roachpb.Transaction.orig_timestamp_was_observed)
 }
+
+// -------------------------------------------------------------------
 
 // -------------------------------------------------------------------
 
@@ -4362,27 +4409,15 @@ inline int TransactionRecord::promised_intents_size() const {
 inline void TransactionRecord::clear_promised_intents() {
   promised_intents_.Clear();
 }
-inline ::cockroach::roachpb::SequencedWrite* TransactionRecord::mutable_promised_intents(int index) {
-  // @@protoc_insertion_point(field_mutable:cockroach.roachpb.TransactionRecord.promised_intents)
-  return promised_intents_.Mutable(index);
-}
-inline ::google::protobuf::RepeatedPtrField< ::cockroach::roachpb::SequencedWrite >*
-TransactionRecord::mutable_promised_intents() {
-  // @@protoc_insertion_point(field_mutable_list:cockroach.roachpb.TransactionRecord.promised_intents)
-  return &promised_intents_;
-}
-inline const ::cockroach::roachpb::SequencedWrite& TransactionRecord::promised_intents(int index) const {
-  // @@protoc_insertion_point(field_get:cockroach.roachpb.TransactionRecord.promised_intents)
-  return promised_intents_.Get(index);
-}
-inline ::cockroach::roachpb::SequencedWrite* TransactionRecord::add_promised_intents() {
-  // @@protoc_insertion_point(field_add:cockroach.roachpb.TransactionRecord.promised_intents)
-  return promised_intents_.Add();
-}
-inline const ::google::protobuf::RepeatedPtrField< ::cockroach::roachpb::SequencedWrite >&
+inline const ::google::protobuf::Map< ::google::protobuf::int32, ::google::protobuf::int32 >&
 TransactionRecord::promised_intents() const {
-  // @@protoc_insertion_point(field_list:cockroach.roachpb.TransactionRecord.promised_intents)
-  return promised_intents_;
+  // @@protoc_insertion_point(field_map:cockroach.roachpb.TransactionRecord.promised_intents)
+  return promised_intents_.GetMap();
+}
+inline ::google::protobuf::Map< ::google::protobuf::int32, ::google::protobuf::int32 >*
+TransactionRecord::mutable_promised_intents() {
+  // @@protoc_insertion_point(field_mutable_map:cockroach.roachpb.TransactionRecord.promised_intents)
+  return promised_intents_.MutableMap();
 }
 
 // -------------------------------------------------------------------
@@ -5160,6 +5195,10 @@ TxnCoordMeta::outstanding_writes() const {
 #ifdef __GNUC__
   #pragma GCC diagnostic pop
 #endif  // __GNUC__
+// -------------------------------------------------------------------
+
+// -------------------------------------------------------------------
+
 // -------------------------------------------------------------------
 
 // -------------------------------------------------------------------

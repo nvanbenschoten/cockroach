@@ -1109,6 +1109,8 @@ func (ds *DistSender) sendPartialBatch(
 		if err != nil {
 			return response{pErr: roachpb.NewError(err)}
 		}
+		// TODO(nvanbenschoten): we don't want QueryIntent requests in the same
+		// batch as an EndTransaction.
 		ba, positions, err = truncate(ba, rs)
 		if len(positions) == 0 && err == nil {
 			// This shouldn't happen in the wild, but some tests exercise it.

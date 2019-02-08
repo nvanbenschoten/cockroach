@@ -30,6 +30,7 @@ import (
 	"github.com/cockroachdb/cockroach/pkg/util"
 	"github.com/cockroachdb/cockroach/pkg/util/log"
 	"github.com/cockroachdb/cockroach/pkg/util/timeutil"
+	"github.com/pkg/errors"
 )
 
 // executeWriteBatch is the entry point for client requests which may mutate the
@@ -277,93 +278,111 @@ func (r *Replica) evaluateWriteBatch(
 ) (engine.Batch, enginepb.MVCCStats, *roachpb.BatchResponse, result.Result, *roachpb.Error) {
 	ms := enginepb.MVCCStats{}
 
-	// TODO(nvanbenschoten): add transformer that removes promised intents from EndTransaction request
-	// that are in this range.
-
-	// If not transactional or there are indications that the batch's txn will
-	// require restart or retry, execute as normal.
-	if isOnePhaseCommit(ba, r.store.TestingKnobs()) {
-		_, hasBegin := ba.GetArg(roachpb.BeginTransaction)
-		arg, _ := ba.GetArg(roachpb.EndTransaction)
+	if arg, hasET := ba.GetArg(roachpb.EndTransaction); hasET {
 		etArg := arg.(*roachpb.EndTransactionRequest)
 
-		// Try executing with transaction stripped. We use the transaction timestamp
-		// to write any values as it may have been advanced by the timestamp cache.
-		strippedBa := ba
-		strippedBa.Timestamp = strippedBa.Txn.Timestamp
-		strippedBa.Txn = nil
-		if hasBegin {
-			strippedBa.Requests = ba.Requests[1 : len(ba.Requests)-1] // strip begin/end txn reqs
-		} else {
-			strippedBa.Requests = ba.Requests[:len(ba.Requests)-1] // strip end txn req
+		// Strip any PromisedIntents from the EndTransaction for writes that are in
+		// the same batch as the EndTransaction. We know that if the EndTransaction
+		// succeeds, these will also succeed. This can also allow us to skip the
+		// STAGING state if the only promised intents for the EndTransaction ended
+		// up on the same range.
+		var err error
+		if ba, etArg, err = stripPromisedIntents(ba, etArg); err != nil {
+			return nil, ms, nil, result.Result{}, roachpb.NewError(err)
 		}
 
-		// If there were no refreshable spans earlier in the txn
-		// (e.g. earlier gets or scans), then the batch can be retried
-		// locally in the event of write too old errors.
-		retryLocally := etArg.NoRefreshSpans && !ba.Txn.OrigTimestampWasObserved
-
-		// If all writes occurred at the intended timestamp, we've succeeded on the fast path.
-		rec := NewReplicaEvalContext(r, spans)
-		batch, br, res, pErr := r.evaluateWriteBatchWithLocalRetries(
-			ctx, idKey, rec, &ms, strippedBa, spans, retryLocally,
-		)
-		if pErr == nil && (ba.Timestamp == br.Timestamp ||
-			(retryLocally && !batcheval.IsEndTransactionExceedingDeadline(br.Timestamp, *etArg))) {
-			clonedTxn := ba.Txn.Clone()
-			clonedTxn.Status = roachpb.COMMITTED
-			// Make sure the returned txn has the actual commit
-			// timestamp. This can be different if the stripped batch was
-			// executed at the server's hlc now timestamp.
-			clonedTxn.Timestamp = br.Timestamp
-
-			// If the end transaction is not committed, clear the batch and mark the status aborted.
-			if !etArg.Commit {
-				clonedTxn.Status = roachpb.ABORTED
-				batch.Close()
-				batch = r.store.Engine().NewBatch()
-				ms = enginepb.MVCCStats{}
-			} else {
-				// Run commit trigger manually.
-				innerResult, err := batcheval.RunCommitTrigger(ctx, rec, batch, &ms, *etArg, &clonedTxn)
-				if err != nil {
-					return batch, ms, br, res, roachpb.NewErrorf("failed to run commit trigger: %s", err)
-				}
-				if err := res.MergeAndDestroy(innerResult); err != nil {
-					return batch, ms, br, res, roachpb.NewError(err)
-				}
+		// If not transactional or there are indications that the batch's txn will
+		// require restart or retry, execute as normal.
+		if isOnePhaseCommit(ba, r.store.TestingKnobs()) {
+			// The EndTransaction request that is part of a one-phase commit
+			// should never have promised intents remaining after we strip out
+			// the writes that are part of the same batch (see stripPromisedIntents).
+			if len(etArg.PromisedIntents) != 0 {
+				return nil, ms, nil, result.Result{}, roachpb.NewErrorf(
+					"one-phase commit contains promised intents; ba=%s, promised=%v",
+					ba.Summary(), etArg.PromisedIntents,
+				)
 			}
 
-			br.Txn = &clonedTxn
-			// Add placeholder responses for begin & end transaction requests.
-			var resps []roachpb.ResponseUnion
+			// Try executing with transaction stripped. We use the transaction timestamp
+			// to write any values as it may have been advanced by the timestamp cache.
+			strippedBa := ba
+			strippedBa.Timestamp = strippedBa.Txn.Timestamp
+			strippedBa.Txn = nil
+			_, hasBegin := ba.GetArg(roachpb.BeginTransaction)
 			if hasBegin {
-				resps = make([]roachpb.ResponseUnion, len(br.Responses)+2)
-				resps[0].MustSetInner(&roachpb.BeginTransactionResponse{})
-				copy(resps[1:], br.Responses)
+				strippedBa.Requests = ba.Requests[1 : len(ba.Requests)-1] // strip begin/end txn reqs
 			} else {
-				resps = append(br.Responses, roachpb.ResponseUnion{})
+				strippedBa.Requests = ba.Requests[:len(ba.Requests)-1] // strip end txn req
 			}
-			resps[len(resps)-1].MustSetInner(&roachpb.EndTransactionResponse{OnePhaseCommit: true})
-			br.Responses = resps
-			return batch, ms, br, res, nil
-		}
 
-		ms = enginepb.MVCCStats{}
+			// If there were no refreshable spans earlier in the txn
+			// (e.g. earlier gets or scans), then the batch can be retried
+			// locally in the event of write too old errors.
+			retryLocally := etArg.NoRefreshSpans && !ba.Txn.OrigTimestampWasObserved
 
-		// Handle the case of a required one phase commit transaction.
-		if etArg.Require1PC {
-			if pErr != nil {
-				return batch, ms, nil, result.Result{}, pErr
-			} else if ba.Timestamp != br.Timestamp {
-				err := roachpb.NewTransactionRetryError(roachpb.RETRY_REASON_UNKNOWN)
-				return batch, ms, nil, result.Result{}, roachpb.NewError(err)
+			// If all writes occurred at the intended timestamp, we've succeeded on the fast path.
+			rec := NewReplicaEvalContext(r, spans)
+			batch, br, res, pErr := r.evaluateWriteBatchWithLocalRetries(
+				ctx, idKey, rec, &ms, strippedBa, spans, retryLocally,
+			)
+			if pErr == nil && (ba.Timestamp == br.Timestamp ||
+				(retryLocally && !batcheval.IsEndTransactionExceedingDeadline(br.Timestamp, *etArg))) {
+				clonedTxn := ba.Txn.Clone()
+				clonedTxn.Status = roachpb.COMMITTED
+				// Make sure the returned txn has the actual commit
+				// timestamp. This can be different if the stripped batch was
+				// executed at the server's hlc now timestamp.
+				clonedTxn.Timestamp = br.Timestamp
+
+				// If the end transaction is not committed, clear the batch and mark the status aborted.
+				if !etArg.Commit {
+					clonedTxn.Status = roachpb.ABORTED
+					batch.Close()
+					batch = r.store.Engine().NewBatch()
+					ms = enginepb.MVCCStats{}
+				} else {
+					// Run commit trigger manually.
+					innerResult, err := batcheval.RunCommitTrigger(ctx, rec, batch, &ms, *etArg, &clonedTxn)
+					if err != nil {
+						return batch, ms, br, res, roachpb.NewErrorf("failed to run commit trigger: %s", err)
+					}
+					if err := res.MergeAndDestroy(innerResult); err != nil {
+						return batch, ms, br, res, roachpb.NewError(err)
+					}
+				}
+
+				br.Txn = &clonedTxn
+				// Add placeholder responses for begin & end transaction requests.
+				var resps []roachpb.ResponseUnion
+				if hasBegin {
+					resps = make([]roachpb.ResponseUnion, len(br.Responses)+2)
+					resps[0].MustSetInner(&roachpb.BeginTransactionResponse{})
+					copy(resps[1:], br.Responses)
+				} else {
+					resps = append(br.Responses, roachpb.ResponseUnion{})
+				}
+				resps[len(resps)-1].MustSetInner(&roachpb.EndTransactionResponse{OnePhaseCommit: true})
+				br.Responses = resps
+				return batch, ms, br, res, nil
 			}
-			log.Fatal(ctx, "unreachable")
-		}
 
-		batch.Close()
-		log.VEventf(ctx, 2, "1PC execution failed, reverting to regular execution for batch")
+			ms = enginepb.MVCCStats{}
+
+			// Handle the case of a required one phase commit transaction.
+			if etArg.Require1PC {
+				if pErr != nil {
+					return batch, ms, nil, result.Result{}, pErr
+				} else if ba.Timestamp != br.Timestamp {
+					err := roachpb.NewTransactionRetryError(roachpb.RETRY_REASON_UNKNOWN)
+					return batch, ms, nil, result.Result{}, roachpb.NewError(err)
+				}
+				log.Fatal(ctx, "unreachable")
+			}
+
+			batch.Close()
+			log.VEventf(ctx, 2, "1PC execution failed, reverting to regular execution for batch")
+		}
 	}
 
 	rec := NewReplicaEvalContext(r, spans)
@@ -475,4 +494,39 @@ func isOnePhaseCommit(ba roachpb.BatchRequest, knobs *StoreTestingKnobs) bool {
 		return false
 	}
 	return !knobs.DisableOptional1PC || etArg.Require1PC
+}
+
+// TODO(nvanbenschoten): ...
+func stripPromisedIntents(
+	ba roachpb.BatchRequest, et *roachpb.EndTransactionRequest,
+) (roachpb.BatchRequest, *roachpb.EndTransactionRequest, error) {
+	if len(et.PromisedIntents) == 0 {
+		return ba, et, nil
+	}
+
+	origET := et
+	for _, ru := range ba.Requests[:len(ba.Requests)-1] {
+		req := ru.GetInner()
+		if roachpb.IsTransactionWrite(req) {
+			if et == origET {
+				etClone := et.ShallowCopy().(*roachpb.EndTransactionRequest)
+				etClone.PromisedIntents = make(map[int32]int32, len(et.PromisedIntents))
+				for seq, idx := range et.PromisedIntents {
+					etClone.PromisedIntents[seq] = idx
+				}
+				et = etClone
+
+				reqsClone := append([]roachpb.RequestUnion(nil), ba.Requests...)
+				reqsClone[len(reqsClone)-1].MustSetInner(et)
+				ba.Requests = reqsClone
+			}
+
+			seq := req.Header().Sequence
+			if _, ok := et.PromisedIntents[seq]; !ok {
+				return ba, nil, errors.New("write in batch with EndTransaction missing from PromisedIntents")
+			}
+			delete(et.PromisedIntents, seq)
+		}
+	}
+	return ba, et, nil
 }

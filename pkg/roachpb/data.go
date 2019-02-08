@@ -832,7 +832,13 @@ func (t Transaction) Clone() Transaction {
 	// Note that we're not cloning the span keys under the assumption that the
 	// keys themselves are not mutable.
 	t.WrittenIntents = append([]Span(nil), t.WrittenIntents...)
-	t.PromisedIntents = append([]SequencedWrite(nil), t.PromisedIntents...)
+	if len(t.PromisedIntents) > 0 {
+		mPI := t.PromisedIntents
+		t.PromisedIntents = make(map[int32]int32, len(t.PromisedIntents))
+		for seq, idx := range mPI {
+			t.PromisedIntents[seq] = idx
+		}
+	}
 	return t
 }
 

@@ -16,6 +16,7 @@ package kv
 
 import (
 	"context"
+	"sort"
 	"sync"
 
 	"github.com/cockroachdb/cockroach/pkg/base"
@@ -173,7 +174,7 @@ func (tc *txnCommitter) sendLockedWithElidedEndTransaction(
 // transaction to move from a STAGING status to a COMMITTED status.
 func (tc *txnCommitter) canCommitInParallelWithWrites(
 	ba roachpb.BatchRequest, et *roachpb.EndTransactionRequest,
-) (bool, []roachpb.SequencedWrite) {
+) (bool, map[int32]int32) {
 	if !parallelCommitsEnabled.Get(&tc.st.SV) {
 		return false, nil
 	}
@@ -186,12 +187,14 @@ func (tc *txnCommitter) canCommitInParallelWithWrites(
 	}
 
 	// TODO
-	var inFlightWrites []roachpb.SequencedWrite
-	inFlightWriteLimit := maxTxnIntentsBytes.Get(&tc.st.SV)
+	// map[seq]idxIn
+	var inFlightWrites map[int32]int32
 	for _, ru := range ba.Requests {
 		req := ru.GetInner()
 		h := req.Header()
-		var w roachpb.SequencedWrite
+
+		var k roachpb.Key
+		var seq int32
 		switch {
 		case roachpb.IsTransactionWrite(req):
 			// Similarly to how we can't pipelining ranged writes, we also can't
@@ -201,27 +204,37 @@ func (tc *txnCommitter) canCommitInParallelWithWrites(
 			if roachpb.IsRange(req) {
 				return false, nil
 			}
-
-			// ...
-			w = roachpb.SequencedWrite{Key: h.Key, Sequence: h.Sequence}
+			k = h.Key
+			seq = h.Sequence
 		case req.Method() == roachpb.QueryIntent:
 			// A QueryIntent isn't a write, but it indicates that there is an
 			// in-flight write that needs to complete as part of the transaction.
 			qi := req.(*roachpb.QueryIntentRequest)
-			w = roachpb.SequencedWrite{Key: h.Key, Sequence: qi.Txn.Sequence}
+			k = h.Key
+			seq = qi.Txn.Sequence
 		default:
 			continue
 		}
 
-		s := int64(w.Size())
-		if s > inFlightWriteLimit {
-			//
+		idx := intentSliceIndexForKey(et.WrittenIntents, k)
+		if idx == -1 {
 			return false, nil
 		}
-		inFlightWriteLimit -= s
-		inFlightWrites = append(inFlightWrites, w)
+		if inFlightWrites == nil {
+			inFlightWrites = make(map[int32]int32)
+		}
+		inFlightWrites[seq] = int32(idx)
 	}
 	return true, inFlightWrites
+}
+
+func intentSliceIndexForKey(s []roachpb.Span, k roachpb.Key) int {
+	i := sort.Search(len(s), func(i int) bool { return k.Compare(s[i].Key) <= 0 })
+	if i == len(s) || !k.Equal(s[i].Key) || len(s[i].EndKey) > 0 {
+		// fmt.Println("HERERERE", s[i].Key, k, i == len(s), !k.Equal(s[i].Key), len(s[i].EndKey) > 0)
+		return -1
+	}
+	return i
 }
 
 // needTxnRetry determines whether the transaction needs to refresh (see
@@ -243,16 +256,20 @@ func (*txnCommitter) needTxnRetry(
 
 func (tc *txnCommitter) makeTxnCommitExplicitAsync(ctx context.Context, txn *roachpb.Transaction) {
 	// log.VEventf(ctx, 2, "async abort for txn: %s", txn)
+	// ctx, sp := tracing.ForkCtxSpan(ctx, "async explicit commit")
 	if err := tc.stopper.RunAsyncTask(
-		ctx, "txnCommitter: making txn commit explicit", func(ctx context.Context) {
+		context.Background(), "txnCommitter: making txn commit explicit", func(ctx context.Context) {
+			// defer tracing.FinishSpan(sp)
 			tc.mu.Lock()
 			defer tc.mu.Unlock()
 			if err := makeTxnCommitExplicit(ctx, tc.wrapped, txn); err != nil {
+				panic(err)
 				// log.VErrEventf(ctx, 1, "async abort failed for %s: %s ", txn, pErr)
 			}
 		},
 	); err != nil {
 		log.Warning(ctx, err)
+		// tracing.FinishSpan(sp)
 	}
 }
 
@@ -262,7 +279,9 @@ func makeTxnCommitExplicit(ctx context.Context, s lockedSender, txn *roachpb.Tra
 	// contains them.
 	ba := roachpb.BatchRequest{}
 	ba.Header = roachpb.Header{Txn: txn}
-	ba.Add(&roachpb.EndTransactionRequest{Commit: true})
+	et := roachpb.EndTransactionRequest{Commit: true}
+	et.Key = txn.Key
+	ba.Add(&et)
 
 	// Retry until the
 	const maxAttempts = 5
