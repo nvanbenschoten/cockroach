@@ -92,6 +92,8 @@ const (
 	// an error code either indicating the pusher must retry or abort and
 	// restart the transaction.
 	PushTxn
+	// RecoverTxn ...
+	RecoverTxn
 	// QueryTxn fetches the current state of the designated transaction.
 	QueryTxn
 	// QueryIntent checks whether the specified intent exists.

@@ -774,6 +774,18 @@ message PushTxnResponse {
   Transaction pushee_txn = 2 [(gogoproto.nullable) = false];
 }
 
+message RecoverTxnRequest {
+  option (gogoproto.equal) = true;
+
+  RequestHeader header = 1 [(gogoproto.nullable) = false, (gogoproto.embed) = true];
+
+  bool commit = 2;
+}
+
+message RecoverTxnResponse {
+  ResponseHeader header = 1 [(gogoproto.nullable) = false, (gogoproto.embed) = true];
+}
+
 // A QueryTxnResponse is arguments to the QueryTxn() method. It's sent
 // by transactions which are waiting to push another transaction because
 // of conflicting write intents to fetch updates to either the pusher's
@@ -1401,6 +1413,7 @@ message RequestUnion {
     HeartbeatTxnRequest heartbeat_txn = 12;
     GCRequest gc = 13;
     PushTxnRequest push_txn = 14;
+    RecoverTxnRequest recover_txn = 46;
     ResolveIntentRequest resolve_intent = 16;
     ResolveIntentRangeRequest resolve_intent_range = 17;
     MergeRequest merge = 18;
@@ -1450,6 +1463,7 @@ message ResponseUnion {
     HeartbeatTxnResponse heartbeat_txn = 12;
     GCResponse gc = 13;
     PushTxnResponse push_txn = 14;
+    RecoverTxnResponse recover_txn = 46;
     ResolveIntentResponse resolve_intent = 16;
     ResolveIntentRangeResponse resolve_intent_range = 17;
     MergeResponse merge = 18;
