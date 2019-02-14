@@ -125,7 +125,7 @@ func (sc *AbortSpan) Del(
 	ctx context.Context, e engine.ReadWriter, ms *enginepb.MVCCStats, txnID uuid.UUID,
 ) error {
 	key := keys.AbortSpanKey(sc.rangeID, txnID)
-	return engine.MVCCDelete(ctx, e, ms, key, hlc.Timestamp{}, nil /* txn */)
+	return engine.MVCCDelete(ctx, e, ms, key, hlc.Timestamp{}, nil /* txn */, false)
 }
 
 // Put writes an entry for the specified transaction ID.
@@ -137,7 +137,7 @@ func (sc *AbortSpan) Put(
 	entry *roachpb.AbortSpanEntry,
 ) error {
 	key := keys.AbortSpanKey(sc.rangeID, txnID)
-	return engine.MVCCPutProto(ctx, e, ms, key, hlc.Timestamp{}, nil /* txn */, entry)
+	return engine.MVCCPutProto(ctx, e, ms, key, hlc.Timestamp{}, nil /* txn */, entry, false)
 }
 
 // CopyTo copies the abort span entries to the abort span for the range
@@ -182,7 +182,7 @@ func (sc *AbortSpan) CopyTo(
 		}
 		return engine.MVCCPutProto(ctx, w, ms,
 			keys.AbortSpanKey(newRangeID, txnID),
-			hlc.Timestamp{}, nil, &entry,
+			hlc.Timestamp{}, nil, &entry, false,
 		)
 	}); err != nil {
 		return roachpb.NewReplicaCorruptionError(errors.Wrap(err, "AbortSpan.CopyTo"))

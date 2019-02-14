@@ -49,5 +49,5 @@ func Put(
 	if args.Blind {
 		return result.Result{}, engine.MVCCBlindPut(ctx, batch, ms, args.Key, ts, args.Value, h.Txn)
 	}
-	return result.Result{}, engine.MVCCPut(ctx, batch, ms, args.Key, ts, args.Value, h.Txn)
+	return result.Result{}, engine.MVCCPut(ctx, batch, ms, args.Key, ts, args.Value, h.Txn, false)
 }

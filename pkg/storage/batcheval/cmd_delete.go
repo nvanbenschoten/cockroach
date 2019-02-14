@@ -31,5 +31,5 @@ func Delete(
 	args := cArgs.Args.(*roachpb.DeleteRequest)
 	h := cArgs.Header
 
-	return result.Result{}, engine.MVCCDelete(ctx, batch, cArgs.Stats, args.Key, h.Timestamp, h.Txn)
+	return result.Result{}, engine.MVCCDelete(ctx, batch, cArgs.Stats, args.Key, h.Timestamp, h.Txn, false)
 }

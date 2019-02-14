@@ -1853,6 +1853,7 @@ func (s *Store) WriteLastUpTimestamp(ctx context.Context, time hlc.Timestamp) er
 		hlc.Timestamp{},
 		nil,
 		&time,
+		false,
 	)
 }
 
@@ -1888,6 +1889,7 @@ func (s *Store) WriteHLCUpperBound(ctx context.Context, time int64) error {
 		hlc.Timestamp{},
 		nil,
 		&ts,
+		false,
 	); err != nil {
 		return err
 	}
@@ -4402,7 +4404,7 @@ func (s *Store) GetClusterVersion(ctx context.Context) (cluster.ClusterVersion, 
 func WriteClusterVersion(
 	ctx context.Context, writer engine.ReadWriter, cv cluster.ClusterVersion,
 ) error {
-	return engine.MVCCPutProto(ctx, writer, nil, keys.StoreClusterVersionKey(), hlc.Timestamp{}, nil, &cv)
+	return engine.MVCCPutProto(ctx, writer, nil, keys.StoreClusterVersionKey(), hlc.Timestamp{}, nil, &cv, false)
 }
 
 // ReadClusterVersion reads the the cluster version from the store-local version key.

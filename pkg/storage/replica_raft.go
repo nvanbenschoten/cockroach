@@ -2510,7 +2510,7 @@ func handleTruncatedStateBelowRaft(
 
 			if err := engine.MVCCPutProto(
 				ctx, distinctEng, nil /* ms */, prefixBuf.RaftTruncatedStateKey(),
-				hlc.Timestamp{}, nil /* txn */, newTruncatedState,
+				hlc.Timestamp{}, nil /* txn */, newTruncatedState, false,
 			); err != nil {
 				return false, errors.Wrap(err, "unable to migrate RaftTruncatedState")
 			}

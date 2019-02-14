@@ -73,7 +73,7 @@ func HeartbeatTxn(
 	if !txn.Status.IsFinalized() {
 		txn.LastHeartbeat.Forward(args.Now)
 		txnRecord := txn.AsRecord()
-		if err := engine.MVCCPutProto(ctx, batch, cArgs.Stats, key, hlc.Timestamp{}, nil, &txnRecord); err != nil {
+		if err := engine.MVCCPutProto(ctx, batch, cArgs.Stats, key, hlc.Timestamp{}, nil, &txnRecord, true); err != nil {
 			return result.Result{}, err
 		}
 	}

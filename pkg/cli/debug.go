@@ -1201,7 +1201,7 @@ func removeDeadReplicas(
 	batch := db.NewBatch()
 	for _, desc := range newDescs {
 		key := keys.RangeDescriptorKey(desc.StartKey)
-		err := engine.MVCCPutProto(ctx, batch, nil /* stats */, key, clock.Now(), nil /* txn */, &desc)
+		err := engine.MVCCPutProto(ctx, batch, nil /* stats */, key, clock.Now(), nil /* txn */, &desc, false)
 		if wiErr, ok := err.(*roachpb.WriteIntentError); ok {
 			if len(wiErr.Intents) != 1 {
 				return nil, errors.Errorf("expected 1 intent, found %d: %s", len(wiErr.Intents), wiErr)
@@ -1212,7 +1212,7 @@ func removeDeadReplicas(
 			// A crude form of the intent resolution process: abort the
 			// transaction by deleting its record.
 			txnKey := keys.TransactionKey(intent.Txn.Key, intent.Txn.ID)
-			if err := engine.MVCCDelete(ctx, batch, nil /* stats */, txnKey, hlc.Timestamp{}, nil); err != nil {
+			if err := engine.MVCCDelete(ctx, batch, nil /* stats */, txnKey, hlc.Timestamp{}, nil, false); err != nil {
 				return nil, err
 			}
 			intent.Status = roachpb.ABORTED
@@ -1221,7 +1221,7 @@ func removeDeadReplicas(
 			}
 			// With the intent resolved, we can try again.
 			if err := engine.MVCCPutProto(ctx, batch, nil /* stats */, key, clock.Now(),
-				nil /* txn */, &desc); err != nil {
+				nil /* txn */, &desc, false); err != nil {
 				return nil, err
 			}
 		} else if err != nil {

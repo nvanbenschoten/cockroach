@@ -149,7 +149,7 @@ func TruncateLog(
 		// side effect) into the new unreplicated key.
 		if err := engine.MVCCDelete(
 			ctx, batch, cArgs.Stats, keys.RaftTruncatedStateLegacyKey(cArgs.EvalCtx.GetRangeID()),
-			hlc.Timestamp{}, nil, /* txn */
+			hlc.Timestamp{}, nil /* txn */, false,
 		); err != nil {
 			return result.Result{}, err
 		}

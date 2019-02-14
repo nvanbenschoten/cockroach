@@ -609,7 +609,7 @@ func (r *Replica) append(
 		if ent.Index > prevLastIndex {
 			err = engine.MVCCBlindPut(ctx, batch, &diff, key, hlc.Timestamp{}, value, nil /* txn */)
 		} else {
-			err = engine.MVCCPut(ctx, batch, &diff, key, hlc.Timestamp{}, value, nil /* txn */)
+			err = engine.MVCCPut(ctx, batch, &diff, key, hlc.Timestamp{}, value, nil /* txn */, false)
 		}
 		if err != nil {
 			return 0, 0, 0, err
@@ -623,7 +623,7 @@ func (r *Replica) append(
 		// Note that the caller is in charge of deleting any sideloaded payloads
 		// (which they must only do *after* the batch has committed).
 		err := engine.MVCCDelete(ctx, batch, &diff, r.raftMu.stateLoader.RaftLogKey(i),
-			hlc.Timestamp{}, nil /* txn */)
+			hlc.Timestamp{}, nil /* txn */, false)
 		if err != nil {
 			return 0, 0, 0, err
 		}

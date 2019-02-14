@@ -612,13 +612,14 @@ func MVCCPutProto(
 	timestamp hlc.Timestamp,
 	txn *roachpb.Transaction,
 	msg protoutil.Message,
+	singleDel bool,
 ) error {
 	value := roachpb.Value{}
 	if err := value.SetProto(msg); err != nil {
 		return err
 	}
 	value.InitChecksum(key)
-	return MVCCPut(ctx, engine, ms, key, timestamp, value, txn)
+	return MVCCPut(ctx, engine, ms, key, timestamp, value, txn, singleDel)
 }
 
 type getBuffer struct {
@@ -1023,6 +1024,7 @@ func MVCCPut(
 	timestamp hlc.Timestamp,
 	value roachpb.Value,
 	txn *roachpb.Transaction,
+	singleDel bool,
 ) error {
 	// If we're not tracking stats for the key and we're writing a non-versioned
 	// key we can utilize a blind put to avoid reading any existing value.
@@ -1032,7 +1034,7 @@ func MVCCPut(
 		iter = eng.NewIterator(IterOptions{Prefix: true})
 		defer iter.Close()
 	}
-	return mvccPutUsingIter(ctx, eng, iter, ms, key, timestamp, value, txn, nil /* valueFn */)
+	return mvccPutUsingIter(ctx, eng, iter, ms, key, timestamp, value, txn, singleDel, nil /* valueFn */)
 }
 
 // MVCCBlindPut is a fast-path of MVCCPut. See the MVCCPut comments for details
@@ -1054,7 +1056,7 @@ func MVCCBlindPut(
 	value roachpb.Value,
 	txn *roachpb.Transaction,
 ) error {
-	return mvccPutUsingIter(ctx, engine, nil, ms, key, timestamp, value, txn, nil /* valueFn */)
+	return mvccPutUsingIter(ctx, engine, nil, ms, key, timestamp, value, txn, false, nil /* valueFn */)
 }
 
 // MVCCDelete marks the key deleted so that it will not be returned in
@@ -1070,11 +1072,12 @@ func MVCCDelete(
 	key roachpb.Key,
 	timestamp hlc.Timestamp,
 	txn *roachpb.Transaction,
+	singleDel bool,
 ) error {
 	iter := engine.NewIterator(IterOptions{Prefix: true})
 	defer iter.Close()
 
-	return mvccPutUsingIter(ctx, engine, iter, ms, key, timestamp, noValue, txn, nil /* valueFn */)
+	return mvccPutUsingIter(ctx, engine, iter, ms, key, timestamp, noValue, txn, singleDel, nil /* valueFn */)
 }
 
 var noValue = roachpb.Value{}
@@ -1092,6 +1095,7 @@ func mvccPutUsingIter(
 	timestamp hlc.Timestamp,
 	value roachpb.Value,
 	txn *roachpb.Transaction,
+	singleDel bool,
 	valueFn func(*roachpb.Value) ([]byte, error),
 ) error {
 	var rawBytes []byte
@@ -1105,7 +1109,7 @@ func mvccPutUsingIter(
 	buf := newPutBuffer()
 
 	err := mvccPutInternal(ctx, engine, iter, ms, key, timestamp, rawBytes,
-		txn, buf, valueFn)
+		txn, buf, singleDel, valueFn)
 
 	// Using defer would be more convenient, but it is measurably slower.
 	buf.release()
@@ -1278,6 +1282,7 @@ func mvccPutInternal(
 	value []byte,
 	txn *roachpb.Transaction,
 	buf *putBuffer,
+	singleDel bool,
 	valueFn func(*roachpb.Value) ([]byte, error),
 ) error {
 	if len(key) == 0 {
@@ -1315,7 +1320,7 @@ func mvccPutInternal(
 			metaKeySize, metaValSize, err = 0, 0, engine.Clear(metaKey)
 		} else {
 			buf.meta = enginepb.MVCCMetadata{RawBytes: value}
-			metaKeySize, metaValSize, err = buf.putMeta(engine, metaKey, &buf.meta, false /* singleDel */)
+			metaKeySize, metaValSize, err = buf.putMeta(engine, metaKey, &buf.meta, singleDel && ok /* singleDel */)
 		}
 		if ms != nil {
 			updateStatsForInline(ms, key, origMetaKeySize, origMetaValSize, metaKeySize, metaValSize)
@@ -1619,7 +1624,7 @@ func MVCCIncrement(
 
 	var int64Val int64
 	var newInt64Val int64
-	err := mvccPutUsingIter(ctx, engine, iter, ms, key, timestamp, noValue, txn, func(value *roachpb.Value) ([]byte, error) {
+	err := mvccPutUsingIter(ctx, engine, iter, ms, key, timestamp, noValue, txn, false, func(value *roachpb.Value) ([]byte, error) {
 		if value.IsPresent() {
 			var err error
 			if int64Val, err = value.GetInt(); err != nil {
@@ -1723,7 +1728,7 @@ func mvccConditionalPutUsingIter(
 	txn *roachpb.Transaction,
 ) error {
 	return mvccPutUsingIter(
-		ctx, engine, iter, ms, key, timestamp, noValue, txn,
+		ctx, engine, iter, ms, key, timestamp, noValue, txn, false,
 		func(existVal *roachpb.Value) ([]byte, error) {
 			if expValPresent, existValPresent := expVal != nil, existVal.IsPresent(); expValPresent && existValPresent {
 				// Every type flows through here, so we can't use the typed getters.
@@ -1798,7 +1803,7 @@ func mvccInitPutUsingIter(
 	txn *roachpb.Transaction,
 ) error {
 	return mvccPutUsingIter(
-		ctx, engine, iter, ms, key, timestamp, noValue, txn,
+		ctx, engine, iter, ms, key, timestamp, noValue, txn, false,
 		func(existVal *roachpb.Value) ([]byte, error) {
 			if failOnTombstones && existVal != nil && len(existVal.RawBytes) == 0 {
 				// We found a tombstone and failOnTombstones is true: fail.
@@ -1893,7 +1898,7 @@ func MVCCDeleteRange(
 
 	for i := range kvs {
 		err = mvccPutInternal(
-			ctx, engine, iter, ms, kvs[i].Key, timestamp, nil, txn, buf, nil)
+			ctx, engine, iter, ms, kvs[i].Key, timestamp, nil, txn, buf, false, nil)
 		if err != nil {
 			break
 		}
@@ -2662,7 +2667,12 @@ func MVCCGarbageCollect(
 				}
 			}
 			if !implicitMeta {
-				if err := engine.Clear(iter.UnsafeKey()); err != nil {
+				if gcKey.SingleDel {
+					err = engine.SingleClear(iter.UnsafeKey())
+				} else {
+					err = engine.Clear(iter.UnsafeKey())
+				}
+				if err != nil {
 					return err
 				}
 				count++

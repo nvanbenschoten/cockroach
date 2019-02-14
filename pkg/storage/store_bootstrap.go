@@ -56,6 +56,7 @@ func InitEngine(
 		hlc.Timestamp{},
 		nil,
 		&ident,
+		false,
 	); err != nil {
 		batch.Close()
 		return err
@@ -179,7 +180,7 @@ func WriteInitialClusterData(
 		// Range descriptor.
 		if err := engine.MVCCPutProto(
 			ctx, batch, nil /* ms */, keys.RangeDescriptorKey(desc.StartKey),
-			now, nil /* txn */, desc,
+			now, nil /* txn */, desc,false,
 		); err != nil {
 			return err
 		}
@@ -187,14 +188,14 @@ func WriteInitialClusterData(
 		// Replica GC timestamp.
 		if err := engine.MVCCPutProto(
 			ctx, batch, nil /* ms */, keys.RangeLastReplicaGCTimestampKey(desc.RangeID),
-			hlc.Timestamp{}, nil /* txn */, &now,
+			hlc.Timestamp{}, nil /* txn */, &now,false,
 		); err != nil {
 			return err
 		}
 		// Range addressing for meta2.
 		meta2Key := keys.RangeMetaKey(endKey)
 		if err := engine.MVCCPutProto(ctx, batch, firstRangeMS, meta2Key.AsRawKey(),
-			now, nil /* txn */, desc,
+			now, nil /* txn */, desc,false,
 		); err != nil {
 			return err
 		}
@@ -204,7 +205,7 @@ func WriteInitialClusterData(
 			// Range addressing for meta1.
 			meta1Key := keys.RangeMetaKey(keys.RangeMetaKey(roachpb.RKeyMax))
 			if err := engine.MVCCPutProto(
-				ctx, batch, nil /* ms */, meta1Key.AsRawKey(), now, nil /* txn */, desc,
+				ctx, batch, nil /* ms */, meta1Key.AsRawKey(), now, nil /* txn */, desc, false,
 			); err != nil {
 				return err
 			}
@@ -215,7 +216,7 @@ func WriteInitialClusterData(
 			// Initialize the checksums.
 			kv.Value.InitChecksum(kv.Key)
 			if err := engine.MVCCPut(
-				ctx, batch, nil /* ms */, kv.Key, now, kv.Value, nil, /* txn */
+				ctx, batch, nil /* ms */, kv.Key, now, kv.Value, nil /* txn */, false,
 			); err != nil {
 				return err
 			}

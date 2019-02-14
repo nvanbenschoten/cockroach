@@ -765,6 +765,7 @@ func (ir *IntentResolver) gcTxnRecord(
 	}
 	gcArgs.Keys = append(gcArgs.Keys, roachpb.GCRequest_GCKey{
 		Key: txnKey,
+		SingleDel: true,
 	})
 	// Although the IntentResolver has a RangeDescriptorCache it could consult to
 	// to determine the range to which this request corresponds, GCRequests are

@@ -190,5 +190,5 @@ func (r *Replica) setTombstoneKey(
 		NextReplicaID: nextReplicaID,
 	}
 	return engine.MVCCPutProto(ctx, eng, nil, tombstoneKey,
-		hlc.Timestamp{}, nil, tombstone)
+		hlc.Timestamp{}, nil, tombstone, false)
 }

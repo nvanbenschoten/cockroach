@@ -292,7 +292,7 @@ func PushTxn(
 	// read and write timestamp cache, respectively.
 	if ok {
 		txnRecord := reply.PusheeTxn.AsRecord()
-		if err := engine.MVCCPutProto(ctx, batch, cArgs.Stats, key, hlc.Timestamp{}, nil, &txnRecord); err != nil {
+		if err := engine.MVCCPutProto(ctx, batch, cArgs.Stats, key, hlc.Timestamp{}, nil, &txnRecord, true); err != nil {
 			return result.Result{}, err
 		}
 	}
