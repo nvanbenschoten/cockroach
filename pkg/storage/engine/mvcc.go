@@ -24,6 +24,7 @@ import (
 	"github.com/cockroachdb/cockroach/pkg/roachpb"
 	"github.com/cockroachdb/cockroach/pkg/storage/engine/enginepb"
 	"github.com/cockroachdb/cockroach/pkg/util/encoding"
+	"github.com/cockroachdb/cockroach/pkg/util/envutil"
 	"github.com/cockroachdb/cockroach/pkg/util/hlc"
 	"github.com/cockroachdb/cockroach/pkg/util/log"
 	"github.com/cockroachdb/cockroach/pkg/util/protoutil"
@@ -985,7 +986,7 @@ func (b *putBuffer) putMeta(
 	if err != nil {
 		return 0, 0, err
 	}
-	if singleDel {
+	if useSingleDelete && singleDel {
 		if err := engine.SingleClear(key); err != nil {
 			return 0, 0, err
 		}
@@ -995,6 +996,8 @@ func (b *putBuffer) putMeta(
 	}
 	return int64(key.EncodedSize()), int64(len(bytes)), nil
 }
+
+var useSingleDelete = envutil.EnvOrDefaultBool("COCKROACH_SINGLE_DELETE", false)
 
 // MVCCPut sets the value for a specified key. It will save the value
 // with different versions according to its timestamp and update the
@@ -2348,7 +2351,11 @@ func mvccResolveWriteIntent(
 			metaKeySize, metaValSize, err = buf.putMeta(engine, metaKey, &buf.newMeta, true /* singleDel */)
 		} else {
 			metaKeySize = int64(metaKey.EncodedSize())
-			err = engine.SingleClear(metaKey)
+			if useSingleDelete {
+				err = engine.SingleClear(metaKey)
+			} else {
+				err = engine.Clear(metaKey)
+			}
 		}
 		if err != nil {
 			return false, err
@@ -2441,8 +2448,14 @@ func mvccResolveWriteIntent(
 
 	if !ok {
 		// If there is no other version, we should just clean up the key entirely.
-		if err = engine.SingleClear(metaKey); err != nil {
-			return false, err
+		if useSingleDelete {
+			if err = engine.SingleClear(metaKey); err != nil {
+				return false, err
+			}
+		} else {
+			if err = engine.Clear(metaKey); err != nil {
+				return false, err
+			}
 		}
 		// Clear stat counters attributable to the intent we're aborting.
 		if ms != nil {
@@ -2459,8 +2472,14 @@ func mvccResolveWriteIntent(
 		KeyBytes: mvccVersionTimestampSize,
 		ValBytes: valueSize,
 	}
-	if err := engine.SingleClear(metaKey); err != nil {
-		return false, err
+	if useSingleDelete {
+		if err := engine.SingleClear(metaKey); err != nil {
+			return false, err
+		}
+	} else {
+		if err := engine.Clear(metaKey); err != nil {
+			return false, err
+		}
 	}
 	metaKeySize := int64(metaKey.EncodedSize())
 	metaValSize := int64(0)
