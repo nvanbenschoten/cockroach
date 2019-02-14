@@ -501,7 +501,9 @@ func (h *txnHeartbeat) heartbeat(ctx context.Context) bool {
 
 		respTxn = pErr.GetTxn()
 	} else {
-		respTxn = br.Responses[0].GetInner().(*roachpb.HeartbeatTxnResponse).Txn
+		// The fact that we needed to change this will prevent us from being able
+		// to make the change unconditionally.
+		respTxn = br.Txn
 	}
 
 	// Update our txn. In particular, we need to make sure that the client will

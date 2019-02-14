@@ -20,6 +20,7 @@ import (
 	"math"
 
 	"github.com/cockroachdb/cockroach/pkg/roachpb"
+	"github.com/cockroachdb/cockroach/pkg/settings"
 	"github.com/cockroachdb/cockroach/pkg/storage/batcheval"
 	"github.com/cockroachdb/cockroach/pkg/storage/batcheval/result"
 	"github.com/cockroachdb/cockroach/pkg/storage/engine"
@@ -311,8 +312,14 @@ func evaluateBatch(
 		// TODO(spencer,tschottdorf): need copy-on-write behavior for the
 		//   updated batch transaction / timestamp.
 		if ba.Txn != nil {
-			if txn := reply.Header().Txn; txn != nil {
+			h := reply.Header()
+			if txn := h.Txn; txn != nil {
 				ba.Txn.Update(txn)
+
+				if !returnTxn.Get(&rec.ClusterSettings().SV) {
+					h.Txn = nil
+					reply.SetHeader(h)
+				}
 			}
 		}
 	}
@@ -341,6 +348,12 @@ func evaluateBatch(
 
 	return br, result, nil
 }
+
+var returnTxn = settings.RegisterBoolSetting(
+	"kv.return_txn",
+	"if enabled, transactional writes are pipelined through Raft consensus",
+	true,
+)
 
 // evaluateCommand delegates to the eval method for the given
 // roachpb.Request. The returned Result may be partially valid
