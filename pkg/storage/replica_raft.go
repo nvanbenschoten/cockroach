@@ -640,14 +640,16 @@ func (r *Replica) handleRaftReadyRaftMuLocked(
 		curLeaseAppliedIndex := r.mu.state.LeaseAppliedIndex
 		for i := range committedEntries {
 			e := &committedEntries[i]
-			if e.id == "" {
-				continue
-			}
 			proposal, local := r.mu.proposals[e.id]
+
+			propCtx := ctx
+			if local {
+				propCtx = proposal.ctx
+			}
 
 			var response proposalResult
 			leaseIndex, _, forcedErr := r.checkForcedErrLockedWithLease(
-				proposal.ctx, e.id, e.cmd, proposal, local, curLeaseAppliedIndex, curLease,
+				propCtx, e.id, e.cmd, proposal, local, curLeaseAppliedIndex, curLease,
 			)
 			if forcedErr == nil {
 				curLeaseAppliedIndex = leaseIndex
@@ -660,14 +662,16 @@ func (r *Replica) handleRaftReadyRaftMuLocked(
 				// Since we're responding to the Raft command before it's application, we
 				// need to make sure that out tracing Span is not finished before we're done
 				// with our work here.
-				var sp opentracing.Span
-				proposal.ctx, sp = tracing.ForkCtxSpan(ctx, "raft application")
-				defer tracing.FinishSpan(sp)
+				if local {
+					var sp opentracing.Span
+					proposal.ctx, sp = tracing.ForkCtxSpan(ctx, "raft application")
+					defer tracing.FinishSpan(sp)
 
-				response.Reply = proposal.Local.Reply
-				response.Intents = proposal.Local.DetachIntents()
-				response.EndTxns = proposal.Local.DetachEndTxns(false)
-				proposal.signalProposalResult(response)
+					response.Reply = proposal.Local.Reply
+					response.Intents = proposal.Local.DetachIntents()
+					response.EndTxns = proposal.Local.DetachEndTxns(false)
+					proposal.signalProposalResult(response)
+				}
 			}
 		}
 		r.mu.RUnlock()
