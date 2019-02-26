@@ -23,6 +23,7 @@ import (
 
 	"github.com/cockroachdb/cockroach/pkg/keys"
 	"github.com/cockroachdb/cockroach/pkg/roachpb"
+	"github.com/cockroachdb/cockroach/pkg/settings"
 	"github.com/cockroachdb/cockroach/pkg/settings/cluster"
 	"github.com/cockroachdb/cockroach/pkg/storage/batcheval/result"
 	"github.com/cockroachdb/cockroach/pkg/storage/engine"
@@ -42,6 +43,7 @@ import (
 	"github.com/cockroachdb/cockroach/pkg/util/tracing"
 	"github.com/cockroachdb/cockroach/pkg/util/uuid"
 	"github.com/kr/pretty"
+	opentracing "github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 	"go.etcd.io/etcd/raft"
 	"go.etcd.io/etcd/raft/raftpb"
@@ -475,6 +477,13 @@ func (r *Replica) handleRaftReady(
 	return r.handleRaftReadyRaftMuLocked(ctx, inSnap)
 }
 
+var nathan = settings.RegisterBoolSetting(
+	"nathan.enabled",
+	"if set, changed are pushed instead of pulled. This requires the "+
+		"kv.rangefeed.enabled setting.",
+	false,
+)
+
 // handleRaftReadyLocked is the same as handleRaftReady but requires that the
 // replica's raftMu be held.
 //
@@ -597,6 +606,71 @@ func (r *Replica) handleRaftReadyRaftMuLocked(
 			refreshReason == noReason {
 			refreshReason = reasonSnapshotApplied
 		}
+	}
+
+	type commandAndID struct {
+		cmd storagepb.RaftCommand
+		id  storagebase.CmdIDKey
+	}
+	committedEntries := make([]commandAndID, len(rd.CommittedEntries))
+	for i, e := range rd.CommittedEntries {
+		switch e.Type {
+		case raftpb.EntryNormal:
+			if len(e.Data) != 0 {
+				cmdID, encCmd := DecodeRaftCommand(e.Data)
+				// An empty command is used to unquiesce a range and wake the
+				// leader. Clear commandID so it's ignored for processing.
+				if len(encCmd) != 0 {
+					committedEntries[i].id = cmdID
+					if err := protoutil.Unmarshal(encCmd, &committedEntries[i].cmd); err != nil {
+						const expl = "while unmarshalling entry"
+						return stats, expl, errors.Wrap(err, expl)
+					}
+				}
+			}
+		case raftpb.EntryConfChange:
+			// Do nothing.
+		default:
+			log.Fatalf(ctx, "unexpected Raft entry: %v", e)
+		}
+	}
+	if nathan.Get(&r.store.cfg.Settings.SV) {
+		r.mu.RLock()
+		curLease := r.mu.state.Lease
+		curLeaseAppliedIndex := r.mu.state.LeaseAppliedIndex
+		for i := range committedEntries {
+			e := &committedEntries[i]
+			if e.id == "" {
+				continue
+			}
+			proposal, local := r.mu.proposals[e.id]
+
+			var response proposalResult
+			leaseIndex, _, forcedErr := r.checkForcedErrLockedWithLease(
+				proposal.ctx, e.id, e.cmd, proposal, local, curLeaseAppliedIndex, curLease,
+			)
+			if forcedErr == nil {
+				curLeaseAppliedIndex = leaseIndex
+				if s := e.cmd.ReplicatedEvalResult.State; s != nil {
+					if l := s.Lease; l != nil {
+						curLease = l
+					}
+				}
+
+				// Since we're responding to the Raft command before it's application, we
+				// need to make sure that out tracing Span is not finished before we're done
+				// with our work here.
+				var sp opentracing.Span
+				proposal.ctx, sp = tracing.ForkCtxSpan(ctx, "raft application")
+				defer tracing.FinishSpan(sp)
+
+				response.Reply = proposal.Local.Reply
+				response.Intents = proposal.Local.DetachIntents()
+				response.EndTxns = proposal.Local.DetachEndTxns(false)
+				proposal.signalProposalResult(response)
+			}
+		}
+		r.mu.RUnlock()
 	}
 
 	// Separate the MsgApp messages from all other Raft message types so that we
@@ -742,15 +816,16 @@ func (r *Replica) handleRaftReadyRaftMuLocked(
 
 	r.sendRaftMessages(ctx, otherMsgs)
 
-	for _, e := range rd.CommittedEntries {
+	for i, e := range rd.CommittedEntries {
+		cmdAndID := &committedEntries[i]
 		switch e.Type {
 		case raftpb.EntryNormal:
 			// NB: Committed entries are handed to us by Raft. Raft does not
 			// know about sideloading. Consequently the entries here are all
 			// already inlined.
 
-			var commandID storagebase.CmdIDKey
-			var command storagepb.RaftCommand
+			// var commandID storagebase.CmdIDKey
+			// var command storagepb.RaftCommand
 
 			// Process committed entries. etcd raft occasionally adds a nil entry
 			// (our own commands are never empty). This happens in two situations:
@@ -768,22 +843,23 @@ func (r *Replica) handleRaftReadyRaftMuLocked(
 				if !r.store.TestingKnobs().DisableRefreshReasonNewLeaderOrConfigChange {
 					refreshReason = reasonNewLeaderOrConfigChange
 				}
-				commandID = "" // special-cased value, command isn't used
-			} else {
-				var encodedCommand []byte
-				commandID, encodedCommand = DecodeRaftCommand(e.Data)
-				// An empty command is used to unquiesce a range and wake the
-				// leader. Clear commandID so it's ignored for processing.
-				if len(encodedCommand) == 0 {
-					commandID = ""
-				} else if err := protoutil.Unmarshal(encodedCommand, &command); err != nil {
-					const expl = "while unmarshalling entry"
-					return stats, expl, errors.Wrap(err, expl)
-				}
+				// commandID = "" // special-cased value, command isn't used
+				// } else {
+				// 	var encodedCommand []byte
+				// 	commandID, encodedCommand = DecodeRaftCommand(e.Data)
+				// 	// An empty command is used to unquiesce a range and wake the
+				// 	// leader. Clear commandID so it's ignored for processing.
+				// 	if len(encodedCommand) == 0 {
+				// 		commandID = ""
+				// 	} else if err := protoutil.Unmarshal(encodedCommand, &command); err != nil {
+				// 		const expl = "while unmarshalling entry"
+				// 		return stats, expl, errors.Wrap(err, expl)
+				// 	}
 			}
 
-			if changedRepl := r.processRaftCommand(ctx, commandID, e.Term, e.Index, command); changedRepl {
-				log.Fatalf(ctx, "unexpected replication change from command %s", &command)
+			changedRepl := r.processRaftCommand(ctx, cmdAndID.id, e.Term, e.Index, cmdAndID.cmd)
+			if changedRepl {
+				log.Fatalf(ctx, "unexpected replication change from command %s", &cmdAndID.cmd)
 			}
 			r.store.metrics.RaftCommandsApplied.Inc(1)
 			stats.processed++
@@ -795,9 +871,9 @@ func (r *Replica) handleRaftReadyRaftMuLocked(
 				// commandSizes. By checking if the specified commandID is
 				// present in commandSizes, we'll only queue the cmdSize if
 				// they're all initialized.
-				if cmdSize, ok := r.mu.commandSizes[commandID]; ok {
+				if cmdSize, ok := r.mu.commandSizes[cmdAndID.id]; ok {
 					r.mu.quotaReleaseQueue = append(r.mu.quotaReleaseQueue, cmdSize)
-					delete(r.mu.commandSizes, commandID)
+					delete(r.mu.commandSizes, cmdAndID.id)
 				}
 			}
 			r.mu.Unlock()
@@ -1304,8 +1380,21 @@ func (r *Replica) checkForcedErrLocked(
 	proposal *ProposalData,
 	proposedLocally bool,
 ) (uint64, proposalReevaluationReason, *roachpb.Error) {
-	leaseIndex := r.mu.state.LeaseAppliedIndex
+	return r.checkForcedErrLockedWithLease(
+		ctx, idKey, raftCmd, proposal, proposedLocally,
+		r.mu.state.LeaseAppliedIndex, r.mu.state.Lease,
+	)
+}
 
+func (r *Replica) checkForcedErrLockedWithLease(
+	ctx context.Context,
+	idKey storagebase.CmdIDKey,
+	raftCmd storagepb.RaftCommand,
+	proposal *ProposalData,
+	proposedLocally bool,
+	leaseIndex uint64,
+	lease *roachpb.Lease,
+) (uint64, proposalReevaluationReason, *roachpb.Error) {
 	isLeaseRequest := raftCmd.ReplicatedEvalResult.IsLeaseRequest
 	var requestedLease roachpb.Lease
 	if isLeaseRequest {
@@ -1335,9 +1424,9 @@ func (r *Replica) checkForcedErrLocked(
 		// reason we don't fix this here as well is because fixing the race
 		// requires a new cluster version which implies that we'll already be
 		// using lease sequence numbers and will fall into the case below.
-		leaseMismatch = !raftCmd.DeprecatedProposerLease.Equivalent(*r.mu.state.Lease)
+		leaseMismatch = !raftCmd.DeprecatedProposerLease.Equivalent(*lease)
 	} else {
-		leaseMismatch = raftCmd.ProposerLeaseSequence != r.mu.state.Lease.Sequence
+		leaseMismatch = raftCmd.ProposerLeaseSequence != lease.Sequence
 		if !leaseMismatch && isLeaseRequest {
 			// Lease sequence numbers are a reflection of lease equivalency
 			// between subsequent leases. However, Lease.Equivalent is not fully
@@ -1353,10 +1442,10 @@ func (r *Replica) checkForcedErrLocked(
 			// lease sequence matches the current lease sequence and the current
 			// lease sequence also matches the requested lease sequence, we make
 			// sure the requested lease is Equivalent to current lease.
-			if r.mu.state.Lease.Sequence == requestedLease.Sequence {
+			if lease.Sequence == requestedLease.Sequence {
 				// It is only possible for this to fail when expiration-based
 				// lease extensions are proposed concurrently.
-				leaseMismatch = !r.mu.state.Lease.Equivalent(requestedLease)
+				leaseMismatch = !lease.Equivalent(requestedLease)
 			}
 
 			// This is a check to see if the lease we proposed this lease request against is the same
@@ -1365,7 +1454,7 @@ func (r *Replica) checkForcedErrLocked(
 			// be extended and then another lease proposed against the original lease would
 			// be applied over the extension.
 			if raftCmd.ReplicatedEvalResult.PrevLeaseProposal != nil &&
-				(*raftCmd.ReplicatedEvalResult.PrevLeaseProposal != *r.mu.state.Lease.ProposedTS) {
+				(*raftCmd.ReplicatedEvalResult.PrevLeaseProposal != *lease.ProposedTS) {
 				leaseMismatch = true
 			}
 		}
@@ -1374,24 +1463,24 @@ func (r *Replica) checkForcedErrLocked(
 		log.VEventf(
 			ctx, 1,
 			"command proposed from replica %+v with lease #%d incompatible to %v",
-			raftCmd.ProposerReplica, raftCmd.ProposerLeaseSequence, *r.mu.state.Lease,
+			raftCmd.ProposerReplica, raftCmd.ProposerLeaseSequence, *lease,
 		)
 		if isLeaseRequest {
 			// For lease requests we return a special error that
 			// redirectOnOrAcquireLease() understands. Note that these
 			// requests don't go through the DistSender.
 			return leaseIndex, proposalNoReevaluation, roachpb.NewError(&roachpb.LeaseRejectedError{
-				Existing:  *r.mu.state.Lease,
+				Existing:  *lease,
 				Requested: requestedLease,
 				Message:   "proposed under invalid lease",
 			})
 		}
 		// We return a NotLeaseHolderError so that the DistSender retries.
 		nlhe := newNotLeaseHolderError(
-			r.mu.state.Lease, raftCmd.ProposerReplica.StoreID, r.mu.state.Desc)
+			lease, raftCmd.ProposerReplica.StoreID, r.mu.state.Desc)
 		nlhe.CustomMsg = fmt.Sprintf(
 			"stale proposal: command was proposed under lease #%d but is being applied "+
-				"under lease: %s", raftCmd.ProposerLeaseSequence, r.mu.state.Lease)
+				"under lease: %s", raftCmd.ProposerLeaseSequence, lease)
 		return leaseIndex, proposalNoReevaluation, roachpb.NewError(nlhe)
 	}
 
@@ -1405,12 +1494,12 @@ func (r *Replica) checkForcedErrLocked(
 		// since removed (see #15385 and a comment in redirectOnOrAcquireLease).
 		if _, ok := r.mu.state.Desc.GetReplicaDescriptor(requestedLease.Replica.StoreID); !ok {
 			return leaseIndex, proposalNoReevaluation, roachpb.NewError(&roachpb.LeaseRejectedError{
-				Existing:  *r.mu.state.Lease,
+				Existing:  *lease,
 				Requested: requestedLease,
 				Message:   "replica not part of range",
 			})
 		}
-	} else if r.mu.state.LeaseAppliedIndex < raftCmd.MaxLeaseIndex {
+	} else if leaseIndex < raftCmd.MaxLeaseIndex {
 		// The happy case: the command is applying at or ahead of the minimal
 		// permissible index. It's ok if it skips a few slots (as can happen
 		// during rearrangement); this command will apply, but later ones which
