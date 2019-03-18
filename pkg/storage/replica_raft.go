@@ -123,6 +123,12 @@ func (r *Replica) evalAndPropose(
 		r.mu.RUnlock()
 		return nil, nil, 0, roachpb.NewError(err)
 	}
+
+	repDesc, err := r.getReplicaDescriptorRLocked()
+	if err != nil {
+		r.mu.RUnlock()
+		return nil, nil, 0, roachpb.NewError(err)
+	}
 	r.mu.RUnlock()
 
 	rSpan, err := keys.Range(ba)
@@ -202,6 +208,8 @@ func (r *Replica) evalAndPropose(
 		// Continue with proposal...
 	}
 
+	proposal.command.ProposerReplica = repDesc
+
 	// TODO(irfansharif): This int cast indicates that if someone configures a
 	// very large max proposal size, there is weird overflow behavior and it
 	// will not work the way it should.
@@ -215,6 +223,24 @@ func (r *Replica) evalAndPropose(
 			proposalSize, MaxCommandSize.Get(&r.store.cfg.Settings.SV),
 		))
 	}
+
+	prefixLen := 1 + raftCommandIDLen
+	buf := make([]byte, 1, prefixLen+proposalSize+storagepb.MaxRaftCommandFooterSize())
+	if proposal.command.ReplicatedEvalResult.AddSSTable == nil {
+		buf[0] = byte(raftVersionStandard)
+	} else {
+		buf[0] = byte(raftVersionSideloaded)
+	}
+	buf = append(buf, []byte(proposal.idKey)...)
+	buf = buf[:prefixLen+proposalSize]
+	i, err := protoutil.MarshalToWithoutFuzzing(proposal.command, buf[prefixLen:])
+	if err != nil {
+		return nil, nil, 0, roachpb.NewError(err)
+	}
+	if i != proposalSize {
+		panic("huh?")
+	}
+	proposal.commandBuf = buf
 
 	// TODO(tschottdorf): blocking a proposal here will leave it dangling in the
 	// closed timestamp tracker for an extended period of time, which will in turn
@@ -266,12 +292,7 @@ func (r *Replica) evalAndPropose(
 		r.mu.commandSizes[proposal.idKey] = proposalSize
 	}
 
-	// Record the proposer and lease sequence.
-	repDesc, err := r.getReplicaDescriptorRLocked()
-	if err != nil {
-		return nil, nil, 0, roachpb.NewError(err)
-	}
-	proposal.command.ProposerReplica = repDesc
+	// Record the proposer lease sequence.
 	proposal.command.ProposerLeaseSequence = lease.Sequence
 
 	maxLeaseIndex, pErr := r.proposeLocked(ctx, proposal)
@@ -331,6 +352,21 @@ func (r *Replica) proposeLocked(
 
 	maxLeaseIndex := r.insertProposalLocked(proposal)
 
+	proposal.commandFooter = storagepb.RaftCommandFooter{
+		MaxLeaseIndex:         proposal.command.MaxLeaseIndex,
+		ProposerLeaseSequence: proposal.command.ProposerLeaseSequence,
+	}
+	footerSize := proposal.commandFooter.Size()
+	preFooterSize := len(proposal.commandBuf)
+	proposal.commandBuf2 = proposal.commandBuf[:preFooterSize+footerSize]
+	i, err := protoutil.MarshalToWithoutFuzzing(&proposal.commandFooter, proposal.commandBuf2[preFooterSize:])
+	if err != nil {
+		return 0, roachpb.NewError(err)
+	}
+	if i != footerSize {
+		panic("huh?")
+	}
+
 	if err := r.submitProposalLocked(proposal); err == raft.ErrProposalDropped {
 		// Silently ignore dropped proposals (they were always silently ignored
 		// prior to the introduction of ErrProposalDropped).
@@ -355,11 +391,8 @@ func (r *Replica) submitProposalLocked(p *ProposalData) error {
 }
 
 func defaultSubmitProposalLocked(r *Replica, p *ProposalData) error {
-	data, err := protoutil.Marshal(p.command)
-	if err != nil {
-		return err
-	}
 	defer r.store.enqueueRaftUpdateCheck(r.RangeID)
+	data := p.commandBuf2
 
 	// Too verbose even for verbose logging, so manually enable if you want to
 	// debug proposal sizes.
@@ -406,7 +439,7 @@ func defaultSubmitProposalLocked(r *Replica, p *ProposalData) error {
 
 		confChangeCtx := ConfChangeContext{
 			CommandID: string(p.idKey),
-			Payload:   data,
+			Payload:   data[1+raftCommandIDLen:],
 			Replica:   crt.Replica,
 		}
 		encodedCtx, err := protoutil.Marshal(&confChangeCtx)
@@ -428,12 +461,12 @@ func defaultSubmitProposalLocked(r *Replica, p *ProposalData) error {
 	}
 
 	return r.withRaftGroupLocked(true, func(raftGroup *raft.RawNode) (bool, error) {
-		encode := encodeRaftCommandV1
+		// encode := encodeRaftCommandV1
 		if p.command.ReplicatedEvalResult.AddSSTable != nil {
 			if p.command.ReplicatedEvalResult.AddSSTable.Data == nil {
 				return false, errors.New("cannot sideload empty SSTable")
 			}
-			encode = encodeRaftCommandV2
+			// 	encode = encodeRaftCommandV2
 			r.store.metrics.AddSSTableProposals.Inc(1)
 			log.Event(p.ctx, "sideloadable proposal detected")
 		}
@@ -444,7 +477,7 @@ func defaultSubmitProposalLocked(r *Replica, p *ProposalData) error {
 		// We're proposing a command so there is no need to wake the leader if
 		// we're quiesced.
 		r.unquiesceLocked()
-		return false /* unquiesceAndWakeLeader */, raftGroup.Propose(encode(p.idKey, data))
+		return false /* unquiesceAndWakeLeader */, raftGroup.Propose(data)
 	})
 }
 
@@ -843,8 +876,8 @@ func (r *Replica) handleRaftReadyRaftMuLocked(
 			}
 			var command storagepb.RaftCommand
 			if err := protoutil.Unmarshal(ccCtx.Payload, &command); err != nil {
-				const expl = "while unmarshaling RaftCommand"
-				return stats, expl, errors.Wrap(err, expl)
+				const expl = "while unmarshaling RaftCommand %v"
+				return stats, expl, errors.Wrapf(err, expl, ccCtx.Payload)
 			}
 			commandID := storagebase.CmdIDKey(ccCtx.CommandID)
 			if changedRepl := r.processRaftCommand(

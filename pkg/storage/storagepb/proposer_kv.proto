@@ -272,3 +272,8 @@ message RaftCommand {
 
   reserved 1, 10001 to 10014;
 }
+
+message RaftCommandFooter {
+  uint64 max_lease_index = 4;
+  int64 proposer_lease_sequence = 6 [(gogoproto.casttype) = "github.com/cockroachdb/cockroach/pkg/roachpb.LeaseSequence"];
+}
