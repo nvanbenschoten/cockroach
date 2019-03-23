@@ -281,5 +281,8 @@ func sendBatch(
 			TransportFactory: transportFactory,
 		},
 	}, nil)
-	return ds.sendToReplicas(ctx, SendOptions{metrics: &ds.metrics}, 0, makeReplicas(addrs...), roachpb.BatchRequest{}, nodeDialer, roachpb.ReplicaDescriptor{})
+	return ds.sendToReplicas(
+		ctx, SendOptions{metrics: &ds.metrics}, 0, makeReplicas(addrs...),
+		nodeDialer, roachpb.ReplicaDescriptor{}, roachpb.BatchRequest{}, false, /* haveCommit */
+	)
 }

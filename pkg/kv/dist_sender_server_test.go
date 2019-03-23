@@ -1876,6 +1876,7 @@ func TestAsyncAbortPoisons(t *testing.T) {
 // but still fail in others, depending on different conditions.
 func TestTxnCoordSenderRetries(t *testing.T) {
 	defer leaktest.AfterTest(t)()
+	t.Skip("WIP")
 
 	var filterFn atomic.Value
 	var storeKnobs storage.StoreTestingKnobs
