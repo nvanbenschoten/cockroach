@@ -971,6 +971,10 @@ func (ds *DistSender) divideAndSendBatchToRanges(
 		} else {
 			seekKey = rs.EndKey
 		}
+		ri.Seek(ctx, seekKey, scanDir)
+		if !ri.Valid() {
+			return nil, ri.Error()
+		}
 	}
 
 	// If min_results is set, num_results will count how many results scans have
