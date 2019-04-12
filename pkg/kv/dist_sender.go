@@ -943,12 +943,17 @@ func (ds *DistSender) divideAndSendBatchToRanges(
 			queryIntentPositions[i] = i + swappedEndTxnIdx + 1
 		}
 
+		queryIntentRS, err := keys.Range(queryIntentBa)
+		if err != nil {
+			return nil, roachpb.NewError(err)
+		}
+
 		responseCh := make(chan response, 1)
 		responseChs = append(responseChs, responseCh)
 		if err := ds.rpcContext.Stopper.RunAsyncTask(
 			ctx, "kv.DistSender: sending precommit query intents",
 			func(ctx context.Context) {
-				reply, pErr := ds.divideAndSendBatchToRanges(ctx, queryIntentBa, rs, batchIdx, haveCommit)
+				reply, pErr := ds.divideAndSendBatchToRanges(ctx, queryIntentBa, queryIntentRS, batchIdx, haveCommit)
 				responseCh <- response{reply: reply, positions: queryIntentPositions, pErr: pErr}
 			},
 		); err != nil {
@@ -957,7 +962,6 @@ func (ds *DistSender) divideAndSendBatchToRanges(
 		}
 		batchIdx++
 
-		var err error
 		rs, err = keys.Range(ba)
 		if err != nil {
 			return nil, roachpb.NewError(err)
