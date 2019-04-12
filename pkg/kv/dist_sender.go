@@ -956,6 +956,17 @@ func (ds *DistSender) divideAndSendBatchToRanges(
 			return
 		}
 		batchIdx++
+
+		var err error
+		rs, err = keys.Range(ba)
+		if err != nil {
+			return nil, roachpb.NewError(err)
+		}
+		if !ba.IsReverse() {
+			seekKey = rs.Key
+		} else {
+			seekKey = rs.EndKey
+		}
 	}
 
 	// If min_results is set, num_results will count how many results scans have
