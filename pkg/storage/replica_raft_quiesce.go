@@ -98,7 +98,7 @@ func (r *Replica) unquiesceAndWakeLeaderLocked() {
 		r.maybeCampaignOnWakeLocked(ctx)
 		// Propose an empty command which will wake the leader.
 		data := encodeRaftCommand(raftVersionStandard, makeIDKey(), nil)
-		_ = r.mu.internalRaftGroup.Propose(data)
+		r.addToProposalBufLocked(r.mu.internalRaftGroup, data)
 	}
 }
 

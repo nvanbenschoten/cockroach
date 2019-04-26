@@ -53,7 +53,7 @@ func (sdh *splitDelayHelper) ProposeEmptyCommand(ctx context.Context) {
 		// NB: intentionally ignore the error (which can be ErrProposalDropped
 		// when there's an SST inflight).
 		data := encodeRaftCommand(raftVersionStandard, makeIDKey(), nil)
-		_ = rawNode.Propose(data)
+		r.addToProposalBufLocked(rawNode, data)
 		// NB: we need to unquiesce as the group might be quiesced.
 		return true /* unquiesceAndWakeLeader */, nil
 	})

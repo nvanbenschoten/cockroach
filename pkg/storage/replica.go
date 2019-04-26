@@ -305,7 +305,9 @@ type Replica struct {
 		// to the *RaftCommand contained in its associated *ProposalData. This
 		// is because the *RaftCommand can be mutated during reproposals by
 		// Replica.tryReproposeWithNewLeaseIndex.
-		proposals         map[storagebase.CmdIDKey]*ProposalData
+		proposals map[storagebase.CmdIDKey]*ProposalData
+		// Unproposed items.
+		proposalBuf       [][]byte
 		internalRaftGroup *raft.RawNode
 		// The ID of the replica within the Raft group. May be 0 if the replica has
 		// been created from a preemptive snapshot (i.e. before being added to the

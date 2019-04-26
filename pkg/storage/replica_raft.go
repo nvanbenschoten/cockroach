@@ -420,6 +420,7 @@ func defaultSubmitProposalLocked(r *Replica, p *ProposalData) error {
 			// We're proposing a command here so there is no need to wake the
 			// leader if we were quiesced.
 			r.unquiesceLocked()
+			r.flushProposalBufLocked(raftGroup)
 			return false, /* unquiesceAndWakeLeader */
 				raftGroup.ProposeConfChange(raftpb.ConfChange{
 					Type:    changeTypeInternalToRaft[crt.ChangeType],
@@ -448,7 +449,8 @@ func defaultSubmitProposalLocked(r *Replica, p *ProposalData) error {
 		// We're proposing a command so there is no need to wake the leader if
 		// we're quiesced.
 		r.unquiesceLocked()
-		return false /* unquiesceAndWakeLeader */, raftGroup.Propose(data)
+		r.addToProposalBufLocked(raftGroup, data)
+		return false /* unquiesceAndWakeLeader */, nil
 	})
 }
 
@@ -477,6 +479,34 @@ func (r *Replica) stepRaftGroup(req *RaftMessageRequest) error {
 		}
 		return false /* unquiesceAndWakeLeader */, err
 	})
+}
+
+func (r *Replica) addToProposalBufLocked(raftGroup *raft.RawNode, p []byte) {
+	if len(r.mu.proposalBuf) >= 1024 {
+		r.flushProposalBufLocked(raftGroup)
+	}
+	r.mu.proposalBuf = append(r.mu.proposalBuf, p)
+}
+
+func (r *Replica) flushProposalBufLocked(raftGroup *raft.RawNode) {
+	if len(r.mu.proposalBuf) == 0 {
+		return
+	}
+	ents := make([]raftpb.Entry, len(r.mu.proposalBuf))
+	for i := range r.mu.proposalBuf {
+		ents[i].Data = r.mu.proposalBuf[i]
+		r.mu.proposalBuf[i] = nil
+	}
+	if err := raftGroup.Step(raftpb.Message{
+		Type:    raftpb.MsgProp,
+		From:    uint64(r.mu.replicaID),
+		Entries: ents,
+	}); err == raft.ErrProposalDropped {
+		// Do nothing.
+	} else {
+		panic(err)
+	}
+	r.mu.proposalBuf = nil
 }
 
 type handleRaftReadyStats struct {
@@ -547,6 +577,7 @@ func (r *Replica) handleRaftReadyRaftMuLocked(
 	defer r.updateProposalQuotaRaftMuLocked(ctx, lastLeaderID)
 
 	err := r.withRaftGroupLocked(true, func(raftGroup *raft.RawNode) (bool, error) {
+		r.flushProposalBufLocked(raftGroup)
 		if hasReady = raftGroup.HasReady(); hasReady {
 			rd = raftGroup.Ready()
 		}
