@@ -503,10 +503,10 @@ func (r *Replica) flushProposalBufLocked(raftGroup *raft.RawNode) {
 		Entries: ents,
 	}); err == raft.ErrProposalDropped {
 		// Do nothing.
-	} else {
+	} else if err != nil {
 		panic(err)
 	}
-	r.mu.proposalBuf = nil
+	r.mu.proposalBuf = r.mu.proposalBuf[:0]
 }
 
 type handleRaftReadyStats struct {
