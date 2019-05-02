@@ -3257,6 +3257,8 @@ func (s *Store) HandleRaftRequest(
 	return s.HandleRaftUncoalescedRequest(ctx, req, respStream)
 }
 
+var skipPermissionChecks = envutil.EnvOrDefaultBool("COCKROACH_NATHAN", true)
+
 // HandleRaftUncoalescedRequest dispatches a raft message to the appropriate
 // Replica. It requires that s.mu is not held.
 func (s *Store) HandleRaftUncoalescedRequest(
@@ -3277,6 +3279,7 @@ func (s *Store) HandleRaftUncoalescedRequest(
 	}
 	q := (*raftRequestQueue)(value)
 	q.Lock()
+	enqueue := len(q.infos) == 0
 	if len(q.infos) >= replicaRequestQueueSize {
 		q.Unlock()
 		// TODO(peter): Return an error indicating the request was dropped. Note
@@ -3290,7 +3293,9 @@ func (s *Store) HandleRaftUncoalescedRequest(
 	})
 	q.Unlock()
 
-	s.scheduler.EnqueueRaftRequest(req.RangeID)
+	if enqueue || skipPermissionChecks {
+		s.scheduler.EnqueueRaftRequest(req.RangeID)
+	}
 	return nil
 }
 
