@@ -481,3 +481,38 @@ func registerKVScalability(r *registry) {
 		}
 	}
 }
+
+func registerKVSingleRange(r *registry) {
+	const nodes = 3
+	r.Add(testSpec{
+		Name:    fmt.Sprintf("kv0/singlerange"),
+		Cluster: makeClusterSpec(nodes+1, cpu(16)),
+		Run: func(ctx context.Context, t *test, c *cluster) {
+			// c.Put(ctx, cockroach, "./cockroach", c.Range(1, nodes))
+			// c.Put(ctx, workload, "./workload", c.Node(nodes+1))
+			c.Start(ctx, t, c.Range(1, nodes))
+
+			// Ensure that the kv table never splits.
+			c.Run(ctx, c.Node(1),
+				`./cockroach sql --insecure -e "SET CLUSTER SETTING kv.range_split.by_load_enabled = false"`)
+			c.Run(ctx, c.Node(1),
+				`./cockroach sql --insecure -e "ALTER RANGE default CONFIGURE ZONE USING range_max_bytes = (1<<40)"`)
+
+			c.Run(ctx, c.Node(nodes+1), "./workload run kv --init --splits=2 --duration=1ms {pgurl:1}")
+			c.Run(ctx, c.Node(1), `./cockroach sql --insecure -e "ALTER TABLE kv.kv SCATTER"`)
+
+			t.Status("running workload")
+			m := newMonitor(ctx, c, c.Range(1, nodes))
+			m.Go(func(ctx context.Context) error {
+				concurrency := ifLocal("", " --concurrency=256")
+				duration := " --duration=" + ifLocal("10s", "10m")
+				blockSize := fmt.Sprintf(" --min-block-bytes=%[1]d --max-block-bytes=%[1]d", 20)
+				cmd := fmt.Sprintf("./workload run kv --histograms=logs/stats.json"+
+					concurrency+duration+blockSize+" {pgurl:1-%d}", nodes)
+				c.Run(ctx, c.Node(nodes+1), cmd)
+				return nil
+			})
+			m.Wait()
+		},
+	})
+}

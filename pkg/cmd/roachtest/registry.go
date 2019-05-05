@@ -86,4 +86,5 @@ func registerBenchmarks(r *registry) {
 
 	registerTPCCBench(r)
 	registerSQL20Bench(r)
+	registerKVSingleRange(r)
 }
