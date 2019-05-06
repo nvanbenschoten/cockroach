@@ -599,6 +599,8 @@ func (r *Replica) handleRaftReadyRaftMuLocked(
 
 	logRaftReady(ctx, rd)
 
+	r.maybeAckClientsEarly(ctx, rd.CommittedEntries)
+
 	refreshReason := noReason
 	if rd.SoftState != nil && leaderID != roachpb.ReplicaID(rd.SoftState.Lead) {
 		// Refresh pending commands if the Raft leader has changed. This is usually
@@ -962,6 +964,67 @@ func splitMsgApps(msgs []raftpb.Message) (msgApps, otherMsgs []raftpb.Message) {
 func fatalOnRaftReadyErr(ctx context.Context, expl string, err error) {
 	// Mimic the behavior in processRaft.
 	log.Fatalf(ctx, "%s: %s", log.Safe(expl), err) // TODO(bdarnell)
+}
+
+func (r *Replica) maybeAckClientsEarly(ctx context.Context, committed []raftpb.Entry) {
+	leaseIndex := r.mu.state.LeaseAppliedIndex
+	var command storagepb.RaftCommand
+	for i := range committed {
+		e := &committed[i]
+		switch e.Type {
+		case raftpb.EntryNormal:
+			if len(e.Data) == 0 {
+				continue
+			}
+			commandID, encodedCommand := DecodeRaftCommand(e.Data)
+			if len(encodedCommand) == 0 {
+				continue
+			}
+			r.mu.RLock()
+			proposal, proposedLocally := r.mu.proposals[commandID]
+			r.mu.RUnlock()
+			if !proposedLocally {
+				continue
+			}
+			if err := protoutil.Unmarshal(encodedCommand, &command); err != nil {
+				return
+			}
+			if command.ReplicatedEvalResult.IsLeaseRequest {
+				return
+			}
+			if command.ReplicatedEvalResult.State != nil {
+				if command.ReplicatedEvalResult.State.GCThreshold != nil {
+					return
+				}
+			}
+			r.mu.RLock()
+			nextLeaseIndex, _, forcedErr := r.checkForcedErrLockedWithLeaseIndex(
+				ctx, commandID, command, proposal, true, leaseIndex,
+			)
+			thresh := !r.mu.state.GCThreshold.Less(command.ReplicatedEvalResult.Timestamp)
+			r.mu.RUnlock()
+			if forcedErr != nil || thresh {
+				return
+			}
+
+			var response proposalResult
+			if proposal.Local.Reply != nil {
+				reply := *proposal.Local.Reply
+				reply.Responses = append([]roachpb.ResponseUnion(nil), reply.Responses...)
+				response.Reply = &reply
+			}
+			response.Intents = proposal.Local.DetachIntents()
+			response.EndTxns = proposal.Local.DetachEndTxns(false)
+			proposal.signalProposalResult(response)
+
+			leaseIndex = nextLeaseIndex
+		case raftpb.EntryConfChange:
+			// Stop trying.
+			return
+		default:
+			log.Fatalf(ctx, "unexpected Raft entry: %v", e)
+		}
+	}
 }
 
 // tick the Raft group, returning true if the raft group exists and is
@@ -1340,8 +1403,19 @@ func (r *Replica) checkForcedErrLocked(
 	proposal *ProposalData,
 	proposedLocally bool,
 ) (uint64, proposalReevaluationReason, *roachpb.Error) {
-	leaseIndex := r.mu.state.LeaseAppliedIndex
+	return r.checkForcedErrLockedWithLeaseIndex(
+		ctx, idKey, raftCmd, proposal, proposedLocally, r.mu.state.LeaseAppliedIndex,
+	)
+}
 
+func (r *Replica) checkForcedErrLockedWithLeaseIndex(
+	ctx context.Context,
+	idKey storagebase.CmdIDKey,
+	raftCmd storagepb.RaftCommand,
+	proposal *ProposalData,
+	proposedLocally bool,
+	leaseIndex uint64,
+) (uint64, proposalReevaluationReason, *roachpb.Error) {
 	isLeaseRequest := raftCmd.ReplicatedEvalResult.IsLeaseRequest
 	var requestedLease roachpb.Lease
 	if isLeaseRequest {
