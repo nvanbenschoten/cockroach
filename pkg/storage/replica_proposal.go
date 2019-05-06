@@ -71,6 +71,10 @@ type ProposalData struct {
 	// reproposals its MaxLeaseIndex field is mutated.
 	command *storagepb.RaftCommand
 
+	proposalSize      int
+	tmpFooter         storagepb.RaftCommandFooter
+	commandWithFooter []byte
+
 	// endCmds.finish is called after command execution to update the
 	// timestamp cache & release latches.
 	endCmds *endCmds

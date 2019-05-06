@@ -278,3 +278,7 @@ message RaftCommand {
 
   reserved 1, 10001 to 10014;
 }
+
+message RaftCommandFooter {
+  uint64 max_lease_index = 4;
+}

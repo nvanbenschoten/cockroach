@@ -286,6 +286,8 @@ type Replica struct {
 		minLeaseProposedTS hlc.Timestamp
 		// A pointer to the zone config for this replica.
 		zone *config.ZoneConfig
+		// propBuf ...
+		propBuf proposalBuf
 		// proposals stores the Raft in-flight commands which originated at
 		// this Replica, i.e. all commands for which propose has been called,
 		// but which have not yet applied.
