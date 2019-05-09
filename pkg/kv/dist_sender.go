@@ -400,8 +400,9 @@ func (ds *DistSender) sendRPC(
 	ctx context.Context,
 	rangeID roachpb.RangeID,
 	replicas ReplicaSlice,
-	ba roachpb.BatchRequest,
 	cachedLeaseHolder roachpb.ReplicaDescriptor,
+	ba roachpb.BatchRequest,
+	haveCommit bool,
 ) (*roachpb.BatchResponse, error) {
 	if len(replicas) == 0 {
 		return nil, roachpb.NewSendError(
@@ -418,9 +419,10 @@ func (ds *DistSender) sendRPC(
 		SendOptions{metrics: &ds.metrics},
 		rangeID,
 		replicas,
-		ba,
 		ds.nodeDialer,
 		cachedLeaseHolder,
+		ba,
+		haveCommit,
 	)
 }
 
@@ -465,7 +467,7 @@ func (ds *DistSender) getDescriptor(
 
 // sendSingleRange gathers and rearranges the replicas, and makes an RPC call.
 func (ds *DistSender) sendSingleRange(
-	ctx context.Context, ba roachpb.BatchRequest, desc *roachpb.RangeDescriptor,
+	ctx context.Context, ba roachpb.BatchRequest, desc *roachpb.RangeDescriptor, haveCommit bool,
 ) (*roachpb.BatchResponse, *roachpb.Error) {
 	// Try to send the call.
 	replicas := NewReplicaSlice(ds.gossip, desc)
@@ -493,7 +495,7 @@ func (ds *DistSender) sendSingleRange(
 		replicas.OptimizeReplicaOrder(ds.getNodeDescriptor(), latencyFn)
 	}
 
-	br, err := ds.sendRPC(ctx, desc.RangeID, replicas, ba, cachedLeaseHolder)
+	br, err := ds.sendRPC(ctx, desc.RangeID, replicas, cachedLeaseHolder, ba, haveCommit)
 	if err != nil {
 		log.VErrEvent(ctx, 2, err.Error())
 		return nil, roachpb.NewError(err)
@@ -619,10 +621,12 @@ func splitBatchAndCheckForRefreshSpans(
 	lastReq := lastPart[len(lastPart)-1].GetInner()
 	if et, ok := lastReq.(*roachpb.EndTransactionRequest); ok && et.NoRefreshSpans {
 		hasRefreshSpans := false
+	Loop:
 		for _, part := range parts[:len(parts)-1] {
 			for _, req := range part {
 				if roachpb.NeedsRefresh(req.GetInner()) {
 					hasRefreshSpans = true
+					break Loop
 				}
 			}
 		}
@@ -644,11 +648,6 @@ func splitBatchAndCheckForRefreshSpans(
 //
 // When the request spans ranges, it is split by range and a partial
 // subset of the batch request is sent to affected ranges in parallel.
-//
-// The first write in a transaction may not arrive before writes to
-// other ranges. This is relevant in the case of a BeginTransaction
-// request. Intents written to other ranges before the transaction
-// record is created will cause the transaction to abort early.
 //
 // Note that on error, this method will return any batch responses for
 // successfully processed batch requests. This allows the caller to
@@ -707,7 +706,7 @@ func (ds *DistSender) Send(
 		}
 
 		var rpl *roachpb.BatchResponse
-		rpl, pErr = ds.divideAndSendBatchToRanges(ctx, ba, rs, 0 /* batchIdx */)
+		rpl, pErr = ds.divideAndSendBatchToRanges(ctx, ba, rs, 0 /* batchIdx */, false /* haveCommit */)
 
 		if pErr == errNo1PCTxn {
 			// If we tried to send a single round-trip EndTransaction but
@@ -770,7 +769,7 @@ type response struct {
 // this method. It's specified as non-zero when this method is invoked
 // recursively.
 func (ds *DistSender) divideAndSendBatchToRanges(
-	ctx context.Context, ba roachpb.BatchRequest, rs roachpb.RSpan, batchIdx int,
+	ctx context.Context, ba roachpb.BatchRequest, rs roachpb.RSpan, batchIdx int, haveCommit bool,
 ) (br *roachpb.BatchResponse, pErr *roachpb.Error) {
 	// Clone the BatchRequest's transaction so that future mutations to the
 	// proto don't affect the proto in this batch.
@@ -778,6 +777,25 @@ func (ds *DistSender) divideAndSendBatchToRanges(
 		txnCopy := *ba.Txn
 		ba.Txn = &txnCopy
 	}
+
+	// TODO(WIP): don't look at this. It's awful. The idea is that we don't
+	// want to send parallel commit end transactions in the same batch as
+	// query intent requests because query intent requests will block on
+	// in-flight writes.
+	var have2PhaseCommit, splitPreCommitQueryIntents bool
+	if args, ok := ba.GetArg(roachpb.EndTransaction); ok {
+		if et := args.(*roachpb.EndTransactionRequest); et.Commit {
+			haveCommit = true
+			if len(ba.Requests) > 1 {
+				have2PhaseCommit = len(et.InFlightWrites) == 0
+
+				beforeET := ba.Requests[len(ba.Requests)-2].GetInner()
+				splitPreCommitQueryIntents = !have2PhaseCommit && beforeET.Method() == roachpb.QueryIntent
+			}
+		}
+	}
+	// TODO haveParallelCommit.
+
 	// Get initial seek key depending on direction of iteration.
 	var scanDir ScanDirection
 	var seekKey roachpb.RKey
@@ -794,21 +812,25 @@ func (ds *DistSender) divideAndSendBatchToRanges(
 		return nil, ri.Error()
 	}
 	// Take the fast path if this batch fits within a single range.
-	if !ri.NeedAnother(rs) {
-		resp := ds.sendPartialBatch(ctx, ba, rs, ri.Desc(), ri.Token(), batchIdx, false /* needsTruncate */)
+	if !ri.NeedAnother(rs) && !splitPreCommitQueryIntents {
+		resp := ds.sendPartialBatch(ctx, ba, rs, ri.Desc(), ri.Token(), batchIdx, haveCommit, false /* needsTruncate */)
 		return resp.reply, resp.pErr
 	}
-
+	// Can we put single-range check here?
+	// If the batch is unsplittable, ...
 	if ba.IsUnsplittable() {
 		mismatch := roachpb.NewRangeKeyMismatchError(rs.Key.AsRawKey(), rs.EndKey.AsRawKey(), ri.Desc())
 		return nil, roachpb.NewError(mismatch)
 	}
 
+	origBa := ba
 	// Make an empty slice of responses which will be populated with responses
 	// as they come in via Combine().
 	br = &roachpb.BatchResponse{
 		Responses: make([]roachpb.ResponseUnion, len(ba.Requests)),
 	}
+	//
+	swappedEndTxnIdx := -1
 	// This function builds a channel of responses for each range
 	// implicated in the span (rs) and combines them into a single
 	// BatchResponse when finished.
@@ -839,7 +861,7 @@ func (ds *DistSender) divideAndSendBatchToRanges(
 			}
 			if !hadSuccessWriting {
 				for _, i := range resp.positions {
-					req := ba.Requests[i].GetInner()
+					req := origBa.Requests[i].GetInner()
 					if !roachpb.IsReadOnly(req) {
 						hadSuccessWriting = true
 						break
@@ -887,14 +909,78 @@ func (ds *DistSender) divideAndSendBatchToRanges(
 				}
 			}
 		} else if couldHaveSkippedResponses {
-			fillSkippedResponses(ba, br, seekKey, resumeReason)
+			fillSkippedResponses(origBa, br, seekKey, resumeReason)
+		}
+
+		// Swap back in response.
+		if swappedEndTxnIdx > -1 {
+			br.Responses[swappedEndTxnIdx], br.Responses[len(br.Responses)-1] =
+				br.Responses[len(br.Responses)-1], br.Responses[swappedEndTxnIdx]
 		}
 	}()
 
-	stopAtRangeBoundary := ba.Header.ScanOptions != nil && ba.Header.ScanOptions.StopAtRangeBoundary
+	if splitPreCommitQueryIntents && ds.rpcContext != nil {
+		for i := len(ba.Requests) - 2; i >= 0; i-- {
+			req := ba.Requests[i].GetInner()
+			if req.Method() == roachpb.QueryIntent {
+				swappedEndTxnIdx = i
+			} else {
+				break
+			}
+		}
+
+		ba.Requests = append([]roachpb.RequestUnion(nil), ba.Requests...)
+		ba.Requests[swappedEndTxnIdx], ba.Requests[len(ba.Requests)-1] =
+			ba.Requests[len(ba.Requests)-1], ba.Requests[swappedEndTxnIdx]
+
+		origBa = ba
+		ba.Requests = ba.Requests[:swappedEndTxnIdx+1]
+
+		queryIntentBa := origBa
+		queryIntentBa.Requests = origBa.Requests[swappedEndTxnIdx+1:]
+		queryIntentPositions := make([]int, len(queryIntentBa.Requests))
+		for i := range queryIntentPositions {
+			queryIntentPositions[i] = i + swappedEndTxnIdx + 1
+		}
+
+		queryIntentRS, err := keys.Range(queryIntentBa)
+		if err != nil {
+			return nil, roachpb.NewError(err)
+		}
+
+		responseCh := make(chan response, 1)
+		responseChs = append(responseChs, responseCh)
+		if err := ds.rpcContext.Stopper.RunAsyncTask(
+			ctx, "kv.DistSender: sending precommit query intents",
+			func(ctx context.Context) {
+				reply, pErr := ds.divideAndSendBatchToRanges(ctx, queryIntentBa, queryIntentRS, batchIdx, haveCommit)
+				responseCh <- response{reply: reply, positions: queryIntentPositions, pErr: pErr}
+			},
+		); err != nil {
+			responseCh <- response{pErr: roachpb.NewError(err)}
+			return
+		}
+		batchIdx++
+
+		rs, err = keys.Range(ba)
+		if err != nil {
+			return nil, roachpb.NewError(err)
+		}
+		if !ba.IsReverse() {
+			seekKey = rs.Key
+		} else {
+			seekKey = rs.EndKey
+		}
+		ri.Seek(ctx, seekKey, scanDir)
+		if !ri.Valid() {
+			return nil, ri.Error()
+		}
+	}
+
 	// If min_results is set, num_results will count how many results scans have
 	// accumulated so far.
 	var numResults int64
+	stopAtRangeBoundary := ba.Header.ScanOptions != nil && ba.Header.ScanOptions.StopAtRangeBoundary
 	canParallelize := (ba.Header.MaxSpanRequestKeys == 0) && !stopAtRangeBoundary
 
 	for ; ri.Valid(); ri.Seek(ctx, seekKey, scanDir) {
@@ -918,7 +1004,7 @@ func (ds *DistSender) divideAndSendBatchToRanges(
 			// If the request is more than but ends with EndTransaction, we
 			// want the caller to come again with the EndTransaction in an
 			// extra call.
-			if l := len(ba.Requests) - 1; l > 0 && ba.Requests[l].GetInner().Method() == roachpb.EndTransaction {
+			if have2PhaseCommit {
 				responseCh <- response{pErr: errNo1PCTxn}
 				return
 			}
@@ -956,10 +1042,10 @@ func (ds *DistSender) divideAndSendBatchToRanges(
 		// If we can reserve one of the limited goroutines available for parallel
 		// batch RPCs, send asynchronously.
 		if canParallelize && !lastRange && ds.rpcContext != nil &&
-			ds.sendPartialBatchAsync(ctx, ba, rs, ri.Desc(), ri.Token(), batchIdx, responseCh) {
+			ds.sendPartialBatchAsync(ctx, ba, rs, ri.Desc(), ri.Token(), batchIdx, haveCommit, responseCh) {
 			// Sent the batch asynchronously.
 		} else {
-			resp := ds.sendPartialBatch(ctx, ba, rs, ri.Desc(), ri.Token(), batchIdx, true /* needsTruncate */)
+			resp := ds.sendPartialBatch(ctx, ba, rs, ri.Desc(), ri.Token(), batchIdx, haveCommit, true /* needsTruncate */)
 			responseCh <- resp
 			if resp.pErr != nil {
 				return
@@ -1053,6 +1139,7 @@ func (ds *DistSender) sendPartialBatchAsync(
 	desc *roachpb.RangeDescriptor,
 	evictToken *EvictionToken,
 	batchIdx int,
+	haveCommit bool,
 	responseCh chan response,
 ) bool {
 	if err := ds.rpcContext.Stopper.RunLimitedAsyncTask(
@@ -1060,7 +1147,9 @@ func (ds *DistSender) sendPartialBatchAsync(
 		ds.asyncSenderSem, false, /* wait */
 		func(ctx context.Context) {
 			ds.metrics.AsyncSentCount.Inc(1)
-			responseCh <- ds.sendPartialBatch(ctx, ba, rs, desc, evictToken, batchIdx, true /* needsTruncate */)
+			responseCh <- ds.sendPartialBatch(
+				ctx, ba, rs, desc, evictToken, batchIdx, haveCommit, true, /* needsTruncate */
+			)
 		},
 	); err != nil {
 		ds.metrics.AsyncThrottledCount.Inc(1)
@@ -1087,6 +1176,7 @@ func (ds *DistSender) sendPartialBatch(
 	desc *roachpb.RangeDescriptor,
 	evictToken *EvictionToken,
 	batchIdx int,
+	haveCommit bool,
 	needsTruncate bool,
 ) response {
 	if batchIdx == 1 {
@@ -1138,7 +1228,7 @@ func (ds *DistSender) sendPartialBatch(
 			}
 		}
 
-		reply, pErr = ds.sendSingleRange(ctx, ba, desc)
+		reply, pErr = ds.sendSingleRange(ctx, ba, desc, haveCommit)
 
 		// If sending succeeded, return immediately.
 		if pErr == nil {
@@ -1204,7 +1294,7 @@ func (ds *DistSender) sendPartialBatch(
 			// batch here would give a potentially larger response slice
 			// with unknown mapping to our truncated reply).
 			log.VEventf(ctx, 1, "likely split; resending batch to span: %s", tErr)
-			reply, pErr = ds.divideAndSendBatchToRanges(ctx, ba, rs, batchIdx)
+			reply, pErr = ds.divideAndSendBatchToRanges(ctx, ba, rs, batchIdx, haveCommit)
 			return response{reply: reply, positions: positions, pErr: pErr}
 		}
 		break
@@ -1337,18 +1427,11 @@ func (ds *DistSender) sendToReplicas(
 	opts SendOptions,
 	rangeID roachpb.RangeID,
 	replicas ReplicaSlice,
-	ba roachpb.BatchRequest,
 	nodeDialer *nodedialer.Dialer,
 	cachedLeaseHolder roachpb.ReplicaDescriptor,
+	ba roachpb.BatchRequest,
+	haveCommit bool,
 ) (*roachpb.BatchResponse, error) {
-	var ambiguousError error
-	var haveCommit bool
-	// We only check for committed txns, not aborts because aborts may
-	// be retried without any risk of inconsistencies.
-	if etArg, ok := ba.GetArg(roachpb.EndTransaction); ok {
-		haveCommit = etArg.(*roachpb.EndTransactionRequest).Commit
-	}
-
 	transport, err := ds.transportFactory(opts, nodeDialer, replicas)
 	if err != nil {
 		return nil, err
@@ -1374,6 +1457,7 @@ func (ds *DistSender) sendToReplicas(
 
 	// This loop will retry operations that fail with errors that reflect
 	// per-replica state and may succeed on other replicas.
+	var ambiguousError error
 	for {
 		if err != nil {
 			// For most connection errors, we cannot tell whether or not
