@@ -200,7 +200,14 @@ func PushTxn(
 	}
 
 	// The pusher might be aware of a newer version of the pushee.
-	reply.PusheeTxn.Timestamp.Forward(args.PusheeTxn.Timestamp)
+	if reply.PusheeTxn.Timestamp.Less(args.PusheeTxn.Timestamp) {
+		reply.PusheeTxn.Timestamp = args.PusheeTxn.Timestamp
+		// Don't consider the pushee to be STAGING if any of its intents
+		// are at higher timestamps... because...
+		if reply.PusheeTxn.Status == roachpb.STAGING {
+			reply.PusheeTxn.Status = roachpb.PENDING
+		}
+	}
 	if reply.PusheeTxn.Epoch < args.PusheeTxn.Epoch {
 		reply.PusheeTxn.Epoch = args.PusheeTxn.Epoch
 	}
