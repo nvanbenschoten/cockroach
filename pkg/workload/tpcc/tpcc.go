@@ -533,6 +533,7 @@ func (w *tpcc) Ops(urls []string, reg *histogram.Registry) (workload.QueryLoad, 
 	// Limit the amount of workers we initialize in parallel, to avoid running out
 	// of memory (#36897).
 	sem := make(chan struct{}, 100)
+	sem2 := make(chan struct{})
 	for workerIdx := 0; workerIdx < w.workers; workerIdx++ {
 		workerIdx := workerIdx
 		warehouse := w.wPart.totalElems[workerIdx%len(w.wPart.totalElems)]
@@ -547,8 +548,9 @@ func (w *tpcc) Ops(urls []string, reg *histogram.Registry) (workload.QueryLoad, 
 
 		ql.WorkerFns = append(ql.WorkerFns, nil)
 		idx := len(ql.WorkerFns) - 1
-		sem <- struct{}{}
 		group.Go(func() error {
+			<-sem2
+			sem <- struct{}{}
 			worker, err := newWorker(context.TODO(), w, db, reg.GetHandle(), warehouse)
 			if err == nil {
 				ql.WorkerFns[idx] = worker.run
@@ -557,6 +559,7 @@ func (w *tpcc) Ops(urls []string, reg *histogram.Registry) (workload.QueryLoad, 
 			return err
 		})
 	}
+	close(sem2)
 	if err := group.Wait(); err != nil {
 		return workload.QueryLoad{}, err
 	}
