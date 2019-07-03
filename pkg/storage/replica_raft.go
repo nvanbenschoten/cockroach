@@ -82,6 +82,7 @@ func (r *Replica) evalAndPropose(
 	}
 
 	repDesc, err := r.getReplicaDescriptorRLocked()
+	_ =repDesc
 	if err != nil {
 		r.mu.RUnlock()
 		return nil, nil, 0, roachpb.NewError(err)
@@ -166,7 +167,7 @@ func (r *Replica) evalAndPropose(
 	}
 
 	// Attach information about the proposer to the command.
-	proposal.command.ProposerReplica = repDesc
+	// proposal.command.ProposerReplica = repDesc
 	proposal.command.ProposerLeaseSequence = lease.Sequence
 
 	// Once a command is written to the raft log, it must be loaded into memory
@@ -298,7 +299,7 @@ func (r *Replica) propose(ctx context.Context, p *ProposalData) (_ int64, pErr *
   RaftCommand.ReplicatedEvalResult.Delta:    %d
   RaftCommand.WriteBatch:                    %d
 `, p.Request.Summary(), cmdLen,
-			p.command.ProposerReplica.Size(),
+			0, //p.command.ProposerReplica.Size(),
 			p.command.ReplicatedEvalResult.Size(),
 			p.command.ReplicatedEvalResult.Delta.Size(),
 			p.command.WriteBatch.Size(),
@@ -1254,7 +1255,7 @@ func (r *Replica) checkForcedErrLocked(
 		log.VEventf(
 			ctx, 1,
 			"command proposed from replica %+v with lease #%d incompatible to %v",
-			raftCmd.ProposerReplica, raftCmd.ProposerLeaseSequence, *r.mu.state.Lease,
+			"todo", raftCmd.ProposerLeaseSequence, *r.mu.state.Lease,
 		)
 		if isLeaseRequest {
 			// For lease requests we return a special error that
@@ -1268,7 +1269,7 @@ func (r *Replica) checkForcedErrLocked(
 		}
 		// We return a NotLeaseHolderError so that the DistSender retries.
 		nlhe := newNotLeaseHolderError(
-			r.mu.state.Lease, raftCmd.ProposerReplica.StoreID, r.mu.state.Desc)
+			r.mu.state.Lease, 0, r.mu.state.Desc)
 		nlhe.CustomMsg = fmt.Sprintf(
 			"stale proposal: command was proposed under lease #%d but is being applied "+
 				"under lease: %s", raftCmd.ProposerLeaseSequence, r.mu.state.Lease)

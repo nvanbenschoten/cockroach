@@ -201,7 +201,7 @@ message RaftCommand {
 
   // proposer_replica is the replica which proposed this command, to be
   // used for lease validation.
-  roachpb.ReplicaDescriptor proposer_replica = 2 [(gogoproto.nullable) = false];
+  // roachpb.ReplicaDescriptor proposer_replica = 2 [(gogoproto.nullable) = false];
 
   // proposer_lease_seq is provided to verify at raft command apply-time
   // that the lease under which the command was proposed remains in effect.

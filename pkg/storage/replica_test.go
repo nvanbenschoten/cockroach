@@ -891,7 +891,7 @@ func TestLeaseReplicaNotInDesc(t *testing.T) {
 
 	raftCmd := storagepb.RaftCommand{
 		ProposerLeaseSequence: lease.Sequence,
-		ProposerReplica:       invalidLease.Replica,
+		// ProposerReplica:       invalidLease.Replica,
 		ReplicatedEvalResult: storagepb.ReplicatedEvalResult{
 			IsLeaseRequest: true,
 			State: &storagepb.ReplicaState{
@@ -7538,6 +7538,7 @@ func TestReplicaRefreshPendingCommandsTicks(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	_ = repDesc
 
 	// Flush a write all the way through the Raft proposal pipeline. This
 	// ensures that leadership settles down before we start manually submitting
@@ -7598,7 +7599,7 @@ func TestReplicaRefreshPendingCommandsTicks(t *testing.T) {
 		dropProposals.m[cmd] = struct{}{} // silently drop proposals
 		dropProposals.Unlock()
 
-		cmd.command.ProposerReplica = repDesc
+		// cmd.command.ProposerReplica = repDesc
 		cmd.command.ProposerLeaseSequence = lease.Sequence
 		if _, pErr := r.propose(ctx, cmd); pErr != nil {
 			t.Error(pErr)
@@ -7679,6 +7680,7 @@ func TestReplicaRefreshMultiple(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	_ = repDesc
 
 	key := roachpb.Key("a")
 
@@ -7744,7 +7746,7 @@ func TestReplicaRefreshMultiple(t *testing.T) {
 	// proposed it will be given the incorrect max lease index which ensures
 	// that it will generate a retry when it fails. Then call refreshProposals
 	// twice to repropose it and put it in the logs twice more.
-	proposal.command.ProposerReplica = repDesc
+	// proposal.command.ProposerReplica = repDesc
 	proposal.command.ProposerLeaseSequence = repl.mu.state.Lease.Sequence
 	if _, pErr := repl.propose(ctx, proposal); pErr != nil {
 		t.Fatal(pErr)
