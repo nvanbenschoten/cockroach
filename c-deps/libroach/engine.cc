@@ -166,12 +166,13 @@ DBStatus DBImpl::DeleteRange(DBKey start, DBKey end) {
       rep->DeleteRange(options, rep->DefaultColumnFamily(), EncodeKey(start), EncodeKey(end)));
 }
 
-DBStatus DBImpl::CommitBatch(bool sync) { return FmtStatus("unsupported"); }
+DBStatus DBImpl::CommitBatch(bool sync, bool disableWAL) { return FmtStatus("unsupported"); }
 
-DBStatus DBImpl::ApplyBatchRepr(DBSlice repr, bool sync) {
+DBStatus DBImpl::ApplyBatchRepr(DBSlice repr, bool sync, bool disableWAL) {
   rocksdb::WriteBatch batch(ToString(repr));
   rocksdb::WriteOptions options;
   options.sync = sync;
+  options.disableWAL = disableWAL;
   return ToDBStatus(rep->Write(options, &batch));
 }
 

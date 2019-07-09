@@ -31,8 +31,8 @@ struct DBEngine {
   virtual DBStatus Delete(DBKey key) = 0;
   virtual DBStatus SingleDelete(DBKey key) = 0;
   virtual DBStatus DeleteRange(DBKey start, DBKey end) = 0;
-  virtual DBStatus CommitBatch(bool sync) = 0;
-  virtual DBStatus ApplyBatchRepr(DBSlice repr, bool sync) = 0;
+  virtual DBStatus CommitBatch(bool sync, bool disableWAL) = 0;
+  virtual DBStatus ApplyBatchRepr(DBSlice repr, bool sync, bool disableWAL) = 0;
   virtual DBSlice BatchRepr() = 0;
   virtual DBStatus Get(DBKey key, DBString* value) = 0;
   virtual DBIterator* NewIter(DBIterOptions) = 0;
@@ -80,8 +80,8 @@ struct DBImpl : public DBEngine {
   virtual DBStatus Delete(DBKey key);
   virtual DBStatus SingleDelete(DBKey key);
   virtual DBStatus DeleteRange(DBKey start, DBKey end);
-  virtual DBStatus CommitBatch(bool sync);
-  virtual DBStatus ApplyBatchRepr(DBSlice repr, bool sync);
+  virtual DBStatus CommitBatch(bool sync, bool disableWAL);
+  virtual DBStatus ApplyBatchRepr(DBSlice repr, bool sync, bool disableWAL);
   virtual DBSlice BatchRepr();
   virtual DBStatus Get(DBKey key, DBString* value);
   virtual DBIterator* NewIter(DBIterOptions);

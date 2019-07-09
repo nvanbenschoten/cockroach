@@ -202,7 +202,7 @@ func runSyncer(
 				seq--
 				return seq, err
 			}
-			if err := b.Commit(true /* sync */); err != nil {
+			if err := b.Commit(true /* sync */, false); err != nil {
 				seq--
 				return seq, err
 			}

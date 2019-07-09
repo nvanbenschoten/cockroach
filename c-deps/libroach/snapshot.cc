@@ -35,9 +35,9 @@ DBStatus DBSnapshot::SingleDelete(DBKey key) { return FmtStatus("unsupported"); 
 
 DBStatus DBSnapshot::DeleteRange(DBKey start, DBKey end) { return FmtStatus("unsupported"); }
 
-DBStatus DBSnapshot::CommitBatch(bool sync) { return FmtStatus("unsupported"); }
+DBStatus DBSnapshot::CommitBatch(bool sync, bool disableWAL) { return FmtStatus("unsupported"); }
 
-DBStatus DBSnapshot::ApplyBatchRepr(DBSlice repr, bool sync) { return FmtStatus("unsupported"); }
+DBStatus DBSnapshot::ApplyBatchRepr(DBSlice repr, bool sync, bool disableWAL) { return FmtStatus("unsupported"); }
 
 DBSlice DBSnapshot::BatchRepr() { return ToDBSlice("unsupported"); }
 

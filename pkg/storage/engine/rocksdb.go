@@ -520,13 +520,8 @@ type RocksDB struct {
 	// auxDir is used for storing auxiliary files. Ideally it is a subdirectory of Dir.
 	auxDir string
 
-	commit struct {
-		syncutil.Mutex
-		cond       sync.Cond
-		committing bool
-		groupSize  int
-		pending    []*rocksDBBatch
-	}
+	commit rocksDBCommitBatcher
+	commitNoWAL rocksDBCommitBatcher
 
 	syncer struct {
 		syncutil.Mutex
@@ -539,6 +534,14 @@ type RocksDB struct {
 		syncutil.Mutex
 		m map[*rocksDBIterator][]byte
 	}
+}
+
+type rocksDBCommitBatcher struct {
+	syncutil.Mutex
+	cond       sync.Cond
+	committing bool
+	groupSize  int
+	pending    []*rocksDBBatch
 }
 
 var _ Engine = &RocksDB{}
@@ -682,6 +685,7 @@ func (r *RocksDB) open() error {
 	}
 
 	r.commit.cond.L = &r.commit.Mutex
+	r.commitNoWAL.cond.L = &r.commitNoWAL.Mutex
 	r.syncer.cond.L = &r.syncer.Mutex
 	r.iters.m = make(map[*rocksDBIterator][]byte)
 
@@ -838,7 +842,7 @@ func (r *RocksDB) LogLogicalOp(op MVCCLogicalOpType, details MVCCLogicalOpDetail
 // It is safe to modify the contents of the arguments after ApplyBatchRepr
 // returns.
 func (r *RocksDB) ApplyBatchRepr(repr []byte, sync bool) error {
-	return dbApplyBatchRepr(r.rdb, repr, sync)
+	return dbApplyBatchRepr(r.rdb, repr, sync, false /* disableWAL */)
 }
 
 // Get returns the value for the given key.
@@ -1927,9 +1931,12 @@ func nextBatchGroup(pending []*rocksDBBatch) (prefix []*rocksDBBatch, suffix []*
 	return pending, pending[len(pending):]
 }
 
-func (r *rocksDBBatch) Commit(syncCommit bool) error {
+func (r *rocksDBBatch) Commit(syncCommit, disableWAL bool) error {
 	if r.Closed() {
 		panic("this batch was already committed")
+	}
+	if syncCommit && disableWAL {
+		panic("must use WAL if sync")
 	}
 	r.distinctOpen = false
 
@@ -1946,6 +1953,9 @@ func (r *rocksDBBatch) Commit(syncCommit bool) error {
 	// batches commits together. While the batching below often can batch 20 or
 	// 30 concurrent commits.
 	c := &r.parent.commit
+	if disableWAL {
+		c = &r.parent.commitNoWAL
+	}
 	r.commitWG.Add(1)
 	r.syncCommit = syncCommit
 
@@ -1989,7 +1999,7 @@ func (r *rocksDBBatch) Commit(syncCommit bool) error {
 		}
 
 		if err == nil {
-			err = committer.commitInternal(false /* sync */)
+			err = committer.commitInternal(false /* sync */, disableWAL)
 		}
 
 		// We're done committing the batch, let the next group of batches
@@ -2039,7 +2049,7 @@ func (r *rocksDBBatch) Commit(syncCommit bool) error {
 	return r.commitErr
 }
 
-func (r *rocksDBBatch) commitInternal(sync bool) error {
+func (r *rocksDBBatch) commitInternal(sync, disableWAL bool) error {
 	start := timeutil.Now()
 	var count, size int
 
@@ -2048,7 +2058,7 @@ func (r *rocksDBBatch) commitInternal(sync bool) error {
 		// any remaining mutations as well and then commit the batch.
 		r.flushMutations()
 		r.ensureBatch()
-		if err := statusToError(C.DBCommitAndCloseBatch(r.batch, C.bool(sync))); err != nil {
+		if err := statusToError(C.DBCommitAndCloseBatch(r.batch, C.bool(sync), C.bool(disableWAL))); err != nil {
 			return err
 		}
 		r.batch = nil
@@ -2058,7 +2068,7 @@ func (r *rocksDBBatch) commitInternal(sync bool) error {
 
 		// Fast-path which avoids flushing mutations to the C++ batch. Instead, we
 		// directly apply the mutations to the database.
-		if err := dbApplyBatchRepr(r.parent.rdb, r.builder.Finish(), sync); err != nil {
+		if err := dbApplyBatchRepr(r.parent.rdb, r.builder.Finish(), sync, disableWAL); err != nil {
 			return err
 		}
 		if r.batch != nil {
@@ -2130,7 +2140,7 @@ func (r *rocksDBBatch) flushMutations() {
 	r.flushes++
 	r.flushedCount += int(r.builder.Count())
 	r.flushedSize += r.builder.Len()
-	if err := dbApplyBatchRepr(r.batch, r.builder.Finish(), false); err != nil {
+	if err := dbApplyBatchRepr(r.batch, r.builder.Finish(), false, false); err != nil {
 		panic(err)
 	}
 	// Force a seek of the underlying iterator on the next Seek/ReverseSeek.
@@ -2736,8 +2746,8 @@ func dbMerge(rdb *C.DBEngine, key MVCCKey, value []byte) error {
 	return statusToError(C.DBMerge(rdb, goToCKey(key), goToCSlice(value)))
 }
 
-func dbApplyBatchRepr(rdb *C.DBEngine, repr []byte, sync bool) error {
-	return statusToError(C.DBApplyBatchRepr(rdb, goToCSlice(repr), C.bool(sync)))
+func dbApplyBatchRepr(rdb *C.DBEngine, repr []byte, sync, disableWAL bool) error {
+	return statusToError(C.DBApplyBatchRepr(rdb, goToCSlice(repr), C.bool(sync), C.bool(disableWAL)))
 }
 
 // dbGet returns the value for the given key.

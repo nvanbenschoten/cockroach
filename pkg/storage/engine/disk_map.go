@@ -235,7 +235,7 @@ func (b *rocksDBMapBatchWriter) Flush() error {
 	if b.batch.Empty() {
 		return nil
 	}
-	if err := b.batch.Commit(false /* syncCommit */); err != nil {
+	if err := b.batch.Commit(false /* syncCommit */, false); err != nil {
 		return err
 	}
 	b.batch = b.store.NewWriteOnlyBatch()

@@ -372,7 +372,7 @@ type Batch interface {
 	// Commit atomically applies any batched updates to the underlying
 	// engine. This is a noop unless the batch was created via NewBatch(). If
 	// sync is true, the batch is synchronously committed to disk.
-	Commit(sync bool) error
+	Commit(sync, disableWAL bool) error
 	// Distinct returns a view of the existing batch which only sees writes that
 	// were performed before the Distinct batch was created. That is, the
 	// returned batch will not read its own writes, but it will read writes to
@@ -499,7 +499,7 @@ func WriteSyncNoop(ctx context.Context, eng Engine) error {
 		return err
 	}
 
-	if err := batch.Commit(true /* sync */); err != nil {
+	if err := batch.Commit(true /* sync */, false); err != nil {
 		return err
 	}
 	return nil

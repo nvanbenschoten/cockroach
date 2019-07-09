@@ -85,7 +85,7 @@ func (sc *AbortSpan) ClearData(e engine.Engine) error {
 	if err != nil {
 		return err
 	}
-	return b.Commit(false /* sync */)
+	return b.Commit(false /* sync */, false)
 }
 
 // Get looks up an AbortSpan entry recorded for this transaction ID.

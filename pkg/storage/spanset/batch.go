@@ -356,8 +356,8 @@ type spanSetBatch struct {
 
 var _ engine.Batch = spanSetBatch{}
 
-func (s spanSetBatch) Commit(sync bool) error {
-	return s.b.Commit(sync)
+func (s spanSetBatch) Commit(sync, disableWAL bool) error {
+	return s.b.Commit(sync, disableWAL)
 }
 
 func (s spanSetBatch) Distinct() engine.ReadWriter {

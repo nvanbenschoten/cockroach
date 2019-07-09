@@ -511,16 +511,17 @@ DBStatus DBBatch::DeleteRange(DBKey start, DBKey end) {
   return kSuccess;
 }
 
-DBStatus DBBatch::CommitBatch(bool sync) {
+DBStatus DBBatch::CommitBatch(bool sync, bool disableWAL) {
   if (updates == 0) {
     return kSuccess;
   }
   rocksdb::WriteOptions options;
   options.sync = sync;
+  options.disableWAL = disableWAL;
   return ToDBStatus(rep->Write(options, batch.GetWriteBatch()));
 }
 
-DBStatus DBBatch::ApplyBatchRepr(DBSlice repr, bool sync) {
+DBStatus DBBatch::ApplyBatchRepr(DBSlice repr, bool sync, bool disableWAL) {
   if (sync) {
     return FmtStatus("unsupported");
   }
@@ -623,16 +624,17 @@ DBStatus DBWriteOnlyBatch::DeleteRange(DBKey start, DBKey end) {
   return kSuccess;
 }
 
-DBStatus DBWriteOnlyBatch::CommitBatch(bool sync) {
+DBStatus DBWriteOnlyBatch::CommitBatch(bool sync, bool disableWAL) {
   if (updates == 0) {
     return kSuccess;
   }
   rocksdb::WriteOptions options;
   options.sync = sync;
+  options.disableWAL = disableWAL;
   return ToDBStatus(rep->Write(options, &batch));
 }
 
-DBStatus DBWriteOnlyBatch::ApplyBatchRepr(DBSlice repr, bool sync) {
+DBStatus DBWriteOnlyBatch::ApplyBatchRepr(DBSlice repr, bool sync, bool disableWAL) {
   if (sync) {
     return FmtStatus("unsupported");
   }

@@ -99,7 +99,7 @@ func (w *worker) run(wg *sync.WaitGroup) {
 			}
 		}
 		bytes := uint64(b.Len())
-		if err := b.Commit(true); err != nil {
+		if err := b.Commit(true, false); err != nil {
 			log.Fatal(ctx, err)
 		}
 		atomic.AddUint64(&numOps, 1)

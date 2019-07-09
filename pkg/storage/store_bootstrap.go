@@ -63,7 +63,7 @@ func InitEngine(
 		batch.Close()
 		return errors.Wrap(err, "cannot write cluster version")
 	}
-	if err := batch.Commit(true /* sync */); err != nil {
+	if err := batch.Commit(true /* sync */, false); err != nil {
 		return errors.Wrap(err, "persisting bootstrap data")
 	}
 
@@ -256,7 +256,7 @@ func WriteInitialClusterData(
 			return err
 		}
 
-		if err := batch.Commit(true /* sync */); err != nil {
+		if err := batch.Commit(true /* sync */, false); err != nil {
 			return err
 		}
 	}

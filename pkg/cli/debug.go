@@ -1141,7 +1141,7 @@ func runDebugUnsafeRemoveDeadReplicas(cmd *cobra.Command, args []string) error {
 	fmt.Printf("\n")
 	if line[0] == 'y' || line[0] == 'Y' {
 		fmt.Printf("Committing\n")
-		if err := batch.Commit(true); err != nil {
+		if err := batch.Commit(true, false); err != nil {
 			return err
 		}
 	} else {

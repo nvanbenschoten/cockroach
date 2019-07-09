@@ -474,16 +474,16 @@ DBStatus DBDeleteIterRange(DBEngine* db, DBIterator* iter, DBKey start, DBKey en
   return kSuccess;
 }
 
-DBStatus DBCommitAndCloseBatch(DBEngine* db, bool sync) {
-  DBStatus status = db->CommitBatch(sync);
+DBStatus DBCommitAndCloseBatch(DBEngine* db, bool sync, bool disableWAL) {
+  DBStatus status = db->CommitBatch(sync, disableWAL);
   if (status.data == NULL) {
     DBClose(db);
   }
   return status;
 }
 
-DBStatus DBApplyBatchRepr(DBEngine* db, DBSlice repr, bool sync) {
-  return db->ApplyBatchRepr(repr, sync);
+DBStatus DBApplyBatchRepr(DBEngine* db, DBSlice repr, bool sync, bool disableWAL) {
+  return db->ApplyBatchRepr(repr, sync, disableWAL);
 }
 
 DBSlice DBBatchRepr(DBEngine* db) { return db->BatchRepr(); }
