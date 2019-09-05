@@ -12,11 +12,13 @@ package batcheval
 
 import (
 	"context"
+	"log"
 
 	"github.com/cockroachdb/cockroach/pkg/roachpb"
 	"github.com/cockroachdb/cockroach/pkg/storage/batcheval/result"
 	"github.com/cockroachdb/cockroach/pkg/storage/engine"
 	"github.com/cockroachdb/cockroach/pkg/storage/spanset"
+	"github.com/cockroachdb/cockroach/pkg/util"
 )
 
 func init() {
@@ -51,6 +53,12 @@ func ResolveIntentRange(
 	iterAndBuf := engine.GetIterAndBuf(batch, engine.IterOptions{UpperBound: args.EndKey})
 	defer iterAndBuf.Cleanup()
 
+	if err := detectIntentTimestampViolation(cArgs.EvalCtx.Clock(), intent); err != nil {
+		if util.RaceEnabled {
+			log.Fatal(ctx, err)
+		}
+		return result.Result{}, err
+	}
 	numKeys, resumeSpan, err := engine.MVCCResolveWriteIntentRangeUsingIter(
 		ctx, batch, iterAndBuf, ms, intent, cArgs.MaxKeys,
 	)

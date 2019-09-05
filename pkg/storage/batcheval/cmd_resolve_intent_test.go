@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/cockroachdb/cockroach/pkg/internal/client"
 	"github.com/cockroachdb/cockroach/pkg/roachpb"
@@ -26,6 +27,7 @@ import (
 	"github.com/cockroachdb/cockroach/pkg/storage/storagebase"
 	"github.com/cockroachdb/cockroach/pkg/storage/txnwait"
 	"github.com/cockroachdb/cockroach/pkg/testutils"
+	"github.com/cockroachdb/cockroach/pkg/util"
 	"github.com/cockroachdb/cockroach/pkg/util/hlc"
 	"github.com/cockroachdb/cockroach/pkg/util/leaktest"
 	"github.com/cockroachdb/cockroach/pkg/util/uuid"
@@ -197,8 +199,13 @@ func TestDeclareKeysResolveIntent(t *testing.T) {
 				var h roachpb.Header
 				h.RangeID = desc.RangeID
 
-				cArgs := CommandArgs{Header: h}
-				cArgs.EvalCtx = &mockEvalCtx{abortSpan: ac}
+				cArgs := CommandArgs{
+					EvalCtx: &mockEvalCtx{
+						clock:     hlc.NewClock(hlc.UnixNano, time.Nanosecond),
+						abortSpan: ac,
+					},
+					Header: h,
+				}
 
 				if !ranged {
 					cArgs.Args = &ri
@@ -220,4 +227,52 @@ func TestDeclareKeysResolveIntent(t *testing.T) {
 			})
 		}
 	})
+}
+
+func TestCommittedResolveIntentInFuture(t *testing.T) {
+	defer leaktest.AfterTest(t)()
+	const exp = "intent resolved to timestamp in future of local clock"
+	if util.RaceEnabled {
+		t.Skip(fmt.Sprintf("%q causes panic in race builds", exp))
+	}
+
+	ctx := context.Background()
+	db := engine.NewInMem(roachpb.Attributes{}, 1<<20)
+	defer db.Close()
+
+	manual := hlc.NewManualClock(123)
+	clock := hlc.NewClock(manual.UnixNano, time.Nanosecond)
+	evalCtx := &mockEvalCtx{clock: clock}
+
+	k := roachpb.Key("a")
+	futureTS := clock.Now().Add(100, 0)
+	txn := roachpb.MakeTransaction("test", k, 0, futureTS, 0)
+
+	if _, err := ResolveIntent(ctx, db,
+		CommandArgs{
+			EvalCtx: evalCtx,
+			Args: &roachpb.ResolveIntentRequest{
+				RequestHeader: roachpb.RequestHeader{Key: k},
+				IntentTxn:     txn.TxnMeta,
+				Status:        roachpb.COMMITTED,
+			},
+		},
+		&roachpb.ResolveIntentResponse{},
+	); !testutils.IsError(err, exp) {
+		t.Fatalf("expected %q error, but got %v", exp, err)
+	}
+
+	if _, err := ResolveIntentRange(ctx, db,
+		CommandArgs{
+			EvalCtx: evalCtx,
+			Args: &roachpb.ResolveIntentRangeRequest{
+				RequestHeader: roachpb.RequestHeader{Key: k, EndKey: k.Next()},
+				IntentTxn:     txn.TxnMeta,
+				Status:        roachpb.COMMITTED,
+			},
+		},
+		&roachpb.ResolveIntentRangeResponse{},
+	); !testutils.IsError(err, exp) {
+		t.Fatalf("expected %q error, but got %v", exp, err)
+	}
 }
