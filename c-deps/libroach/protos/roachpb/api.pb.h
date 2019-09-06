@@ -48,7 +48,7 @@ namespace protobuf_roachpb_2fapi_2eproto {
 struct TableStruct {
   static const ::google::protobuf::internal::ParseTableField entries[];
   static const ::google::protobuf::internal::AuxillaryParseTableField aux[];
-  static const ::google::protobuf::internal::ParseTable schema[118];
+  static const ::google::protobuf::internal::ParseTable schema[120];
   static const ::google::protobuf::internal::FieldMetadata field_metadata[];
   static const ::google::protobuf::internal::SerializationTable serialization_table[];
   static const ::google::protobuf::uint32 offsets[];
@@ -203,6 +203,12 @@ extern ExportStorage_S3DefaultTypeInternal _ExportStorage_S3_default_instance_;
 class ExportStorage_Workload;
 class ExportStorage_WorkloadDefaultTypeInternal;
 extern ExportStorage_WorkloadDefaultTypeInternal _ExportStorage_Workload_default_instance_;
+class ForwardHLCRequest;
+class ForwardHLCRequestDefaultTypeInternal;
+extern ForwardHLCRequestDefaultTypeInternal _ForwardHLCRequest_default_instance_;
+class ForwardHLCResponse;
+class ForwardHLCResponseDefaultTypeInternal;
+extern ForwardHLCResponseDefaultTypeInternal _ForwardHLCResponse_default_instance_;
 class GCRequest;
 class GCRequestDefaultTypeInternal;
 extern GCRequestDefaultTypeInternal _GCRequest_default_instance_;
@@ -463,6 +469,8 @@ template<> ::cockroach::roachpb::ExportStorage_Http* Arena::CreateMaybeMessage<:
 template<> ::cockroach::roachpb::ExportStorage_LocalFilePath* Arena::CreateMaybeMessage<::cockroach::roachpb::ExportStorage_LocalFilePath>(Arena*);
 template<> ::cockroach::roachpb::ExportStorage_S3* Arena::CreateMaybeMessage<::cockroach::roachpb::ExportStorage_S3>(Arena*);
 template<> ::cockroach::roachpb::ExportStorage_Workload* Arena::CreateMaybeMessage<::cockroach::roachpb::ExportStorage_Workload>(Arena*);
+template<> ::cockroach::roachpb::ForwardHLCRequest* Arena::CreateMaybeMessage<::cockroach::roachpb::ForwardHLCRequest>(Arena*);
+template<> ::cockroach::roachpb::ForwardHLCResponse* Arena::CreateMaybeMessage<::cockroach::roachpb::ForwardHLCResponse>(Arena*);
 template<> ::cockroach::roachpb::GCRequest* Arena::CreateMaybeMessage<::cockroach::roachpb::GCRequest>(Arena*);
 template<> ::cockroach::roachpb::GCRequest_GCKey* Arena::CreateMaybeMessage<::cockroach::roachpb::GCRequest_GCKey>(Arena*);
 template<> ::cockroach::roachpb::GCResponse* Arena::CreateMaybeMessage<::cockroach::roachpb::GCResponse>(Arena*);
@@ -13867,6 +13875,218 @@ class RangeStatsResponse : public ::google::protobuf::MessageLite /* @@protoc_in
 };
 // -------------------------------------------------------------------
 
+class ForwardHLCRequest : public ::google::protobuf::MessageLite /* @@protoc_insertion_point(class_definition:cockroach.roachpb.ForwardHLCRequest) */ {
+ public:
+  ForwardHLCRequest();
+  virtual ~ForwardHLCRequest();
+
+  ForwardHLCRequest(const ForwardHLCRequest& from);
+
+  inline ForwardHLCRequest& operator=(const ForwardHLCRequest& from) {
+    CopyFrom(from);
+    return *this;
+  }
+  #if LANG_CXX11
+  ForwardHLCRequest(ForwardHLCRequest&& from) noexcept
+    : ForwardHLCRequest() {
+    *this = ::std::move(from);
+  }
+
+  inline ForwardHLCRequest& operator=(ForwardHLCRequest&& from) noexcept {
+    if (GetArenaNoVirtual() == from.GetArenaNoVirtual()) {
+      if (this != &from) InternalSwap(&from);
+    } else {
+      CopyFrom(from);
+    }
+    return *this;
+  }
+  #endif
+  static const ForwardHLCRequest& default_instance();
+
+  static void InitAsDefaultInstance();  // FOR INTERNAL USE ONLY
+  static inline const ForwardHLCRequest* internal_default_instance() {
+    return reinterpret_cast<const ForwardHLCRequest*>(
+               &_ForwardHLCRequest_default_instance_);
+  }
+  static constexpr int kIndexInFileMessages =
+    107;
+
+  void Swap(ForwardHLCRequest* other);
+  friend void swap(ForwardHLCRequest& a, ForwardHLCRequest& b) {
+    a.Swap(&b);
+  }
+
+  // implements Message ----------------------------------------------
+
+  inline ForwardHLCRequest* New() const final {
+    return CreateMaybeMessage<ForwardHLCRequest>(NULL);
+  }
+
+  ForwardHLCRequest* New(::google::protobuf::Arena* arena) const final {
+    return CreateMaybeMessage<ForwardHLCRequest>(arena);
+  }
+  void CheckTypeAndMergeFrom(const ::google::protobuf::MessageLite& from)
+    final;
+  void CopyFrom(const ForwardHLCRequest& from);
+  void MergeFrom(const ForwardHLCRequest& from);
+  void Clear() final;
+  bool IsInitialized() const final;
+
+  size_t ByteSizeLong() const final;
+  bool MergePartialFromCodedStream(
+      ::google::protobuf::io::CodedInputStream* input) final;
+  void SerializeWithCachedSizes(
+      ::google::protobuf::io::CodedOutputStream* output) const final;
+  void DiscardUnknownFields();
+  int GetCachedSize() const final { return _cached_size_.Get(); }
+
+  private:
+  void SharedCtor();
+  void SharedDtor();
+  void SetCachedSize(int size) const;
+  void InternalSwap(ForwardHLCRequest* other);
+  private:
+  inline ::google::protobuf::Arena* GetArenaNoVirtual() const {
+    return NULL;
+  }
+  inline void* MaybeArenaPtr() const {
+    return NULL;
+  }
+  public:
+
+  ::std::string GetTypeName() const final;
+
+  // nested types ----------------------------------------------------
+
+  // accessors -------------------------------------------------------
+
+  bool has_header() const;
+  void clear_header();
+  static const int kHeaderFieldNumber = 1;
+  private:
+  const ::cockroach::roachpb::RequestHeader& _internal_header() const;
+  public:
+  const ::cockroach::roachpb::RequestHeader& header() const;
+  ::cockroach::roachpb::RequestHeader* release_header();
+  ::cockroach::roachpb::RequestHeader* mutable_header();
+  void set_allocated_header(::cockroach::roachpb::RequestHeader* header);
+
+  // @@protoc_insertion_point(class_scope:cockroach.roachpb.ForwardHLCRequest)
+ private:
+
+  ::google::protobuf::internal::InternalMetadataWithArenaLite _internal_metadata_;
+  ::cockroach::roachpb::RequestHeader* header_;
+  mutable ::google::protobuf::internal::CachedSize _cached_size_;
+  friend struct ::protobuf_roachpb_2fapi_2eproto::TableStruct;
+};
+// -------------------------------------------------------------------
+
+class ForwardHLCResponse : public ::google::protobuf::MessageLite /* @@protoc_insertion_point(class_definition:cockroach.roachpb.ForwardHLCResponse) */ {
+ public:
+  ForwardHLCResponse();
+  virtual ~ForwardHLCResponse();
+
+  ForwardHLCResponse(const ForwardHLCResponse& from);
+
+  inline ForwardHLCResponse& operator=(const ForwardHLCResponse& from) {
+    CopyFrom(from);
+    return *this;
+  }
+  #if LANG_CXX11
+  ForwardHLCResponse(ForwardHLCResponse&& from) noexcept
+    : ForwardHLCResponse() {
+    *this = ::std::move(from);
+  }
+
+  inline ForwardHLCResponse& operator=(ForwardHLCResponse&& from) noexcept {
+    if (GetArenaNoVirtual() == from.GetArenaNoVirtual()) {
+      if (this != &from) InternalSwap(&from);
+    } else {
+      CopyFrom(from);
+    }
+    return *this;
+  }
+  #endif
+  static const ForwardHLCResponse& default_instance();
+
+  static void InitAsDefaultInstance();  // FOR INTERNAL USE ONLY
+  static inline const ForwardHLCResponse* internal_default_instance() {
+    return reinterpret_cast<const ForwardHLCResponse*>(
+               &_ForwardHLCResponse_default_instance_);
+  }
+  static constexpr int kIndexInFileMessages =
+    108;
+
+  void Swap(ForwardHLCResponse* other);
+  friend void swap(ForwardHLCResponse& a, ForwardHLCResponse& b) {
+    a.Swap(&b);
+  }
+
+  // implements Message ----------------------------------------------
+
+  inline ForwardHLCResponse* New() const final {
+    return CreateMaybeMessage<ForwardHLCResponse>(NULL);
+  }
+
+  ForwardHLCResponse* New(::google::protobuf::Arena* arena) const final {
+    return CreateMaybeMessage<ForwardHLCResponse>(arena);
+  }
+  void CheckTypeAndMergeFrom(const ::google::protobuf::MessageLite& from)
+    final;
+  void CopyFrom(const ForwardHLCResponse& from);
+  void MergeFrom(const ForwardHLCResponse& from);
+  void Clear() final;
+  bool IsInitialized() const final;
+
+  size_t ByteSizeLong() const final;
+  bool MergePartialFromCodedStream(
+      ::google::protobuf::io::CodedInputStream* input) final;
+  void SerializeWithCachedSizes(
+      ::google::protobuf::io::CodedOutputStream* output) const final;
+  void DiscardUnknownFields();
+  int GetCachedSize() const final { return _cached_size_.Get(); }
+
+  private:
+  void SharedCtor();
+  void SharedDtor();
+  void SetCachedSize(int size) const;
+  void InternalSwap(ForwardHLCResponse* other);
+  private:
+  inline ::google::protobuf::Arena* GetArenaNoVirtual() const {
+    return NULL;
+  }
+  inline void* MaybeArenaPtr() const {
+    return NULL;
+  }
+  public:
+
+  ::std::string GetTypeName() const final;
+
+  // nested types ----------------------------------------------------
+
+  // accessors -------------------------------------------------------
+
+  bool has_header() const;
+  void clear_header();
+  static const int kHeaderFieldNumber = 1;
+  private:
+  const ::cockroach::roachpb::ResponseHeader& _internal_header() const;
+  public:
+  const ::cockroach::roachpb::ResponseHeader& header() const;
+  ::cockroach::roachpb::ResponseHeader* release_header();
+  ::cockroach::roachpb::ResponseHeader* mutable_header();
+  void set_allocated_header(::cockroach::roachpb::ResponseHeader* header);
+
+  // @@protoc_insertion_point(class_scope:cockroach.roachpb.ForwardHLCResponse)
+ private:
+
+  ::google::protobuf::internal::InternalMetadataWithArenaLite _internal_metadata_;
+  ::cockroach::roachpb::ResponseHeader* header_;
+  mutable ::google::protobuf::internal::CachedSize _cached_size_;
+  friend struct ::protobuf_roachpb_2fapi_2eproto::TableStruct;
+};
+// -------------------------------------------------------------------
+
 class RequestUnion : public ::google::protobuf::MessageLite /* @@protoc_insertion_point(class_definition:cockroach.roachpb.RequestUnion) */ {
  public:
   RequestUnion();
@@ -13940,6 +14160,7 @@ class RequestUnion : public ::google::protobuf::MessageLite /* @@protoc_insertio
     kRefreshRange = 41,
     kSubsume = 43,
     kRangeStats = 44,
+    kForwardHlc = 49,
     VALUE_NOT_SET = 0,
   };
 
@@ -13949,7 +14170,7 @@ class RequestUnion : public ::google::protobuf::MessageLite /* @@protoc_insertio
                &_RequestUnion_default_instance_);
   }
   static constexpr int kIndexInFileMessages =
-    107;
+    109;
 
   void Swap(RequestUnion* other);
   friend void swap(RequestUnion& a, RequestUnion& b) {
@@ -14528,6 +14749,18 @@ class RequestUnion : public ::google::protobuf::MessageLite /* @@protoc_insertio
   ::cockroach::roachpb::RangeStatsRequest* mutable_range_stats();
   void set_allocated_range_stats(::cockroach::roachpb::RangeStatsRequest* range_stats);
 
+  // .cockroach.roachpb.ForwardHLCRequest forward_hlc = 49;
+  bool has_forward_hlc() const;
+  void clear_forward_hlc();
+  static const int kForwardHlcFieldNumber = 49;
+  private:
+  const ::cockroach::roachpb::ForwardHLCRequest& _internal_forward_hlc() const;
+  public:
+  const ::cockroach::roachpb::ForwardHLCRequest& forward_hlc() const;
+  ::cockroach::roachpb::ForwardHLCRequest* release_forward_hlc();
+  ::cockroach::roachpb::ForwardHLCRequest* mutable_forward_hlc();
+  void set_allocated_forward_hlc(::cockroach::roachpb::ForwardHLCRequest* forward_hlc);
+
   void clear_value();
   ValueCase value_case() const;
   // @@protoc_insertion_point(class_scope:cockroach.roachpb.RequestUnion)
@@ -14576,6 +14809,7 @@ class RequestUnion : public ::google::protobuf::MessageLite /* @@protoc_insertio
   void set_has_refresh_range();
   void set_has_subsume();
   void set_has_range_stats();
+  void set_has_forward_hlc();
 
   inline bool has_value() const;
   inline void clear_has_value();
@@ -14627,6 +14861,7 @@ class RequestUnion : public ::google::protobuf::MessageLite /* @@protoc_insertio
     ::cockroach::roachpb::RefreshRangeRequest* refresh_range_;
     ::cockroach::roachpb::SubsumeRequest* subsume_;
     ::cockroach::roachpb::RangeStatsRequest* range_stats_;
+    ::cockroach::roachpb::ForwardHLCRequest* forward_hlc_;
   } value_;
   mutable ::google::protobuf::internal::CachedSize _cached_size_;
   ::google::protobuf::uint32 _oneof_case_[1];
@@ -14707,6 +14942,7 @@ class ResponseUnion : public ::google::protobuf::MessageLite /* @@protoc_inserti
     kRefreshRange = 41,
     kSubsume = 43,
     kRangeStats = 44,
+    kForwardHlc = 49,
     VALUE_NOT_SET = 0,
   };
 
@@ -14716,7 +14952,7 @@ class ResponseUnion : public ::google::protobuf::MessageLite /* @@protoc_inserti
                &_ResponseUnion_default_instance_);
   }
   static constexpr int kIndexInFileMessages =
-    108;
+    110;
 
   void Swap(ResponseUnion* other);
   friend void swap(ResponseUnion& a, ResponseUnion& b) {
@@ -15283,6 +15519,18 @@ class ResponseUnion : public ::google::protobuf::MessageLite /* @@protoc_inserti
   ::cockroach::roachpb::RangeStatsResponse* mutable_range_stats();
   void set_allocated_range_stats(::cockroach::roachpb::RangeStatsResponse* range_stats);
 
+  // .cockroach.roachpb.ForwardHLCResponse forward_hlc = 49;
+  bool has_forward_hlc() const;
+  void clear_forward_hlc();
+  static const int kForwardHlcFieldNumber = 49;
+  private:
+  const ::cockroach::roachpb::ForwardHLCResponse& _internal_forward_hlc() const;
+  public:
+  const ::cockroach::roachpb::ForwardHLCResponse& forward_hlc() const;
+  ::cockroach::roachpb::ForwardHLCResponse* release_forward_hlc();
+  ::cockroach::roachpb::ForwardHLCResponse* mutable_forward_hlc();
+  void set_allocated_forward_hlc(::cockroach::roachpb::ForwardHLCResponse* forward_hlc);
+
   void clear_value();
   ValueCase value_case() const;
   // @@protoc_insertion_point(class_scope:cockroach.roachpb.ResponseUnion)
@@ -15330,6 +15578,7 @@ class ResponseUnion : public ::google::protobuf::MessageLite /* @@protoc_inserti
   void set_has_refresh_range();
   void set_has_subsume();
   void set_has_range_stats();
+  void set_has_forward_hlc();
 
   inline bool has_value() const;
   inline void clear_has_value();
@@ -15380,6 +15629,7 @@ class ResponseUnion : public ::google::protobuf::MessageLite /* @@protoc_inserti
     ::cockroach::roachpb::RefreshRangeResponse* refresh_range_;
     ::cockroach::roachpb::SubsumeResponse* subsume_;
     ::cockroach::roachpb::RangeStatsResponse* range_stats_;
+    ::cockroach::roachpb::ForwardHLCResponse* forward_hlc_;
   } value_;
   mutable ::google::protobuf::internal::CachedSize _cached_size_;
   ::google::protobuf::uint32 _oneof_case_[1];
@@ -15422,7 +15672,7 @@ class Header : public ::google::protobuf::MessageLite /* @@protoc_insertion_poin
                &_Header_default_instance_);
   }
   static constexpr int kIndexInFileMessages =
-    109;
+    111;
 
   void Swap(Header* other);
   friend void swap(Header& a, Header& b) {
@@ -15626,7 +15876,7 @@ class BatchRequest : public ::google::protobuf::MessageLite /* @@protoc_insertio
                &_BatchRequest_default_instance_);
   }
   static constexpr int kIndexInFileMessages =
-    110;
+    112;
 
   void Swap(BatchRequest* other);
   friend void swap(BatchRequest& a, BatchRequest& b) {
@@ -15744,7 +15994,7 @@ class BatchResponse_Header : public ::google::protobuf::MessageLite /* @@protoc_
                &_BatchResponse_Header_default_instance_);
   }
   static constexpr int kIndexInFileMessages =
-    111;
+    113;
 
   void Swap(BatchResponse_Header* other);
   friend void swap(BatchResponse_Header& a, BatchResponse_Header& b) {
@@ -15900,7 +16150,7 @@ class BatchResponse : public ::google::protobuf::MessageLite /* @@protoc_inserti
                &_BatchResponse_default_instance_);
   }
   static constexpr int kIndexInFileMessages =
-    112;
+    114;
 
   void Swap(BatchResponse* other);
   friend void swap(BatchResponse& a, BatchResponse& b) {
@@ -16020,7 +16270,7 @@ class RangeFeedRequest : public ::google::protobuf::MessageLite /* @@protoc_inse
                &_RangeFeedRequest_default_instance_);
   }
   static constexpr int kIndexInFileMessages =
-    113;
+    115;
 
   void Swap(RangeFeedRequest* other);
   friend void swap(RangeFeedRequest& a, RangeFeedRequest& b) {
@@ -16138,7 +16388,7 @@ class RangeFeedValue : public ::google::protobuf::MessageLite /* @@protoc_insert
                &_RangeFeedValue_default_instance_);
   }
   static constexpr int kIndexInFileMessages =
-    114;
+    116;
 
   void Swap(RangeFeedValue* other);
   friend void swap(RangeFeedValue& a, RangeFeedValue& b) {
@@ -16258,7 +16508,7 @@ class RangeFeedCheckpoint : public ::google::protobuf::MessageLite /* @@protoc_i
                &_RangeFeedCheckpoint_default_instance_);
   }
   static constexpr int kIndexInFileMessages =
-    115;
+    117;
 
   void Swap(RangeFeedCheckpoint* other);
   friend void swap(RangeFeedCheckpoint& a, RangeFeedCheckpoint& b) {
@@ -16376,7 +16626,7 @@ class RangeFeedError : public ::google::protobuf::MessageLite /* @@protoc_insert
                &_RangeFeedError_default_instance_);
   }
   static constexpr int kIndexInFileMessages =
-    116;
+    118;
 
   void Swap(RangeFeedError* other);
   friend void swap(RangeFeedError& a, RangeFeedError& b) {
@@ -16482,7 +16732,7 @@ class RangeFeedEvent : public ::google::protobuf::MessageLite /* @@protoc_insert
                &_RangeFeedEvent_default_instance_);
   }
   static constexpr int kIndexInFileMessages =
-    117;
+    119;
 
   void Swap(RangeFeedEvent* other);
   friend void swap(RangeFeedEvent& a, RangeFeedEvent& b) {
@@ -28509,6 +28759,120 @@ inline void RangeStatsResponse::set_queries_per_second(double value) {
 
 // -------------------------------------------------------------------
 
+// ForwardHLCRequest
+
+inline bool ForwardHLCRequest::has_header() const {
+  return this != internal_default_instance() && header_ != NULL;
+}
+inline void ForwardHLCRequest::clear_header() {
+  if (GetArenaNoVirtual() == NULL && header_ != NULL) {
+    delete header_;
+  }
+  header_ = NULL;
+}
+inline const ::cockroach::roachpb::RequestHeader& ForwardHLCRequest::_internal_header() const {
+  return *header_;
+}
+inline const ::cockroach::roachpb::RequestHeader& ForwardHLCRequest::header() const {
+  const ::cockroach::roachpb::RequestHeader* p = header_;
+  // @@protoc_insertion_point(field_get:cockroach.roachpb.ForwardHLCRequest.header)
+  return p != NULL ? *p : *reinterpret_cast<const ::cockroach::roachpb::RequestHeader*>(
+      &::cockroach::roachpb::_RequestHeader_default_instance_);
+}
+inline ::cockroach::roachpb::RequestHeader* ForwardHLCRequest::release_header() {
+  // @@protoc_insertion_point(field_release:cockroach.roachpb.ForwardHLCRequest.header)
+  
+  ::cockroach::roachpb::RequestHeader* temp = header_;
+  header_ = NULL;
+  return temp;
+}
+inline ::cockroach::roachpb::RequestHeader* ForwardHLCRequest::mutable_header() {
+  
+  if (header_ == NULL) {
+    auto* p = CreateMaybeMessage<::cockroach::roachpb::RequestHeader>(GetArenaNoVirtual());
+    header_ = p;
+  }
+  // @@protoc_insertion_point(field_mutable:cockroach.roachpb.ForwardHLCRequest.header)
+  return header_;
+}
+inline void ForwardHLCRequest::set_allocated_header(::cockroach::roachpb::RequestHeader* header) {
+  ::google::protobuf::Arena* message_arena = GetArenaNoVirtual();
+  if (message_arena == NULL) {
+    delete header_;
+  }
+  if (header) {
+    ::google::protobuf::Arena* submessage_arena = NULL;
+    if (message_arena != submessage_arena) {
+      header = ::google::protobuf::internal::GetOwnedMessage(
+          message_arena, header, submessage_arena);
+    }
+    
+  } else {
+    
+  }
+  header_ = header;
+  // @@protoc_insertion_point(field_set_allocated:cockroach.roachpb.ForwardHLCRequest.header)
+}
+
+// -------------------------------------------------------------------
+
+// ForwardHLCResponse
+
+inline bool ForwardHLCResponse::has_header() const {
+  return this != internal_default_instance() && header_ != NULL;
+}
+inline void ForwardHLCResponse::clear_header() {
+  if (GetArenaNoVirtual() == NULL && header_ != NULL) {
+    delete header_;
+  }
+  header_ = NULL;
+}
+inline const ::cockroach::roachpb::ResponseHeader& ForwardHLCResponse::_internal_header() const {
+  return *header_;
+}
+inline const ::cockroach::roachpb::ResponseHeader& ForwardHLCResponse::header() const {
+  const ::cockroach::roachpb::ResponseHeader* p = header_;
+  // @@protoc_insertion_point(field_get:cockroach.roachpb.ForwardHLCResponse.header)
+  return p != NULL ? *p : *reinterpret_cast<const ::cockroach::roachpb::ResponseHeader*>(
+      &::cockroach::roachpb::_ResponseHeader_default_instance_);
+}
+inline ::cockroach::roachpb::ResponseHeader* ForwardHLCResponse::release_header() {
+  // @@protoc_insertion_point(field_release:cockroach.roachpb.ForwardHLCResponse.header)
+  
+  ::cockroach::roachpb::ResponseHeader* temp = header_;
+  header_ = NULL;
+  return temp;
+}
+inline ::cockroach::roachpb::ResponseHeader* ForwardHLCResponse::mutable_header() {
+  
+  if (header_ == NULL) {
+    auto* p = CreateMaybeMessage<::cockroach::roachpb::ResponseHeader>(GetArenaNoVirtual());
+    header_ = p;
+  }
+  // @@protoc_insertion_point(field_mutable:cockroach.roachpb.ForwardHLCResponse.header)
+  return header_;
+}
+inline void ForwardHLCResponse::set_allocated_header(::cockroach::roachpb::ResponseHeader* header) {
+  ::google::protobuf::Arena* message_arena = GetArenaNoVirtual();
+  if (message_arena == NULL) {
+    delete header_;
+  }
+  if (header) {
+    ::google::protobuf::Arena* submessage_arena = NULL;
+    if (message_arena != submessage_arena) {
+      header = ::google::protobuf::internal::GetOwnedMessage(
+          message_arena, header, submessage_arena);
+    }
+    
+  } else {
+    
+  }
+  header_ = header;
+  // @@protoc_insertion_point(field_set_allocated:cockroach.roachpb.ForwardHLCResponse.header)
+}
+
+// -------------------------------------------------------------------
+
 // RequestUnion
 
 // .cockroach.roachpb.GetRequest get = 1;
@@ -30447,6 +30811,50 @@ inline ::cockroach::roachpb::RangeStatsRequest* RequestUnion::mutable_range_stat
   return value_.range_stats_;
 }
 
+// .cockroach.roachpb.ForwardHLCRequest forward_hlc = 49;
+inline bool RequestUnion::has_forward_hlc() const {
+  return value_case() == kForwardHlc;
+}
+inline void RequestUnion::set_has_forward_hlc() {
+  _oneof_case_[0] = kForwardHlc;
+}
+inline void RequestUnion::clear_forward_hlc() {
+  if (has_forward_hlc()) {
+    delete value_.forward_hlc_;
+    clear_has_value();
+  }
+}
+inline const ::cockroach::roachpb::ForwardHLCRequest& RequestUnion::_internal_forward_hlc() const {
+  return *value_.forward_hlc_;
+}
+inline ::cockroach::roachpb::ForwardHLCRequest* RequestUnion::release_forward_hlc() {
+  // @@protoc_insertion_point(field_release:cockroach.roachpb.RequestUnion.forward_hlc)
+  if (has_forward_hlc()) {
+    clear_has_value();
+      ::cockroach::roachpb::ForwardHLCRequest* temp = value_.forward_hlc_;
+    value_.forward_hlc_ = NULL;
+    return temp;
+  } else {
+    return NULL;
+  }
+}
+inline const ::cockroach::roachpb::ForwardHLCRequest& RequestUnion::forward_hlc() const {
+  // @@protoc_insertion_point(field_get:cockroach.roachpb.RequestUnion.forward_hlc)
+  return has_forward_hlc()
+      ? *value_.forward_hlc_
+      : *reinterpret_cast< ::cockroach::roachpb::ForwardHLCRequest*>(&::cockroach::roachpb::_ForwardHLCRequest_default_instance_);
+}
+inline ::cockroach::roachpb::ForwardHLCRequest* RequestUnion::mutable_forward_hlc() {
+  if (!has_forward_hlc()) {
+    clear_value();
+    set_has_forward_hlc();
+    value_.forward_hlc_ = CreateMaybeMessage< ::cockroach::roachpb::ForwardHLCRequest >(
+        GetArenaNoVirtual());
+  }
+  // @@protoc_insertion_point(field_mutable:cockroach.roachpb.RequestUnion.forward_hlc)
+  return value_.forward_hlc_;
+}
+
 inline bool RequestUnion::has_value() const {
   return value_case() != VALUE_NOT_SET;
 }
@@ -32352,6 +32760,50 @@ inline ::cockroach::roachpb::RangeStatsResponse* ResponseUnion::mutable_range_st
   return value_.range_stats_;
 }
 
+// .cockroach.roachpb.ForwardHLCResponse forward_hlc = 49;
+inline bool ResponseUnion::has_forward_hlc() const {
+  return value_case() == kForwardHlc;
+}
+inline void ResponseUnion::set_has_forward_hlc() {
+  _oneof_case_[0] = kForwardHlc;
+}
+inline void ResponseUnion::clear_forward_hlc() {
+  if (has_forward_hlc()) {
+    delete value_.forward_hlc_;
+    clear_has_value();
+  }
+}
+inline const ::cockroach::roachpb::ForwardHLCResponse& ResponseUnion::_internal_forward_hlc() const {
+  return *value_.forward_hlc_;
+}
+inline ::cockroach::roachpb::ForwardHLCResponse* ResponseUnion::release_forward_hlc() {
+  // @@protoc_insertion_point(field_release:cockroach.roachpb.ResponseUnion.forward_hlc)
+  if (has_forward_hlc()) {
+    clear_has_value();
+      ::cockroach::roachpb::ForwardHLCResponse* temp = value_.forward_hlc_;
+    value_.forward_hlc_ = NULL;
+    return temp;
+  } else {
+    return NULL;
+  }
+}
+inline const ::cockroach::roachpb::ForwardHLCResponse& ResponseUnion::forward_hlc() const {
+  // @@protoc_insertion_point(field_get:cockroach.roachpb.ResponseUnion.forward_hlc)
+  return has_forward_hlc()
+      ? *value_.forward_hlc_
+      : *reinterpret_cast< ::cockroach::roachpb::ForwardHLCResponse*>(&::cockroach::roachpb::_ForwardHLCResponse_default_instance_);
+}
+inline ::cockroach::roachpb::ForwardHLCResponse* ResponseUnion::mutable_forward_hlc() {
+  if (!has_forward_hlc()) {
+    clear_value();
+    set_has_forward_hlc();
+    value_.forward_hlc_ = CreateMaybeMessage< ::cockroach::roachpb::ForwardHLCResponse >(
+        GetArenaNoVirtual());
+  }
+  // @@protoc_insertion_point(field_mutable:cockroach.roachpb.ResponseUnion.forward_hlc)
+  return value_.forward_hlc_;
+}
+
 inline bool ResponseUnion::has_value() const {
   return value_case() != VALUE_NOT_SET;
 }
@@ -33601,6 +34053,10 @@ inline void RangeFeedEvent::set_allocated_error(::cockroach::roachpb::RangeFeedE
 #ifdef __GNUC__
   #pragma GCC diagnostic pop
 #endif  // __GNUC__
+// -------------------------------------------------------------------
+
+// -------------------------------------------------------------------
+
 // -------------------------------------------------------------------
 
 // -------------------------------------------------------------------

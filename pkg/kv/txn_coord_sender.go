@@ -516,6 +516,7 @@ func (tcf *TxnCoordSenderFactory) TransactionalSender(
 		// we need to propagate the error to the root for an epoch restart.
 		canAutoRetry:     typ == client.RootTxn,
 		autoRetryCounter: tcs.metrics.AutoRetries,
+		writeCollection:  &tcs.interceptorAlloc.txnPipeliner,
 	}
 	tcs.interceptorAlloc.txnLockGatekeeper = txnLockGatekeeper{
 		wrapped: tcs.wrapped,

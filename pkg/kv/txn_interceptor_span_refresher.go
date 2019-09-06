@@ -126,6 +126,27 @@ type txnSpanRefresher struct {
 	// autoRetryCounter counts the number of auto retries which avoid
 	// client-side restarts.
 	autoRetryCounter *metric.Counter
+
+	// writeCollection is an object capable of returning all of the spans that
+	// the transaction has written intents into. This is used when refreshing
+	// the transaction (moving its provisional commit timestamp forward) to
+	// forward the clock of each leaseholder that contains one or more intents
+	// that were originally written by the transaction at lower timestamps. This
+	// is necessary in order to uphold the first observed timestamp correctness
+	// condition, which is roughly that:
+	//  "a transaction cannot commit unless the clock on each leaseholder that
+	//   contains one or more of its intents is equal to or greater than the
+	//   transaction's commit timestamp"
+	// For more, see Transaction.ObservedTimestamps.
+	writeCollection txnWriteCollection
+}
+
+// txnWriteCollection is capable of returning the footprint of all spans
+// that the transaction has written intents into. The set of write spans
+// may be an overestimate (e.g. spans may be condensed together), but must
+// not be an underestimate.
+type txnWriteCollection interface {
+	writeSpans() []roachpb.Span
 }
 
 // SendLocked implements the lockedSender interface.
@@ -337,6 +358,22 @@ func (sr *txnSpanRefresher) tryUpdatingTxnSpans(
 	}
 	addRefreshes(sr.refreshReads, false)
 	addRefreshes(sr.refreshWrites, true)
+
+	// Add to the batch a ForwardHLCRequest directed at each key span that the
+	// transaction has written intents into. This is done to forward the clock
+	// on each of the leaseholders that own these intents so the transaction
+	// is eventually safe to commit at its new provisional commit timestamp
+	// without violating observed timestamp correctness conditions. See the
+	// comment on Transaction.ObservedTimestamps.
+	// TODO(nvanbenschoten): version check.
+	for _, sp := range sr.writeCollection.writeSpans() {
+		if sp.EndKey == nil {
+			sp.EndKey = sp.Key.Next()
+		}
+		refreshSpanBa.Add(&roachpb.ForwardHLCRequest{
+			RequestHeader: roachpb.RequestHeaderFromSpan(sp),
+		})
+	}
 
 	// Send through wrapped lockedSender. Unlocks while sending then re-locks.
 	if _, batchErr := sr.wrapped.SendLocked(ctx, refreshSpanBa); batchErr != nil {

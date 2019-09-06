@@ -1590,6 +1590,20 @@ message RangeStatsResponse {
   double queries_per_second = 3;
 }
 
+// ForwardHLCRequest is a no-op. Evaluation of the request does nothing, but
+// it can be used to enforce causality through the HLC update performed when
+// it is routed to the leaseholder(s) for the Range(s) it is addressed to.
+message ForwardHLCRequest {
+  option (gogoproto.equal) = true;
+
+  RequestHeader header = 1 [(gogoproto.nullable) = false, (gogoproto.embed) = true];
+}
+
+// ForwardHLCResponse is the response to a ForwardHLCRequest.
+message ForwardHLCResponse {
+  ResponseHeader header = 1 [(gogoproto.nullable) = false, (gogoproto.embed) = true];
+}
+
 // A RequestUnion contains exactly one of the requests.
 // The values added here must match those in ResponseUnion.
 //
@@ -1641,6 +1655,7 @@ message RequestUnion {
     RefreshRangeRequest refresh_range = 41;
     SubsumeRequest subsume = 43;
     RangeStatsRequest range_stats = 44;
+    ForwardHLCRequest forward_hlc = 49;
   }
   reserved 15, 23, 25, 27;
 }
@@ -1692,6 +1707,7 @@ message ResponseUnion {
     RefreshRangeResponse refresh_range = 41;
     SubsumeResponse subsume = 43;
     RangeStatsResponse range_stats = 44;
+    ForwardHLCResponse forward_hlc = 49;
   }
   reserved 15, 23, 25, 27, 28;
 }

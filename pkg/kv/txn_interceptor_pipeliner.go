@@ -613,6 +613,21 @@ func (tp *txnPipeliner) haveWrites() bool {
 	return tp.ifWrites.len() > 0 || !tp.footprint.empty()
 }
 
+// writeSpans implements the txnWriteCollection interface.
+func (tp *txnPipeliner) writeSpans() []roachpb.Span {
+	var writes []roachpb.Span
+	if !tp.footprint.empty() {
+		writes = append(writes, tp.footprint.asSlice()...)
+	}
+	if inFlight := tp.ifWrites.len(); inFlight != 0 {
+		tp.ifWrites.ascend(func(w *inFlightWrite) {
+			writes = append(writes, roachpb.Span{Key: w.Key})
+		})
+	}
+	writes, _ = roachpb.MergeSpans(writes)
+	return writes
+}
+
 // inFlightWrites represent a commitment to proving (via QueryIntent) that
 // a point write succeeded in replicating an intent with a specific sequence
 // number.

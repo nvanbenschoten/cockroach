@@ -418,7 +418,6 @@ message Transaction {
   //    this situation, transactions ensure that at the time of their commit, any
   //    leaseholder for a Range that contains one of its intent has an HLC clock
   //    with an equal or greater timestamp than the transaction's commit timestamp.
-  //    TODO(nvanbenschoten): This is violated by txn refreshes. See #36431.
   // 2. a leaseholder's clock must always be equal to or greater than the timestamp
   //    of all writes that previous leaseholders for its Range have served. We
   //    enforce that when a Replica acquires a lease it bumps its node's clock to a

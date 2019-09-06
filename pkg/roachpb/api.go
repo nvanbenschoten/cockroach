@@ -600,6 +600,9 @@ func (*SubsumeRequest) Method() Method { return Subsume }
 // Method implements the Request interface.
 func (*RangeStatsRequest) Method() Method { return RangeStats }
 
+// Method implements the Request interface.
+func (*ForwardHLCRequest) Method() Method { return ForwardHLC }
+
 // ShallowCopy implements the Request interface.
 func (gr *GetRequest) ShallowCopy() Request {
 	shallowCopy := *gr
@@ -860,6 +863,12 @@ func (r *SubsumeRequest) ShallowCopy() Request {
 
 // ShallowCopy implements the Request interface.
 func (r *RangeStatsRequest) ShallowCopy() Request {
+	shallowCopy := *r
+	return &shallowCopy
+}
+
+// ShallowCopy implements the Request interface.
+func (r *ForwardHLCRequest) ShallowCopy() Request {
 	shallowCopy := *r
 	return &shallowCopy
 }
@@ -1141,6 +1150,7 @@ func (r *RefreshRangeRequest) flags() int {
 
 func (*SubsumeRequest) flags() int    { return isRead | isAlone | updatesReadTSCache }
 func (*RangeStatsRequest) flags() int { return isRead }
+func (*ForwardHLCRequest) flags() int { return isRead | isRange }
 
 // IsParallelCommit returns whether the EndTransaction request is attempting to
 // perform a parallel commit. See txn_interceptor_committer.go for a discussion

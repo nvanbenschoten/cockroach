@@ -158,4 +158,6 @@ const (
 	Subsume
 	// RangeStats returns the MVCC statistics for a range.
 	RangeStats
+	// ForwardHLC forwards the HLC clock of its recipient.
+	ForwardHLC
 )

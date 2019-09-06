@@ -168,6 +168,8 @@ func (ru RequestUnion) GetInner() Request {
 		return t.Subsume
 	case *RequestUnion_RangeStats:
 		return t.RangeStats
+	case *RequestUnion_ForwardHlc:
+		return t.ForwardHlc
 	default:
 		return nil
 	}
@@ -262,6 +264,8 @@ func (ru ResponseUnion) GetInner() Response {
 		return t.Subsume
 	case *ResponseUnion_RangeStats:
 		return t.RangeStats
+	case *ResponseUnion_ForwardHlc:
+		return t.ForwardHlc
 	default:
 		return nil
 	}
@@ -430,6 +434,8 @@ func (ru *RequestUnion) SetInner(r Request) bool {
 		union = &RequestUnion_Subsume{t}
 	case *RangeStatsRequest:
 		union = &RequestUnion_RangeStats{t}
+	case *ForwardHLCRequest:
+		union = &RequestUnion_ForwardHlc{t}
 	default:
 		return false
 	}
@@ -527,6 +533,8 @@ func (ru *ResponseUnion) SetInner(r Response) bool {
 		union = &ResponseUnion_Subsume{t}
 	case *RangeStatsResponse:
 		union = &ResponseUnion_RangeStats{t}
+	case *ForwardHLCResponse:
+		union = &ResponseUnion_ForwardHlc{t}
 	default:
 		return false
 	}
@@ -534,7 +542,7 @@ func (ru *ResponseUnion) SetInner(r Response) bool {
 	return true
 }
 
-type reqCounts [44]int32
+type reqCounts [45]int32
 
 // getReqCounts returns the number of times each
 // request type appears in the batch.
@@ -630,6 +638,8 @@ func (ba *BatchRequest) getReqCounts() reqCounts {
 			counts[42]++
 		case *RequestUnion_RangeStats:
 			counts[43]++
+		case *RequestUnion_ForwardHlc:
+			counts[44]++
 		default:
 			panic(fmt.Sprintf("unsupported request: %+v", ru))
 		}
@@ -682,6 +692,7 @@ var requestNames = []string{
 	"RefreshRng",
 	"Subsume",
 	"RngStats",
+	"ForwardHlc",
 }
 
 // Summary prints a short summary of the requests in a batch.
@@ -889,6 +900,10 @@ type rangeStatsResponseAlloc struct {
 	union ResponseUnion_RangeStats
 	resp  RangeStatsResponse
 }
+type forwardHLCResponseAlloc struct {
+	union ResponseUnion_ForwardHlc
+	resp  ForwardHLCResponse
+}
 
 // CreateReply creates replies for each of the contained requests, wrapped in a
 // BatchResponse. The response objects are batch allocated to minimize
@@ -943,6 +958,7 @@ func (ba *BatchRequest) CreateReply() *BatchResponse {
 	var buf41 []refreshRangeResponseAlloc
 	var buf42 []subsumeResponseAlloc
 	var buf43 []rangeStatsResponseAlloc
+	var buf44 []forwardHLCResponseAlloc
 
 	for i, r := range ba.Requests {
 		switch r.GetValue().(type) {
@@ -1254,6 +1270,13 @@ func (ba *BatchRequest) CreateReply() *BatchResponse {
 			buf43[0].union.RangeStats = &buf43[0].resp
 			br.Responses[i].Value = &buf43[0].union
 			buf43 = buf43[1:]
+		case *RequestUnion_ForwardHlc:
+			if buf44 == nil {
+				buf44 = make([]forwardHLCResponseAlloc, counts[44])
+			}
+			buf44[0].union.ForwardHlc = &buf44[0].resp
+			br.Responses[i].Value = &buf44[0].union
+			buf44 = buf44[1:]
 		default:
 			panic(fmt.Sprintf("unsupported request: %+v", r))
 		}

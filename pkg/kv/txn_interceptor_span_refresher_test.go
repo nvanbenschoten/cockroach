@@ -22,6 +22,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// mockWriteCollection is an implementation of txnWriteCollection.
+type mockWriteCollection []roachpb.Span
+
+func (wc mockWriteCollection) writeSpans() []roachpb.Span { return wc }
+
 func makeMockTxnSpanRefresher() (txnSpanRefresher, *mockLockedSender) {
 	mockSender := &mockLockedSender{}
 	return txnSpanRefresher{
@@ -30,6 +35,7 @@ func makeMockTxnSpanRefresher() (txnSpanRefresher, *mockLockedSender) {
 		wrapped:          mockSender,
 		canAutoRetry:     true,
 		autoRetryCounter: metric.NewCounter(metaAutoRetriesRates),
+		writeCollection:  new(mockWriteCollection),
 	}, mockSender
 }
 
