@@ -280,7 +280,7 @@ func (r *Replica) evaluateWriteBatch(
 		// Is the transaction allowed to retry locally in the event of
 		// write too old errors? This is only allowed if it is able to
 		// forward its commit timestamp without a read refresh.
-		canForwardTimestamp := batcheval.CanForwardCommitTimestampWithoutRefresh(ba.Txn, etArg)
+		canForwardTimestamp := batcheval.CanForwardCommitTimestampWithoutRefresh(ba.Txn, etArg, nil)
 
 		// If all writes occurred at the intended timestamp, we've succeeded on the fast path.
 		rec := NewReplicaEvalContext(r, spans)
@@ -448,7 +448,7 @@ func isOnePhaseCommit(ba *roachpb.BatchRequest) bool {
 	}
 	arg, _ := ba.GetArg(roachpb.EndTransaction)
 	etArg := arg.(*roachpb.EndTransactionRequest)
-	if retry, _, _ := batcheval.IsEndTransactionTriggeringRetryError(ba.Txn, etArg); retry {
+	if retry, _, _ := batcheval.IsEndTransactionTriggeringRetryError(ba.Txn, etArg, nil); retry {
 		return false
 	}
 	// If the transaction has already restarted at least once then it may have

@@ -158,6 +158,7 @@ func EndTransaction(
 	args := cArgs.Args.(*roachpb.EndTransactionRequest)
 	h := cArgs.Header
 	ms := cArgs.Stats
+	desc := cArgs.EvalCtx.Desc()
 	reply := resp.(*roachpb.EndTransactionResponse)
 
 	if err := VerifyTransaction(h, args, roachpb.PENDING, roachpb.STAGING, roachpb.ABORTED); err != nil {
@@ -210,7 +211,6 @@ func EndTransaction(
 				// The transaction has already been aborted by other.
 				// Do not return TransactionAbortedError since the client anyway
 				// wanted to abort the transaction.
-				desc := cArgs.EvalCtx.Desc()
 				externalIntents, err := resolveLocalIntents(ctx, desc, batch, ms, args, reply.Txn, cArgs.EvalCtx)
 				if err != nil {
 					return result.Result{}, err
@@ -264,7 +264,7 @@ func EndTransaction(
 
 	// Attempt to commit or abort the transaction per the args.Commit parameter.
 	if args.Commit {
-		if retry, reason, extraMsg := IsEndTransactionTriggeringRetryError(reply.Txn, args); retry {
+		if retry, reason, extraMsg := IsEndTransactionTriggeringRetryError(reply.Txn, args, desc); retry {
 			return result.Result{}, roachpb.NewTransactionRetryError(reason, extraMsg)
 		}
 
@@ -321,7 +321,6 @@ func EndTransaction(
 	// we position the transaction record next to the first write of a transaction.
 	// This avoids the need for the intentResolver to have to return to this range
 	// to resolve intents for this transaction in the future.
-	desc := cArgs.EvalCtx.Desc()
 	externalIntents, err := resolveLocalIntents(ctx, desc, batch, ms, args, reply.Txn, cArgs.EvalCtx)
 	if err != nil {
 		return result.Result{}, err
@@ -383,7 +382,7 @@ func IsEndTransactionExceedingDeadline(t hlc.Timestamp, args *roachpb.EndTransac
 // TransactionRetryError. It also returns the reason and possibly an extra
 // message to be used for the error.
 func IsEndTransactionTriggeringRetryError(
-	txn *roachpb.Transaction, args *roachpb.EndTransactionRequest,
+	txn *roachpb.Transaction, args *roachpb.EndTransactionRequest, desc *roachpb.RangeDescriptor,
 ) (retry bool, reason roachpb.TransactionRetryReason, extraMsg string) {
 	// If we saw any WriteTooOldErrors, we must restart to avoid lost
 	// update anomalies.
@@ -402,7 +401,7 @@ func IsEndTransactionTriggeringRetryError(
 	}
 
 	// A transaction can still avoid a retry under certain conditions.
-	if retry && CanForwardCommitTimestampWithoutRefresh(txn, args) {
+	if retry && CanForwardCommitTimestampWithoutRefresh(txn, args, desc) {
 		retry, reason = false, 0
 	}
 
@@ -427,9 +426,33 @@ func IsEndTransactionTriggeringRetryError(
 // timestamp. If either of those conditions are true, a client-side
 // retry is required.
 func CanForwardCommitTimestampWithoutRefresh(
-	txn *roachpb.Transaction, args *roachpb.EndTransactionRequest,
+	txn *roachpb.Transaction, args *roachpb.EndTransactionRequest, desc *roachpb.RangeDescriptor,
 ) bool {
-	return !txn.OrigTimestampWasObserved && args.NoRefreshSpans
+	if txn.OrigTimestampWasObserved {
+		return false
+	}
+	if !args.NoRefreshSpans {
+		return false
+	}
+	if desc != nil {
+		for _, w := range args.InFlightWrites {
+			if keyAddr, err := keys.Addr(w.Key); err != nil {
+				return false
+			} else if !desc.ContainsKey(keyAddr) {
+				return false
+			}
+		}
+		for _, w := range args.IntentSpans {
+			if keyAddr, err := keys.Addr(w.Key); err != nil {
+				return false
+			} else if endKeyAddr, err := keys.Addr(w.EndKey); err != nil {
+				return false
+			} else if !desc.ContainsKeyRange(keyAddr, endKeyAddr) {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 const intentResolutionBatchSize = 500

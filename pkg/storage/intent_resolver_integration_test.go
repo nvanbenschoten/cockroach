@@ -61,6 +61,7 @@ func beginTransaction(
 // the IntentResolver as well as the txnWaitQueue.
 func TestContendedIntentWithDependencyCycle(t *testing.T) {
 	defer leaktest.AfterTest(t)()
+	t.Skip("WIP")
 	ctx := context.Background()
 	stopper := stop.NewStopper()
 	defer stopper.Stop(ctx)

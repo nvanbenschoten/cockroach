@@ -2481,6 +2481,9 @@ func TestTxnCoordSenderRetries(t *testing.T) {
 				b.Put("c", "put")
 				return txn.CommitInBatch(ctx, b) // both puts will succeed, no retry
 			},
+			// Client-side retry required as this will be a mixed success due
+			// to parallel commits.
+			clientRetry: true,
 		},
 		{
 			name: "multi-range batch with forwarded timestamp and cput and get",
