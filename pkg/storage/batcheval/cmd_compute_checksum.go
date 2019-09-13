@@ -20,6 +20,7 @@ import (
 	"github.com/cockroachdb/cockroach/pkg/storage/spanset"
 	"github.com/cockroachdb/cockroach/pkg/storage/storagepb"
 	"github.com/cockroachdb/cockroach/pkg/util/uuid"
+	"github.com/cockroachdb/cockroach/pkg/util/log"
 )
 
 func init() {
@@ -48,6 +49,7 @@ func ComputeChecksum(
 	ctx context.Context, batch engine.ReadWriter, cArgs CommandArgs, resp roachpb.Response,
 ) (result.Result, error) {
 	args := cArgs.Args.(*roachpb.ComputeChecksumRequest)
+	log.Infof(ctx, "eval %T %v on leaseholder", args, args)
 
 	reply := resp.(*roachpb.ComputeChecksumResponse)
 	reply.ChecksumID = uuid.MakeV4()

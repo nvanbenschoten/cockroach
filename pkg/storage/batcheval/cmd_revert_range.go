@@ -67,7 +67,7 @@ func RevertRange(
 	if cArgs.Header.Txn != nil {
 		return result.Result{}, errors.New("cannot execute RevertRange within a transaction")
 	}
-	log.VEventf(ctx, 2, "RevertRange %+v", cArgs.Args)
+	log.Infof(ctx, "DEBUG RevertRange %+v", cArgs.Args)
 
 	args := cArgs.Args.(*roachpb.RevertRangeRequest)
 	reply := resp.(*roachpb.RevertRangeResponse)

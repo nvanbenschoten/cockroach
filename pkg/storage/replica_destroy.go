@@ -69,6 +69,7 @@ func (r *Replica) preDestroyRaftMuLocked(
 	nextReplicaID roachpb.ReplicaID,
 	destroyData bool,
 ) error {
+	log.Infof(ctx, "DEBUG preDestroyRaftMuLocked %v %v", nextReplicaID, destroyData)
 	desc := r.Desc()
 	err := clearRangeData(ctx, desc, reader, batch, destroyData)
 	if err != nil {

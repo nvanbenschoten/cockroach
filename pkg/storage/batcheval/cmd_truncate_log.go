@@ -44,6 +44,9 @@ func TruncateLog(
 	ctx context.Context, batch engine.ReadWriter, cArgs CommandArgs, resp roachpb.Response,
 ) (result.Result, error) {
 	args := cArgs.Args.(*roachpb.TruncateLogRequest)
+	if true {
+		return result.Result{}, nil
+	}
 
 	// After a merge, it's possible that this request was sent to the wrong
 	// range based on the start key. This will cancel the request if this is not

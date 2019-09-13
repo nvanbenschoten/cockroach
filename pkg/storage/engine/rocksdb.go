@@ -102,6 +102,9 @@ const debugIteratorLeak = false
 //export rocksDBV
 func rocksDBV(sevLvl C.int, infoVerbosity C.int) bool {
 	sev := log.Severity(sevLvl)
+	if true {
+		return true
+	}
 	return sev == log.Severity_INFO && log.V(int32(infoVerbosity)) ||
 		sev == log.Severity_WARNING ||
 		sev == log.Severity_ERROR ||

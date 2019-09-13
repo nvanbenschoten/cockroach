@@ -26,6 +26,7 @@ type ReplicaSnapshotDiff struct {
 	// LeaseHolder is set to true of this kv pair is only present on the lease
 	// holder.
 	LeaseHolder bool
+	Both bool
 	Key         roachpb.Key
 	Timestamp   hlc.Timestamp
 	Value       []byte
@@ -37,7 +38,7 @@ type ReplicaSnapshotDiffSlice []ReplicaSnapshotDiff
 
 // WriteTo writes a string representation of itself to the given writer.
 func (rsds ReplicaSnapshotDiffSlice) WriteTo(w io.Writer) (int64, error) {
-	n, err := w.Write([]byte("--- leaseholder\n+++ follower\n"))
+	n, err := w.Write([]byte("--- leaseholder\n+++ follower\n=== both\n"))
 	if err != nil {
 		return 0, err
 	}
@@ -46,6 +47,9 @@ func (rsds ReplicaSnapshotDiffSlice) WriteTo(w io.Writer) (int64, error) {
 		if d.LeaseHolder {
 			// Lease holder (RHS) has something follower (LHS) does not have.
 			prefix = "-"
+		}
+		if d.Both {
+			prefix = "="
 		}
 		ts := d.Timestamp
 		const format = `%s%d.%09d,%d %s
@@ -103,6 +107,9 @@ func diffRange(l, r *roachpb.RaftSnapshotData) ReplicaSnapshotDiffSlice {
 			diff = append(diff, ReplicaSnapshotDiff{LeaseHolder: false, Key: v.Key, Timestamp: v.Timestamp, Value: v.Value})
 			j++
 		}
+		addBoth := func() {
+			diff = append(diff, ReplicaSnapshotDiff{Both: true, Key: v.Key, Timestamp: v.Timestamp, Value: v.Value})
+		}
 
 		// Compare keys.
 		var comp int
@@ -145,6 +152,7 @@ func diffRange(l, r *roachpb.RaftSnapshotData) ReplicaSnapshotDiffSlice {
 				addReplica()
 			} else {
 				// No diff; skip.
+				addBoth()
 				i++
 				j++
 			}

@@ -499,7 +499,7 @@ func (r *Replica) executeAdminCommandWithDescriptor(
 	ctx context.Context, updateDesc func(*roachpb.RangeDescriptor) error,
 ) *roachpb.Error {
 	retryOpts := base.DefaultRetryOptions()
-	retryOpts.MaxRetries = 10
+	retryOpts.MaxRetries = 2
 	var lastErr error
 	for retryable := retry.StartWithCtx(ctx, retryOpts); retryable.Next(); {
 		// The replica may have been destroyed since the start of the retry loop.
