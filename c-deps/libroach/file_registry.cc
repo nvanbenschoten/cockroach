@@ -270,23 +270,23 @@ std::string FileStats::FixRocksDBPath(const std::string& filename) {
 }
 
 rocksdb::Status FileStats::GetFiles(rocksdb::DB* const rep) {
-  // Prevent deletions by rocksdb.
+  /* Prevent deletions by rocksdb.
   auto status = rep->DisableFileDeletions();
   if (!status.ok()) {
     return status;
-  }
+  }*/
 
-  status = GetFilesInternal(rep);
+  return GetFilesInternal(rep);
 
   // Always re-enable deletions.
-  auto status_enable = rep->EnableFileDeletions(false /* force */);
+  //auto status_enable = rep->EnableFileDeletions(false /* force */);
 
-  if (!status.ok()) {
+  /*if (!status.ok()) {
     // The bad status from GetFilesInternal takes precedence.
     return status;
   }
 
-  return status_enable;
+  return status_enable; */
 }
 
 rocksdb::Status FileStats::GetStatsForEnvAndKey(enginepb::EnvType env_type,

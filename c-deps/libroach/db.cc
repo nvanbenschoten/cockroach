@@ -253,6 +253,10 @@ DBStatus DBOpen(DBEngine** db, DBSlice dir, DBOptions db_opts) {
   if (!status.ok()) {
     return ToDBStatus(status);
   }
+  status = db_ptr->DisableFileDeletions();
+  if (!status.ok()) {
+    return ToDBStatus(status);
+  }
   *db = new DBImpl(db_ptr, std::move(env_mgr),
                    db_opts.cache != nullptr ? db_opts.cache->rep : nullptr, event_listener);
   return kSuccess;
