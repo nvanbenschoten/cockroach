@@ -500,7 +500,7 @@ func (sc *SchemaChanger) truncateTable(
 					EndKey: endKey.AsRawKey(),
 				},
 			})
-			log.VEventf(ctx, 2, "ClearRange %s - %s", lastKey, endKey)
+			log.Infof(ctx, "DEBUG BEFORE ClearRange %s - %s", lastKey, endKey)
 			if err := sc.db.Run(ctx, &b); err != nil {
 				return err
 			}

@@ -195,6 +195,7 @@ rocksdb::Options DBMakeOptions(DBOptions db_opts) {
   // start using column families (WAL changes every time any column family
   // initiates a flush, and WAL cannot be reused until that flush completes).
   options.recycle_log_file_num = 1;
+  options.WAL_size_limit_MB = 8 * 1024;
 
   // The size reads should be performed in for compaction. The
   // internets claim this can speed up compactions, though RocksDB

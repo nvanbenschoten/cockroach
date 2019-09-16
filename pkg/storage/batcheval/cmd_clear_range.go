@@ -58,7 +58,7 @@ func ClearRange(
 	if cArgs.Header.Txn != nil {
 		return result.Result{}, errors.New("cannot execute ClearRange within a transaction")
 	}
-	log.VEventf(ctx, 2, "ClearRange %+v", cArgs.Args)
+	log.Infof(ctx, "DEBUG ClearRange %+v", cArgs.Args)
 
 	// Encode MVCCKey values for start and end of clear span.
 	args := cArgs.Args.(*roachpb.ClearRangeRequest)

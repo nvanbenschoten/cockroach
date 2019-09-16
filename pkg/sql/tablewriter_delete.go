@@ -244,6 +244,7 @@ func (td *tableDeleter) clearIndex(ctx context.Context, idx *sqlbase.IndexDescri
 	// ClearRange cannot be run in a transaction, so create a
 	// non-transactional batch to send the request.
 	b := &client.Batch{}
+	log.Infof(ctx, "DEBUG DEL RANGE TABLE DEL %v", sp)
 	b.AddRawRequest(&roachpb.ClearRangeRequest{
 		RequestHeader: roachpb.RequestHeader{
 			Key:    sp.Key,
