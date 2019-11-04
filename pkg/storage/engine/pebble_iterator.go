@@ -364,6 +364,14 @@ func (p *pebbleIterator) FindSplitKey(
 	return bestSplitKey, nil
 }
 
+// SetLowerBound implements the Iterator interface.
+func (p *pebbleIterator) SetLowerBound(lowerBound roachpb.Key) {
+	p.lowerBoundBuf = append(p.lowerBoundBuf[:0], lowerBound...)
+	p.lowerBoundBuf = append(p.lowerBoundBuf, 0x00)
+	p.options.LowerBound = p.lowerBoundBuf
+	p.iter.SetBounds(p.options.LowerBound, p.options.UpperBound)
+}
+
 // SetUpperBound implements the Iterator interface.
 func (p *pebbleIterator) SetUpperBound(upperBound roachpb.Key) {
 	p.upperBoundBuf = append(p.upperBoundBuf[:0], upperBound...)

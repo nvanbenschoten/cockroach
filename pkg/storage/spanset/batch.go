@@ -213,6 +213,11 @@ func (i *Iterator) CheckForKeyCollisions(
 	return i.i.CheckForKeyCollisions(sstData, start, end)
 }
 
+// SetLowerBound is part of the engine.Iterator interface.
+func (s *Iterator) SetLowerBound(key roachpb.Key) {
+	s.i.SetLowerBound(key)
+}
+
 // SetUpperBound is part of the engine.Iterator interface.
 func (i *Iterator) SetUpperBound(key roachpb.Key) {
 	i.i.SetUpperBound(key)

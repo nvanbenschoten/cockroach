@@ -1021,6 +1021,12 @@ func (t TeeEngineIter) CheckForKeyCollisions(
 	return stats1, nil
 }
 
+// SetLowerBound implements the Iterator interface.
+func (t TeeEngineIter) SetLowerBound(key roachpb.Key) {
+	t.iter1.SetLowerBound(key)
+	t.iter2.SetLowerBound(key)
+}
+
 // SetUpperBound implements the Iterator interface.
 func (t TeeEngineIter) SetUpperBound(key roachpb.Key) {
 	t.iter1.SetUpperBound(key)

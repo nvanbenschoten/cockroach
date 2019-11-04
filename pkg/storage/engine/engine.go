@@ -117,6 +117,8 @@ type Iterator interface {
 	// and the encoded SST data specified, within the provided key range. Returns
 	// stats on skipped KVs, or an error if a collision is found.
 	CheckForKeyCollisions(sstData []byte, start, end roachpb.Key) (enginepb.MVCCStats, error)
+	// SetLowerBound installs a new lower bound for this iterator.
+	SetLowerBound(roachpb.Key)
 	// SetUpperBound installs a new upper bound for this iterator.
 	SetUpperBound(roachpb.Key)
 	// Stats returns statistics about the iterator.

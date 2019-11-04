@@ -1578,6 +1578,10 @@ func (r *batchIterator) MVCCScan(
 	return r.iter.MVCCScan(start, end, max, timestamp, opts)
 }
 
+func (r *batchIterator) SetLowerBound(key roachpb.Key) {
+	r.iter.SetLowerBound(key)
+}
+
 func (r *batchIterator) SetUpperBound(key roachpb.Key) {
 	r.iter.SetUpperBound(key)
 }
@@ -2495,6 +2499,10 @@ func (r *rocksDBIterator) MVCCScan(
 	}
 
 	return kvData, numKVs, resumeSpan, intents, nil
+}
+
+func (r *rocksDBIterator) SetLowerBound(key roachpb.Key) {
+	C.DBIterSetLowerBound(r.iter, goToCKey(MakeMVCCMetadataKey(key)))
 }
 
 func (r *rocksDBIterator) SetUpperBound(key roachpb.Key) {
