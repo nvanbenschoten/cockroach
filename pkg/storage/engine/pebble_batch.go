@@ -21,15 +21,15 @@ import (
 
 // Wrapper struct around a pebble.Batch.
 type pebbleBatch struct {
-	db           *pebble.DB
-	batch        *pebble.Batch
-	buf          []byte
-	prefixIter   pebbleIterator
-	normalIter   pebbleIterator
-	closed       bool
-	isDistinct   bool
-	distinctOpen bool
-	parentBatch  *pebbleBatch
+	db                       *pebble.DB
+	batch                    *pebble.Batch
+	buf                      []byte
+	prefixIter1, prefixIter2 pebbleIterator
+	normalIter1, normalIter2 pebbleIterator
+	closed                   bool
+	isDistinct               bool
+	distinctOpen             bool
+	parentBatch              *pebbleBatch
 }
 
 var _ Batch = &pebbleBatch{}
@@ -47,14 +47,24 @@ func newPebbleBatch(db *pebble.DB, batch *pebble.Batch) *pebbleBatch {
 		db:    db,
 		batch: batch,
 		buf:   pb.buf,
-		prefixIter: pebbleIterator{
-			lowerBoundBuf: pb.prefixIter.lowerBoundBuf,
-			upperBoundBuf: pb.prefixIter.upperBoundBuf,
+		prefixIter1: pebbleIterator{
+			lowerBoundBuf: pb.prefixIter1.lowerBoundBuf,
+			upperBoundBuf: pb.prefixIter1.upperBoundBuf,
 			reusable:      true,
 		},
-		normalIter: pebbleIterator{
-			lowerBoundBuf: pb.normalIter.lowerBoundBuf,
-			upperBoundBuf: pb.normalIter.upperBoundBuf,
+		prefixIter2: pebbleIterator{
+			lowerBoundBuf: pb.prefixIter2.lowerBoundBuf,
+			upperBoundBuf: pb.prefixIter2.upperBoundBuf,
+			reusable:      true,
+		},
+		normalIter1: pebbleIterator{
+			lowerBoundBuf: pb.normalIter1.lowerBoundBuf,
+			upperBoundBuf: pb.normalIter1.upperBoundBuf,
+			reusable:      true,
+		},
+		normalIter2: pebbleIterator{
+			lowerBoundBuf: pb.normalIter2.lowerBoundBuf,
+			upperBoundBuf: pb.normalIter2.upperBoundBuf,
 			reusable:      true,
 		},
 	}
@@ -69,8 +79,10 @@ func (p *pebbleBatch) Close() {
 	p.closed = true
 
 	// Destroy the iterators before closing the batch.
-	p.prefixIter.destroy()
-	p.normalIter.destroy()
+	p.prefixIter1.destroy()
+	p.prefixIter2.destroy()
+	p.normalIter1.destroy()
+	p.normalIter2.destroy()
 
 	if !p.isDistinct {
 		_ = p.batch.Close()
@@ -180,9 +192,17 @@ func (p *pebbleBatch) NewIterator(opts IterOptions) Iterator {
 		return newPebbleIterator(p.batch, opts)
 	}
 
-	iter := &p.normalIter
+	var iter *pebbleIterator
 	if opts.Prefix {
-		iter = &p.prefixIter
+		iter = &p.prefixIter1
+		if iter.inuse {
+			iter = &p.prefixIter2
+		}
+	} else {
+		iter = &p.normalIter1
+		if iter.inuse {
+			iter = &p.normalIter2
+		}
 	}
 	if iter.inuse {
 		panic("iterator already in use")

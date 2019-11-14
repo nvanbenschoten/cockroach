@@ -131,22 +131,6 @@ func (t *pebbleTimeBoundPropCollector) Add(key pebble.InternalKey, value []byte)
 }
 
 func (t *pebbleTimeBoundPropCollector) Finish(userProps map[string]string) error {
-	if len(t.lastValue) > 0 {
-		// The last record in the sstable was an intent. Unmarshal the metadata and
-		// update the bounds with the timestamp it contains.
-		meta := &enginepb.MVCCMetadata{}
-		if err := protoutil.Unmarshal(t.lastValue, meta); err != nil {
-			// We're unable to parse the MVCCMetadata. Fail open by not setting the
-			// min/max timestamp properties. THis mimics the behavior of
-			// TimeBoundTblPropCollector.
-			return nil
-		}
-		if meta.Txn != nil {
-			ts := encodeTimestamp(hlc.Timestamp(meta.Timestamp))
-			t.updateBounds(ts)
-		}
-	}
-
 	userProps["crdb.ts.min"] = string(t.min)
 	userProps["crdb.ts.max"] = string(t.max)
 	return nil
@@ -773,10 +757,10 @@ func (p *Pebble) GetSSTables() (sstables SSTableInfos) {
 }
 
 type pebbleReadOnly struct {
-	parent     *Pebble
-	prefixIter pebbleIterator
-	normalIter pebbleIterator
-	closed     bool
+	parent                   *Pebble
+	prefixIter1, prefixIter2 pebbleIterator
+	normalIter1, normalIter2 pebbleIterator
+	closed                   bool
 }
 
 var _ ReadWriter = &pebbleReadOnly{}
@@ -786,8 +770,10 @@ func (p *pebbleReadOnly) Close() {
 		panic("closing an already-closed pebbleReadOnly")
 	}
 	p.closed = true
-	p.prefixIter.destroy()
-	p.normalIter.destroy()
+	p.prefixIter1.destroy()
+	p.prefixIter2.destroy()
+	p.normalIter1.destroy()
+	p.normalIter2.destroy()
 }
 
 func (p *pebbleReadOnly) Closed() bool {
@@ -837,9 +823,17 @@ func (p *pebbleReadOnly) NewIterator(opts IterOptions) Iterator {
 		return newPebbleIterator(p.parent.db, opts)
 	}
 
-	iter := &p.normalIter
+	var iter *pebbleIterator
 	if opts.Prefix {
-		iter = &p.prefixIter
+		iter = &p.prefixIter1
+		if iter.inuse {
+			iter = &p.prefixIter2
+		}
+	} else {
+		iter = &p.normalIter1
+		if iter.inuse {
+			iter = &p.normalIter2
+		}
 	}
 	if iter.inuse {
 		panic("iterator already in use")
