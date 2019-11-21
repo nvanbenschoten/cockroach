@@ -82,7 +82,26 @@ func ResolveIntent(
 		Txn:    args.IntentTxn,
 		Status: args.Status,
 	}
-	if err := engine.MVCCResolveWriteIntent(ctx, batch, ms, intent); err != nil {
+	cm := cArgs.EvalCtx.ConcurrencyManager()
+	if err := cm.RemoveLock(ctx, batch, ms, intent, func(curKey engine.MVCCKey, intent roachpb.Intent) error {
+		switch intent.Status {
+		case roachpb.COMMITTED:
+			// Rewrite the versioned value at the new timestamp.
+			valBytes, err := batch.Get(curKey)
+			if err != nil {
+				return err
+			}
+			newKey := engine.MVCCKey{Key: curKey.Key, Timestamp: intent.Txn.WriteTimestamp}
+			if err = batch.Put(newKey, valBytes); err != nil {
+				return err
+			}
+			return batch.Clear(curKey)
+		case roachpb.ABORTED:
+			return batch.Clear(curKey)
+		default:
+			panic("unexpected")
+		}
+	}); err != nil {
 		return result.Result{}, err
 	}
 

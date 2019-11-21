@@ -33,6 +33,10 @@ type Command struct {
 	// engine it should also update *CommandArgs.Stats. It should treat the
 	// provided request as immutable.
 	Eval func(context.Context, engine.ReadWriter, CommandArgs, roachpb.Response) (result.Result, error)
+
+	// Isolated indicates that the command operates in an isolated scope and
+	// does not need ot be made aware of transactional semantics.
+	Isolated bool
 }
 
 var cmds = make(map[roachpb.Method]Command)
@@ -44,12 +48,24 @@ func RegisterCommand(
 	declare func(*roachpb.RangeDescriptor, roachpb.Header, roachpb.Request, *spanset.SpanSet),
 	impl func(context.Context, engine.ReadWriter, CommandArgs, roachpb.Response) (result.Result, error),
 ) {
+	RegisterIsolatedCommand(method, declare, impl, false /* isolated */)
+}
+
+// RegisterIsolatedCommand makes a command available for execution. It must only
+// be called before any evaluation takes place.
+func RegisterIsolatedCommand(
+	method roachpb.Method,
+	declare func(*roachpb.RangeDescriptor, roachpb.Header, roachpb.Request, *spanset.SpanSet),
+	impl func(context.Context, engine.ReadWriter, CommandArgs, roachpb.Response) (result.Result, error),
+	isolated bool,
+) {
 	if _, ok := cmds[method]; ok {
 		log.Fatalf(context.TODO(), "cannot overwrite previously registered method %v", method)
 	}
 	cmds[method] = Command{
 		DeclareKeys: declare,
 		Eval:        impl,
+		Isolated:    isolated,
 	}
 }
 

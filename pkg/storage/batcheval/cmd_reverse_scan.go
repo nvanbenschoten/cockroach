@@ -20,7 +20,7 @@ import (
 )
 
 func init() {
-	RegisterCommand(roachpb.ReverseScan, DefaultDeclareKeys, ReverseScan)
+	RegisterIsolatedCommand(roachpb.ReverseScan, DefaultDeclareKeys, ReverseScan, true)
 }
 
 // ReverseScan scans the key range specified by start key through
@@ -46,7 +46,6 @@ func ReverseScan(
 			ctx, batch, args.Key, args.EndKey, cArgs.MaxKeys, h.Timestamp,
 			engine.MVCCScanOptions{
 				Inconsistent: h.ReadConsistency != roachpb.CONSISTENT,
-				Txn:          h.Txn,
 				Reverse:      true,
 			})
 		if err != nil {
@@ -59,7 +58,6 @@ func ReverseScan(
 		rows, resumeSpan, intents, err = engine.MVCCScan(
 			ctx, batch, args.Key, args.EndKey, cArgs.MaxKeys, h.Timestamp, engine.MVCCScanOptions{
 				Inconsistent: h.ReadConsistency != roachpb.CONSISTENT,
-				Txn:          h.Txn,
 				Reverse:      true,
 			})
 		if err != nil {

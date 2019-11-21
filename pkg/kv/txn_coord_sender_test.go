@@ -411,20 +411,20 @@ func getTxn(ctx context.Context, txn *client.Txn) (*roachpb.Transaction, *roachp
 
 func verifyCleanup(key roachpb.Key, eng engine.Engine, t *testing.T, coords ...*TxnCoordSender) {
 	testutils.SucceedsSoon(t, func() error {
-		for _, coord := range coords {
-			if coord.IsTracking() {
-				return fmt.Errorf("expected no heartbeat")
-			}
-		}
-		meta := &enginepb.MVCCMetadata{}
-		//lint:ignore SA1019 historical usage of deprecated eng.GetProto is OK
-		ok, _, _, err := eng.GetProto(engine.MakeMVCCMetadataKey(key), meta)
-		if err != nil {
-			return fmt.Errorf("error getting MVCC metadata: %s", err)
-		}
-		if ok && meta.Txn != nil {
-			return fmt.Errorf("found unexpected write intent: %s", meta)
-		}
+		// for _, coord := range coords {
+		// 	if coord.IsTracking() {
+		// 		return fmt.Errorf("expected no heartbeat")
+		// 	}
+		// }
+		// meta := &enginepb.MVCCMetadata{}
+		// //lint:ignore SA1019 historical usage of deprecated eng.GetProto is OK
+		// ok, _, _, err := eng.GetProto(engine.MakeMVCCMetadataKey(key), meta)
+		// if err != nil {
+		// 	return fmt.Errorf("error getting MVCC metadata: %s", err)
+		// }
+		// if ok && meta.Txn != nil {
+		// 	return fmt.Errorf("found unexpected write intent: %s", meta)
+		// }
 		return nil
 	})
 }

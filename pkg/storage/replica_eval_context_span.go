@@ -20,6 +20,7 @@ import (
 	"github.com/cockroachdb/cockroach/pkg/storage/abortspan"
 	"github.com/cockroachdb/cockroach/pkg/storage/batcheval"
 	"github.com/cockroachdb/cockroach/pkg/storage/cloud"
+	"github.com/cockroachdb/cockroach/pkg/storage/concurrency"
 	"github.com/cockroachdb/cockroach/pkg/storage/engine"
 	"github.com/cockroachdb/cockroach/pkg/storage/engine/enginepb"
 	"github.com/cockroachdb/cockroach/pkg/storage/spanset"
@@ -38,6 +39,11 @@ type SpanSetReplicaEvalContext struct {
 }
 
 var _ batcheval.EvalContext = &SpanSetReplicaEvalContext{}
+
+// ConcurrencyManager returns the concurrency manager.
+func (rec *SpanSetReplicaEvalContext) ConcurrencyManager() concurrency.Manager {
+	return rec.i.ConcurrencyManager()
+}
 
 // AbortSpan returns the abort span.
 func (rec *SpanSetReplicaEvalContext) AbortSpan() *abortspan.AbortSpan {

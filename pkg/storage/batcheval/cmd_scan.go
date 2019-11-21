@@ -20,7 +20,7 @@ import (
 )
 
 func init() {
-	RegisterCommand(roachpb.Scan, DefaultDeclareKeys, Scan)
+	RegisterIsolatedCommand(roachpb.Scan, DefaultDeclareKeys, Scan, true)
 }
 
 // Scan scans the key range specified by start key through end key
@@ -46,7 +46,6 @@ func Scan(
 			ctx, batch, args.Key, args.EndKey, cArgs.MaxKeys, h.Timestamp,
 			engine.MVCCScanOptions{
 				Inconsistent: h.ReadConsistency != roachpb.CONSISTENT,
-				Txn:          h.Txn,
 			})
 		if err != nil {
 			return result.Result{}, err
@@ -58,7 +57,6 @@ func Scan(
 		rows, resumeSpan, intents, err = engine.MVCCScan(
 			ctx, batch, args.Key, args.EndKey, cArgs.MaxKeys, h.Timestamp, engine.MVCCScanOptions{
 				Inconsistent: h.ReadConsistency != roachpb.CONSISTENT,
-				Txn:          h.Txn,
 			})
 		if err != nil {
 			return result.Result{}, err

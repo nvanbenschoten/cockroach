@@ -38,7 +38,7 @@ namespace protobuf_storage_2fengine_2fenginepb_2fmvcc3_2eproto {
 struct TableStruct {
   static const ::google::protobuf::internal::ParseTableField entries[];
   static const ::google::protobuf::internal::AuxillaryParseTableField aux[];
-  static const ::google::protobuf::internal::ParseTable schema[11];
+  static const ::google::protobuf::internal::ParseTable schema[13];
   static const ::google::protobuf::internal::FieldMetadata field_metadata[];
   static const ::google::protobuf::internal::SerializationTable serialization_table[];
   static const ::google::protobuf::uint32 offsets[];
@@ -57,6 +57,12 @@ extern MVCCAbortTxnOpDefaultTypeInternal _MVCCAbortTxnOp_default_instance_;
 class MVCCCommitIntentOp;
 class MVCCCommitIntentOpDefaultTypeInternal;
 extern MVCCCommitIntentOpDefaultTypeInternal _MVCCCommitIntentOp_default_instance_;
+class MVCCLock;
+class MVCCLockDefaultTypeInternal;
+extern MVCCLockDefaultTypeInternal _MVCCLock_default_instance_;
+class MVCCLock_SequencedIntent;
+class MVCCLock_SequencedIntentDefaultTypeInternal;
+extern MVCCLock_SequencedIntentDefaultTypeInternal _MVCCLock_SequencedIntent_default_instance_;
 class MVCCLogicalOp;
 class MVCCLogicalOpDefaultTypeInternal;
 extern MVCCLogicalOpDefaultTypeInternal _MVCCLogicalOp_default_instance_;
@@ -90,6 +96,8 @@ namespace protobuf {
 template<> ::cockroach::storage::engine::enginepb::MVCCAbortIntentOp* Arena::CreateMaybeMessage<::cockroach::storage::engine::enginepb::MVCCAbortIntentOp>(Arena*);
 template<> ::cockroach::storage::engine::enginepb::MVCCAbortTxnOp* Arena::CreateMaybeMessage<::cockroach::storage::engine::enginepb::MVCCAbortTxnOp>(Arena*);
 template<> ::cockroach::storage::engine::enginepb::MVCCCommitIntentOp* Arena::CreateMaybeMessage<::cockroach::storage::engine::enginepb::MVCCCommitIntentOp>(Arena*);
+template<> ::cockroach::storage::engine::enginepb::MVCCLock* Arena::CreateMaybeMessage<::cockroach::storage::engine::enginepb::MVCCLock>(Arena*);
+template<> ::cockroach::storage::engine::enginepb::MVCCLock_SequencedIntent* Arena::CreateMaybeMessage<::cockroach::storage::engine::enginepb::MVCCLock_SequencedIntent>(Arena*);
 template<> ::cockroach::storage::engine::enginepb::MVCCLogicalOp* Arena::CreateMaybeMessage<::cockroach::storage::engine::enginepb::MVCCLogicalOp>(Arena*);
 template<> ::cockroach::storage::engine::enginepb::MVCCPersistentStats* Arena::CreateMaybeMessage<::cockroach::storage::engine::enginepb::MVCCPersistentStats>(Arena*);
 template<> ::cockroach::storage::engine::enginepb::MVCCStatsDelta* Arena::CreateMaybeMessage<::cockroach::storage::engine::enginepb::MVCCStatsDelta>(Arena*);
@@ -272,6 +280,241 @@ class TxnMeta : public ::google::protobuf::MessageLite /* @@protoc_insertion_poi
 };
 // -------------------------------------------------------------------
 
+class MVCCLock_SequencedIntent : public ::google::protobuf::MessageLite /* @@protoc_insertion_point(class_definition:cockroach.storage.engine.enginepb.MVCCLock.SequencedIntent) */ {
+ public:
+  MVCCLock_SequencedIntent();
+  virtual ~MVCCLock_SequencedIntent();
+
+  MVCCLock_SequencedIntent(const MVCCLock_SequencedIntent& from);
+
+  inline MVCCLock_SequencedIntent& operator=(const MVCCLock_SequencedIntent& from) {
+    CopyFrom(from);
+    return *this;
+  }
+  #if LANG_CXX11
+  MVCCLock_SequencedIntent(MVCCLock_SequencedIntent&& from) noexcept
+    : MVCCLock_SequencedIntent() {
+    *this = ::std::move(from);
+  }
+
+  inline MVCCLock_SequencedIntent& operator=(MVCCLock_SequencedIntent&& from) noexcept {
+    if (GetArenaNoVirtual() == from.GetArenaNoVirtual()) {
+      if (this != &from) InternalSwap(&from);
+    } else {
+      CopyFrom(from);
+    }
+    return *this;
+  }
+  #endif
+  static const MVCCLock_SequencedIntent& default_instance();
+
+  static void InitAsDefaultInstance();  // FOR INTERNAL USE ONLY
+  static inline const MVCCLock_SequencedIntent* internal_default_instance() {
+    return reinterpret_cast<const MVCCLock_SequencedIntent*>(
+               &_MVCCLock_SequencedIntent_default_instance_);
+  }
+  static constexpr int kIndexInFileMessages =
+    1;
+
+  void Swap(MVCCLock_SequencedIntent* other);
+  friend void swap(MVCCLock_SequencedIntent& a, MVCCLock_SequencedIntent& b) {
+    a.Swap(&b);
+  }
+
+  // implements Message ----------------------------------------------
+
+  inline MVCCLock_SequencedIntent* New() const final {
+    return CreateMaybeMessage<MVCCLock_SequencedIntent>(NULL);
+  }
+
+  MVCCLock_SequencedIntent* New(::google::protobuf::Arena* arena) const final {
+    return CreateMaybeMessage<MVCCLock_SequencedIntent>(arena);
+  }
+  void CheckTypeAndMergeFrom(const ::google::protobuf::MessageLite& from)
+    final;
+  void CopyFrom(const MVCCLock_SequencedIntent& from);
+  void MergeFrom(const MVCCLock_SequencedIntent& from);
+  void Clear() final;
+  bool IsInitialized() const final;
+
+  size_t ByteSizeLong() const final;
+  bool MergePartialFromCodedStream(
+      ::google::protobuf::io::CodedInputStream* input) final;
+  void SerializeWithCachedSizes(
+      ::google::protobuf::io::CodedOutputStream* output) const final;
+  void DiscardUnknownFields();
+  int GetCachedSize() const final { return _cached_size_.Get(); }
+
+  private:
+  void SharedCtor();
+  void SharedDtor();
+  void SetCachedSize(int size) const;
+  void InternalSwap(MVCCLock_SequencedIntent* other);
+  private:
+  inline ::google::protobuf::Arena* GetArenaNoVirtual() const {
+    return NULL;
+  }
+  inline void* MaybeArenaPtr() const {
+    return NULL;
+  }
+  public:
+
+  ::std::string GetTypeName() const final;
+
+  // nested types ----------------------------------------------------
+
+  // accessors -------------------------------------------------------
+
+  // bytes value = 2;
+  void clear_value();
+  static const int kValueFieldNumber = 2;
+  const ::std::string& value() const;
+  void set_value(const ::std::string& value);
+  #if LANG_CXX11
+  void set_value(::std::string&& value);
+  #endif
+  void set_value(const char* value);
+  void set_value(const void* value, size_t size);
+  ::std::string* mutable_value();
+  ::std::string* release_value();
+  void set_allocated_value(::std::string* value);
+
+  void clear_sequence();
+  static const int kSequenceFieldNumber = 1;
+  ::google::protobuf::int32 sequence() const;
+  void set_sequence(::google::protobuf::int32 value);
+
+  // @@protoc_insertion_point(class_scope:cockroach.storage.engine.enginepb.MVCCLock.SequencedIntent)
+ private:
+
+  ::google::protobuf::internal::InternalMetadataWithArenaLite _internal_metadata_;
+  ::google::protobuf::internal::ArenaStringPtr value_;
+  ::google::protobuf::int32 sequence_;
+  mutable ::google::protobuf::internal::CachedSize _cached_size_;
+  friend struct ::protobuf_storage_2fengine_2fenginepb_2fmvcc3_2eproto::TableStruct;
+};
+// -------------------------------------------------------------------
+
+class MVCCLock : public ::google::protobuf::MessageLite /* @@protoc_insertion_point(class_definition:cockroach.storage.engine.enginepb.MVCCLock) */ {
+ public:
+  MVCCLock();
+  virtual ~MVCCLock();
+
+  MVCCLock(const MVCCLock& from);
+
+  inline MVCCLock& operator=(const MVCCLock& from) {
+    CopyFrom(from);
+    return *this;
+  }
+  #if LANG_CXX11
+  MVCCLock(MVCCLock&& from) noexcept
+    : MVCCLock() {
+    *this = ::std::move(from);
+  }
+
+  inline MVCCLock& operator=(MVCCLock&& from) noexcept {
+    if (GetArenaNoVirtual() == from.GetArenaNoVirtual()) {
+      if (this != &from) InternalSwap(&from);
+    } else {
+      CopyFrom(from);
+    }
+    return *this;
+  }
+  #endif
+  static const MVCCLock& default_instance();
+
+  static void InitAsDefaultInstance();  // FOR INTERNAL USE ONLY
+  static inline const MVCCLock* internal_default_instance() {
+    return reinterpret_cast<const MVCCLock*>(
+               &_MVCCLock_default_instance_);
+  }
+  static constexpr int kIndexInFileMessages =
+    2;
+
+  void Swap(MVCCLock* other);
+  friend void swap(MVCCLock& a, MVCCLock& b) {
+    a.Swap(&b);
+  }
+
+  // implements Message ----------------------------------------------
+
+  inline MVCCLock* New() const final {
+    return CreateMaybeMessage<MVCCLock>(NULL);
+  }
+
+  MVCCLock* New(::google::protobuf::Arena* arena) const final {
+    return CreateMaybeMessage<MVCCLock>(arena);
+  }
+  void CheckTypeAndMergeFrom(const ::google::protobuf::MessageLite& from)
+    final;
+  void CopyFrom(const MVCCLock& from);
+  void MergeFrom(const MVCCLock& from);
+  void Clear() final;
+  bool IsInitialized() const final;
+
+  size_t ByteSizeLong() const final;
+  bool MergePartialFromCodedStream(
+      ::google::protobuf::io::CodedInputStream* input) final;
+  void SerializeWithCachedSizes(
+      ::google::protobuf::io::CodedOutputStream* output) const final;
+  void DiscardUnknownFields();
+  int GetCachedSize() const final { return _cached_size_.Get(); }
+
+  private:
+  void SharedCtor();
+  void SharedDtor();
+  void SetCachedSize(int size) const;
+  void InternalSwap(MVCCLock* other);
+  private:
+  inline ::google::protobuf::Arena* GetArenaNoVirtual() const {
+    return NULL;
+  }
+  inline void* MaybeArenaPtr() const {
+    return NULL;
+  }
+  public:
+
+  ::std::string GetTypeName() const final;
+
+  // nested types ----------------------------------------------------
+
+  typedef MVCCLock_SequencedIntent SequencedIntent;
+
+  // accessors -------------------------------------------------------
+
+  int intent_history_size() const;
+  void clear_intent_history();
+  static const int kIntentHistoryFieldNumber = 8;
+  ::cockroach::storage::engine::enginepb::MVCCLock_SequencedIntent* mutable_intent_history(int index);
+  ::google::protobuf::RepeatedPtrField< ::cockroach::storage::engine::enginepb::MVCCLock_SequencedIntent >*
+      mutable_intent_history();
+  const ::cockroach::storage::engine::enginepb::MVCCLock_SequencedIntent& intent_history(int index) const;
+  ::cockroach::storage::engine::enginepb::MVCCLock_SequencedIntent* add_intent_history();
+  const ::google::protobuf::RepeatedPtrField< ::cockroach::storage::engine::enginepb::MVCCLock_SequencedIntent >&
+      intent_history() const;
+
+  bool has_txn() const;
+  void clear_txn();
+  static const int kTxnFieldNumber = 1;
+  private:
+  const ::cockroach::storage::engine::enginepb::TxnMeta& _internal_txn() const;
+  public:
+  const ::cockroach::storage::engine::enginepb::TxnMeta& txn() const;
+  ::cockroach::storage::engine::enginepb::TxnMeta* release_txn();
+  ::cockroach::storage::engine::enginepb::TxnMeta* mutable_txn();
+  void set_allocated_txn(::cockroach::storage::engine::enginepb::TxnMeta* txn);
+
+  // @@protoc_insertion_point(class_scope:cockroach.storage.engine.enginepb.MVCCLock)
+ private:
+
+  ::google::protobuf::internal::InternalMetadataWithArenaLite _internal_metadata_;
+  ::google::protobuf::RepeatedPtrField< ::cockroach::storage::engine::enginepb::MVCCLock_SequencedIntent > intent_history_;
+  ::cockroach::storage::engine::enginepb::TxnMeta* txn_;
+  mutable ::google::protobuf::internal::CachedSize _cached_size_;
+  friend struct ::protobuf_storage_2fengine_2fenginepb_2fmvcc3_2eproto::TableStruct;
+};
+// -------------------------------------------------------------------
+
 class MVCCStatsDelta : public ::google::protobuf::MessageLite /* @@protoc_insertion_point(class_definition:cockroach.storage.engine.enginepb.MVCCStatsDelta) */ {
  public:
   MVCCStatsDelta();
@@ -306,7 +549,7 @@ class MVCCStatsDelta : public ::google::protobuf::MessageLite /* @@protoc_insert
                &_MVCCStatsDelta_default_instance_);
   }
   static constexpr int kIndexInFileMessages =
-    1;
+    3;
 
   void Swap(MVCCStatsDelta* other);
   friend void swap(MVCCStatsDelta& a, MVCCStatsDelta& b) {
@@ -497,7 +740,7 @@ class MVCCPersistentStats : public ::google::protobuf::MessageLite /* @@protoc_i
                &_MVCCPersistentStats_default_instance_);
   }
   static constexpr int kIndexInFileMessages =
-    2;
+    4;
 
   void Swap(MVCCPersistentStats* other);
   friend void swap(MVCCPersistentStats& a, MVCCPersistentStats& b) {
@@ -688,7 +931,7 @@ class RangeAppliedState : public ::google::protobuf::MessageLite /* @@protoc_ins
                &_RangeAppliedState_default_instance_);
   }
   static constexpr int kIndexInFileMessages =
-    3;
+    5;
 
   void Swap(RangeAppliedState* other);
   friend void swap(RangeAppliedState& a, RangeAppliedState& b) {
@@ -808,7 +1051,7 @@ class MVCCWriteValueOp : public ::google::protobuf::MessageLite /* @@protoc_inse
                &_MVCCWriteValueOp_default_instance_);
   }
   static constexpr int kIndexInFileMessages =
-    4;
+    6;
 
   void Swap(MVCCWriteValueOp* other);
   friend void swap(MVCCWriteValueOp& a, MVCCWriteValueOp& b) {
@@ -959,7 +1202,7 @@ class MVCCWriteIntentOp : public ::google::protobuf::MessageLite /* @@protoc_ins
                &_MVCCWriteIntentOp_default_instance_);
   }
   static constexpr int kIndexInFileMessages =
-    5;
+    7;
 
   void Swap(MVCCWriteIntentOp* other);
   friend void swap(MVCCWriteIntentOp& a, MVCCWriteIntentOp& b) {
@@ -1106,7 +1349,7 @@ class MVCCUpdateIntentOp : public ::google::protobuf::MessageLite /* @@protoc_in
                &_MVCCUpdateIntentOp_default_instance_);
   }
   static constexpr int kIndexInFileMessages =
-    6;
+    8;
 
   void Swap(MVCCUpdateIntentOp* other);
   friend void swap(MVCCUpdateIntentOp& a, MVCCUpdateIntentOp& b) {
@@ -1226,7 +1469,7 @@ class MVCCCommitIntentOp : public ::google::protobuf::MessageLite /* @@protoc_in
                &_MVCCCommitIntentOp_default_instance_);
   }
   static constexpr int kIndexInFileMessages =
-    7;
+    9;
 
   void Swap(MVCCCommitIntentOp* other);
   friend void swap(MVCCCommitIntentOp& a, MVCCCommitIntentOp& b) {
@@ -1391,7 +1634,7 @@ class MVCCAbortIntentOp : public ::google::protobuf::MessageLite /* @@protoc_ins
                &_MVCCAbortIntentOp_default_instance_);
   }
   static constexpr int kIndexInFileMessages =
-    8;
+    10;
 
   void Swap(MVCCAbortIntentOp* other);
   friend void swap(MVCCAbortIntentOp& a, MVCCAbortIntentOp& b) {
@@ -1499,7 +1742,7 @@ class MVCCAbortTxnOp : public ::google::protobuf::MessageLite /* @@protoc_insert
                &_MVCCAbortTxnOp_default_instance_);
   }
   static constexpr int kIndexInFileMessages =
-    9;
+    11;
 
   void Swap(MVCCAbortTxnOp* other);
   friend void swap(MVCCAbortTxnOp& a, MVCCAbortTxnOp& b) {
@@ -1607,7 +1850,7 @@ class MVCCLogicalOp : public ::google::protobuf::MessageLite /* @@protoc_inserti
                &_MVCCLogicalOp_default_instance_);
   }
   static constexpr int kIndexInFileMessages =
-    10;
+    12;
 
   void Swap(MVCCLogicalOp* other);
   friend void swap(MVCCLogicalOp& a, MVCCLogicalOp& b) {
@@ -1990,6 +2233,162 @@ inline void TxnMeta::set_sequence(::google::protobuf::int32 value) {
   
   sequence_ = value;
   // @@protoc_insertion_point(field_set:cockroach.storage.engine.enginepb.TxnMeta.sequence)
+}
+
+// -------------------------------------------------------------------
+
+// MVCCLock_SequencedIntent
+
+inline void MVCCLock_SequencedIntent::clear_sequence() {
+  sequence_ = 0;
+}
+inline ::google::protobuf::int32 MVCCLock_SequencedIntent::sequence() const {
+  // @@protoc_insertion_point(field_get:cockroach.storage.engine.enginepb.MVCCLock.SequencedIntent.sequence)
+  return sequence_;
+}
+inline void MVCCLock_SequencedIntent::set_sequence(::google::protobuf::int32 value) {
+  
+  sequence_ = value;
+  // @@protoc_insertion_point(field_set:cockroach.storage.engine.enginepb.MVCCLock.SequencedIntent.sequence)
+}
+
+// bytes value = 2;
+inline void MVCCLock_SequencedIntent::clear_value() {
+  value_.ClearToEmptyNoArena(&::google::protobuf::internal::GetEmptyStringAlreadyInited());
+}
+inline const ::std::string& MVCCLock_SequencedIntent::value() const {
+  // @@protoc_insertion_point(field_get:cockroach.storage.engine.enginepb.MVCCLock.SequencedIntent.value)
+  return value_.GetNoArena();
+}
+inline void MVCCLock_SequencedIntent::set_value(const ::std::string& value) {
+  
+  value_.SetNoArena(&::google::protobuf::internal::GetEmptyStringAlreadyInited(), value);
+  // @@protoc_insertion_point(field_set:cockroach.storage.engine.enginepb.MVCCLock.SequencedIntent.value)
+}
+#if LANG_CXX11
+inline void MVCCLock_SequencedIntent::set_value(::std::string&& value) {
+  
+  value_.SetNoArena(
+    &::google::protobuf::internal::GetEmptyStringAlreadyInited(), ::std::move(value));
+  // @@protoc_insertion_point(field_set_rvalue:cockroach.storage.engine.enginepb.MVCCLock.SequencedIntent.value)
+}
+#endif
+inline void MVCCLock_SequencedIntent::set_value(const char* value) {
+  GOOGLE_DCHECK(value != NULL);
+  
+  value_.SetNoArena(&::google::protobuf::internal::GetEmptyStringAlreadyInited(), ::std::string(value));
+  // @@protoc_insertion_point(field_set_char:cockroach.storage.engine.enginepb.MVCCLock.SequencedIntent.value)
+}
+inline void MVCCLock_SequencedIntent::set_value(const void* value, size_t size) {
+  
+  value_.SetNoArena(&::google::protobuf::internal::GetEmptyStringAlreadyInited(),
+      ::std::string(reinterpret_cast<const char*>(value), size));
+  // @@protoc_insertion_point(field_set_pointer:cockroach.storage.engine.enginepb.MVCCLock.SequencedIntent.value)
+}
+inline ::std::string* MVCCLock_SequencedIntent::mutable_value() {
+  
+  // @@protoc_insertion_point(field_mutable:cockroach.storage.engine.enginepb.MVCCLock.SequencedIntent.value)
+  return value_.MutableNoArena(&::google::protobuf::internal::GetEmptyStringAlreadyInited());
+}
+inline ::std::string* MVCCLock_SequencedIntent::release_value() {
+  // @@protoc_insertion_point(field_release:cockroach.storage.engine.enginepb.MVCCLock.SequencedIntent.value)
+  
+  return value_.ReleaseNoArena(&::google::protobuf::internal::GetEmptyStringAlreadyInited());
+}
+inline void MVCCLock_SequencedIntent::set_allocated_value(::std::string* value) {
+  if (value != NULL) {
+    
+  } else {
+    
+  }
+  value_.SetAllocatedNoArena(&::google::protobuf::internal::GetEmptyStringAlreadyInited(), value);
+  // @@protoc_insertion_point(field_set_allocated:cockroach.storage.engine.enginepb.MVCCLock.SequencedIntent.value)
+}
+
+// -------------------------------------------------------------------
+
+// MVCCLock
+
+inline bool MVCCLock::has_txn() const {
+  return this != internal_default_instance() && txn_ != NULL;
+}
+inline void MVCCLock::clear_txn() {
+  if (GetArenaNoVirtual() == NULL && txn_ != NULL) {
+    delete txn_;
+  }
+  txn_ = NULL;
+}
+inline const ::cockroach::storage::engine::enginepb::TxnMeta& MVCCLock::_internal_txn() const {
+  return *txn_;
+}
+inline const ::cockroach::storage::engine::enginepb::TxnMeta& MVCCLock::txn() const {
+  const ::cockroach::storage::engine::enginepb::TxnMeta* p = txn_;
+  // @@protoc_insertion_point(field_get:cockroach.storage.engine.enginepb.MVCCLock.txn)
+  return p != NULL ? *p : *reinterpret_cast<const ::cockroach::storage::engine::enginepb::TxnMeta*>(
+      &::cockroach::storage::engine::enginepb::_TxnMeta_default_instance_);
+}
+inline ::cockroach::storage::engine::enginepb::TxnMeta* MVCCLock::release_txn() {
+  // @@protoc_insertion_point(field_release:cockroach.storage.engine.enginepb.MVCCLock.txn)
+  
+  ::cockroach::storage::engine::enginepb::TxnMeta* temp = txn_;
+  txn_ = NULL;
+  return temp;
+}
+inline ::cockroach::storage::engine::enginepb::TxnMeta* MVCCLock::mutable_txn() {
+  
+  if (txn_ == NULL) {
+    auto* p = CreateMaybeMessage<::cockroach::storage::engine::enginepb::TxnMeta>(GetArenaNoVirtual());
+    txn_ = p;
+  }
+  // @@protoc_insertion_point(field_mutable:cockroach.storage.engine.enginepb.MVCCLock.txn)
+  return txn_;
+}
+inline void MVCCLock::set_allocated_txn(::cockroach::storage::engine::enginepb::TxnMeta* txn) {
+  ::google::protobuf::Arena* message_arena = GetArenaNoVirtual();
+  if (message_arena == NULL) {
+    delete txn_;
+  }
+  if (txn) {
+    ::google::protobuf::Arena* submessage_arena = NULL;
+    if (message_arena != submessage_arena) {
+      txn = ::google::protobuf::internal::GetOwnedMessage(
+          message_arena, txn, submessage_arena);
+    }
+    
+  } else {
+    
+  }
+  txn_ = txn;
+  // @@protoc_insertion_point(field_set_allocated:cockroach.storage.engine.enginepb.MVCCLock.txn)
+}
+
+inline int MVCCLock::intent_history_size() const {
+  return intent_history_.size();
+}
+inline void MVCCLock::clear_intent_history() {
+  intent_history_.Clear();
+}
+inline ::cockroach::storage::engine::enginepb::MVCCLock_SequencedIntent* MVCCLock::mutable_intent_history(int index) {
+  // @@protoc_insertion_point(field_mutable:cockroach.storage.engine.enginepb.MVCCLock.intent_history)
+  return intent_history_.Mutable(index);
+}
+inline ::google::protobuf::RepeatedPtrField< ::cockroach::storage::engine::enginepb::MVCCLock_SequencedIntent >*
+MVCCLock::mutable_intent_history() {
+  // @@protoc_insertion_point(field_mutable_list:cockroach.storage.engine.enginepb.MVCCLock.intent_history)
+  return &intent_history_;
+}
+inline const ::cockroach::storage::engine::enginepb::MVCCLock_SequencedIntent& MVCCLock::intent_history(int index) const {
+  // @@protoc_insertion_point(field_get:cockroach.storage.engine.enginepb.MVCCLock.intent_history)
+  return intent_history_.Get(index);
+}
+inline ::cockroach::storage::engine::enginepb::MVCCLock_SequencedIntent* MVCCLock::add_intent_history() {
+  // @@protoc_insertion_point(field_add:cockroach.storage.engine.enginepb.MVCCLock.intent_history)
+  return intent_history_.Add();
+}
+inline const ::google::protobuf::RepeatedPtrField< ::cockroach::storage::engine::enginepb::MVCCLock_SequencedIntent >&
+MVCCLock::intent_history() const {
+  // @@protoc_insertion_point(field_list:cockroach.storage.engine.enginepb.MVCCLock.intent_history)
+  return intent_history_;
 }
 
 // -------------------------------------------------------------------
@@ -3696,6 +4095,10 @@ inline void MVCCLogicalOp::set_allocated_abort_txn(::cockroach::storage::engine:
 #ifdef __GNUC__
   #pragma GCC diagnostic pop
 #endif  // __GNUC__
+// -------------------------------------------------------------------
+
+// -------------------------------------------------------------------
+
 // -------------------------------------------------------------------
 
 // -------------------------------------------------------------------

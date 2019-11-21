@@ -243,7 +243,8 @@ func (ir *IntentResolver) ProcessWriteIntentError(
 	// Possibly queue this processing if the write intent error is for a
 	// single intent affecting a unitary key.
 	var cleanup func(*roachpb.WriteIntentError, *enginepb.TxnMeta)
-	if len(wiErr.Intents) == 1 && len(wiErr.Intents[0].Span.EndKey) == 0 {
+	// TODO(WIP): disable contentionQueue. Not needed.
+	if len(wiErr.Intents) == 1 && len(wiErr.Intents[0].Span.EndKey) == 0 && false {
 		var done bool
 		var pErr *roachpb.Error
 		// Note that the write intent error may be mutated here in the event

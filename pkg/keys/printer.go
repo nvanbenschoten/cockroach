@@ -175,6 +175,7 @@ var (
 	}{
 		{name: "RangeDescriptor", suffix: LocalRangeDescriptorSuffix, atEnd: true},
 		{name: "Transaction", suffix: LocalTransactionSuffix, atEnd: false},
+		{name: "LockTable", suffix: LocalLockTableSuffix, atEnd: false},
 		{name: "QueueLastProcessed", suffix: LocalQueueLastProcessedSuffix, atEnd: false},
 	}
 )
@@ -454,7 +455,8 @@ func localRangeKeyPrint(valDirs []encoding.Direction, key roachpb.Key) string {
 				} else {
 					fmt.Fprintf(&buf, "%s/%s", roachpb.Key(decodedAddrKey), s.name)
 				}
-				if bytes.Equal(s.suffix, LocalTransactionSuffix) {
+				if bytes.Equal(s.suffix, LocalTransactionSuffix) ||
+					bytes.Equal(s.suffix, LocalLockTableSuffix) {
 					txnID, err := uuid.FromBytes(key[(begin + len(s.suffix)):])
 					if err != nil {
 						return fmt.Sprintf("/%q/err:%v", key, err)

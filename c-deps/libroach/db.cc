@@ -530,7 +530,7 @@ DBStatus DBEnvLinkFile(DBEngine* db, DBSlice oldname, DBSlice newname) {
 }
 
 DBIterState DBCheckForKeyCollisions(DBIterator* existingIter, DBIterator* sstIter,
-                                    MVCCStatsResult* skippedKVStats, DBString* write_intent) {
+                                    MVCCStatsResult* skippedKVStats) {
   DBIterState state = {};
   memset(skippedKVStats, 0, sizeof(*skippedKVStats));
 
@@ -562,22 +562,6 @@ DBIterState DBCheckForKeyCollisions(DBIterator* existingIter, DBIterator* sstIte
       // report an error.
       if (meta.has_raw_bytes()) {
         state.status = FmtStatus("InlineError");
-      } else if (meta.has_txn()) {
-        // Check for a write intent.
-        //
-        // TODO(adityamaru): Currently, we raise a WriteIntentError on
-        // encountering all intents. This is because, we do not expect to
-        // encounter many intents during IMPORT INTO as we lock the key space we
-        // are importing into. Older write intents could however be found in the
-        // target key space, which will require appropriate resolution logic.
-        cockroach::roachpb::WriteIntentError err;
-        cockroach::roachpb::Intent* intent = err.add_intents();
-        intent->mutable_span()->set_key(existingIter->rep->key().data(),
-                                        existingIter->rep->key().size());
-        intent->mutable_txn()->CopyFrom(meta.txn());
-
-        *write_intent = ToDBString(err.SerializeAsString());
-        state.status = FmtStatus("WriteIntentError");
       } else {
         state.status = FmtStatus("intent without transaction");
       }
@@ -1072,15 +1056,14 @@ DBStatus DBUnlockFile(DBFileLock lock) {
 }
 
 DBStatus DBExportToSst(DBKey start, DBKey end, bool export_all_revisions, DBIterOptions iter_opts,
-                       DBEngine* engine, DBString* data, DBString* write_intent,
-                       DBString* summary) {
+                       DBEngine* engine, DBString* data, DBString* summary) {
   DBSstFileWriter* writer = DBSstFileWriterNew();
   DBStatus status = DBSstFileWriterOpen(writer);
   if (status.data != NULL) {
     return status;
   }
 
-  DBIncrementalIterator iter(engine, iter_opts, start, end, write_intent);
+  DBIncrementalIterator iter(engine, iter_opts, start, end);
 
   roachpb::BulkOpSummary bulkop_summary;
   RowCounter row_counter;

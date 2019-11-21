@@ -30,7 +30,8 @@ const txnPipelinerBtreeDegree = 32
 var pipelinedWritesEnabled = settings.RegisterBoolSetting(
 	"kv.transaction.write_pipelining_enabled",
 	"if enabled, transactional writes are pipelined through Raft consensus",
-	true,
+	// TODO(WIP): disable for now to avoid QueryIntent.
+	false,
 )
 var pipelinedWritesMaxInFlightSize = settings.RegisterByteSizeSetting(
 	// TODO(nvanbenschoten): The need for this extra setting alongside

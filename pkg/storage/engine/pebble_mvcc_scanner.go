@@ -13,7 +13,6 @@ package engine
 import (
 	"bytes"
 	"encoding/binary"
-	"sort"
 	"sync"
 
 	"github.com/cockroachdb/cockroach/pkg/keys"
@@ -22,7 +21,6 @@ import (
 	"github.com/cockroachdb/cockroach/pkg/util/hlc"
 	"github.com/cockroachdb/cockroach/pkg/util/protoutil"
 	"github.com/cockroachdb/errors"
-	"github.com/cockroachdb/pebble"
 )
 
 const (
@@ -115,7 +113,6 @@ type pebbleMVCCScanner struct {
 	curKey, curValue []byte
 	curTS            hlc.Timestamp
 	results          pebbleResults
-	intents          pebble.Batch
 	// Stores any error returned. If non-nil, iteration short circuits.
 	err error
 	// Number of iterations to try before we do a Seek/SeekReverse. Stays within
@@ -132,15 +129,8 @@ var pebbleMVCCScannerPool = sync.Pool{
 
 // init sets bounds on the underlying pebble iterator, and initializes other
 // fields not set by the calling method.
-func (p *pebbleMVCCScanner) init(txn *roachpb.Transaction) {
+func (p *pebbleMVCCScanner) init() {
 	p.itersBeforeSeek = maxItersBeforeSeek / 2
-
-	if txn != nil {
-		p.txn = txn
-		p.txnEpoch = txn.Epoch
-		p.txnSequence = txn.Sequence
-		p.checkUncertainty = p.ts.Less(txn.MaxTimestamp)
-	}
 }
 
 // get iterates exactly once and adds one KV to the result set.
@@ -203,36 +193,10 @@ func (p *pebbleMVCCScanner) decrementItersBeforeSeek() {
 	}
 }
 
-// Try to read from the current value's intent history. Assumes p.meta has been
-// unmarshalled already. Returns true if a value was read and added to the
-// result set.
-func (p *pebbleMVCCScanner) getFromIntentHistory() bool {
-	intentHistory := p.meta.IntentHistory
-	// upIdx is the index of the first intent in intentHistory with a sequence
-	// number greater than our transaction's sequence number. Subtract 1 from it
-	// to get the index of the intent with the highest sequence number that is
-	// still less than or equal to p.txnSeq.
-	upIdx := sort.Search(len(intentHistory), func(i int) bool {
-		return intentHistory[i].Sequence > p.txnSequence
-	})
-	if upIdx == 0 {
-		// It is possible that no intent exists such that the sequence is less
-		// than the read sequence. In this case, we cannot read a value from the
-		// intent history.
-		return false
-	}
-	intent := p.meta.IntentHistory[upIdx-1]
-	if len(intent.Value) > 0 || p.tombstones {
-		p.results.put(p.curMVCCKey(), intent.Value)
-	}
-	return true
-}
-
 // Returns an uncertainty error with the specified timestamp and p.txn.
 func (p *pebbleMVCCScanner) uncertaintyError(ts hlc.Timestamp) bool {
 	p.err = roachpb.NewReadWithinUncertaintyIntervalError(p.ts, ts, p.txn)
 	p.results.clear()
-	p.intents.Reset()
 	return false
 }
 
@@ -275,126 +239,12 @@ func (p *pebbleMVCCScanner) getAndAdvance() bool {
 		p.err = errors.Errorf("unable to decode MVCCMetadata: %s", err)
 		return false
 	}
-	if len(p.meta.RawBytes) != 0 {
-		// 4. Emit immediately if the value is inline.
-		return p.addAndAdvance(p.meta.RawBytes)
-	}
-
-	if p.meta.Txn == nil {
-		p.err = errors.Errorf("intent without transaction")
+	if len(p.meta.RawBytes) == 0 {
+		p.err = errors.Errorf("inline key without value")
 		return false
 	}
-	metaTS := hlc.Timestamp(p.meta.Timestamp)
-
-	// metaTS is the timestamp of an intent value, which we may or may
-	// not end up ignoring, depending on factors codified below. If we do ignore
-	// the intent then we want to read at a lower timestamp that's strictly
-	// below the intent timestamp (to skip the intent), but also does not exceed
-	// our read timestamp (to avoid erroneously picking up future committed
-	// values); this timestamp is prevTS.
-	prevTS := p.ts
-	if !p.ts.Less(metaTS) {
-		prevTS = metaTS.Prev()
-	}
-
-	ownIntent := p.txn != nil && p.meta.Txn.ID.Equal(p.txn.ID)
-	maxVisibleTS := p.ts
-	if p.checkUncertainty {
-		maxVisibleTS = p.txn.MaxTimestamp
-	}
-
-	if maxVisibleTS.Less(metaTS) && !ownIntent {
-		// 5. The key contains an intent, but we're reading before the
-		// intent. Seek to the desired version. Note that if we own the
-		// intent (i.e. we're reading transactionally) we want to read
-		// the intent regardless of our read timestamp and fall into
-		// case 8 below.
-		return p.seekVersion(p.ts, false)
-	}
-
-	if p.inconsistent {
-		// 6. The key contains an intent and we're doing an inconsistent
-		// read at a timestamp newer than the intent. We ignore the
-		// intent by insisting that the timestamp we're reading at is a
-		// historical timestamp < the intent timestamp. However, we
-		// return the intent separately; the caller may want to resolve
-		// it.
-		if p.results.count == p.maxKeys {
-			// We've already retrieved the desired number of keys and now
-			// we're adding the resume key. We don't want to add the
-			// intent here as the intents should only correspond to KVs
-			// that lie before the resume key.
-			return false
-		}
-		p.keyBuf = EncodeKeyToBuf(p.keyBuf[:0], p.curMVCCKey())
-		p.err = p.intents.Set(p.keyBuf, p.curValue, nil)
-		if p.err != nil {
-			return false
-		}
-
-		return p.seekVersion(prevTS, false)
-	}
-
-	if !ownIntent {
-		// 7. The key contains an intent which was not written by our
-		// transaction and our read timestamp is newer than that of the
-		// intent. Note that this will trigger an error on the Go
-		// side. We continue scanning so that we can return all of the
-		// intents in the scan range.
-		p.keyBuf = EncodeKeyToBuf(p.keyBuf[:0], p.curMVCCKey())
-		p.err = p.intents.Set(p.keyBuf, p.curValue, nil)
-		if p.err != nil {
-			return false
-		}
-		return p.advanceKey()
-	}
-
-	if p.txnEpoch == p.meta.Txn.Epoch {
-		if p.txnSequence >= p.meta.Txn.Sequence {
-			// 8. We're reading our own txn's intent at an equal or higher sequence.
-			// Note that we read at the intent timestamp, not at our read timestamp
-			// as the intent timestamp may have been pushed forward by another
-			// transaction. Txn's always need to read their own writes.
-			return p.seekVersion(metaTS, false)
-		}
-
-		// 9. We're reading our own txn's intent at a lower sequence than is
-		// currently present in the intent. This means the intent we're seeing
-		// was written at a higher sequence than the read and that there may or
-		// may not be earlier versions of the intent (with lower sequence
-		// numbers) that we should read. If there exists a value in the intent
-		// history that has a sequence number equal to or less than the read
-		// sequence, read that value.
-		if p.getFromIntentHistory() {
-			if p.results.count == p.maxKeys {
-				return false
-			}
-			return p.advanceKey()
-		}
-		// 10. If no value in the intent history has a sequence number equal to
-		// or less than the read, we must ignore the intents laid down by the
-		// transaction all together. We ignore the intent by insisting that the
-		// timestamp we're reading at is a historical timestamp < the intent
-		// timestamp.
-		return p.seekVersion(prevTS, false)
-	}
-
-	if p.txnEpoch < p.meta.Txn.Epoch {
-		// 11. We're reading our own txn's intent but the current txn has
-		// an earlier epoch than the intent. Return an error so that the
-		// earlier incarnation of our transaction aborts (presumably
-		// this is some operation that was retried).
-		p.err = errors.Errorf("failed to read with epoch %d due to a write intent with epoch %d",
-			p.txnEpoch, p.meta.Txn.Epoch)
-		return false
-	}
-
-	// 12. We're reading our own txn's intent but the current txn has a
-	// later epoch than the intent. This can happen if the txn was
-	// restarted and an earlier iteration wrote the value we're now
-	// reading. In this case, we ignore the intent and read the
-	// previous value as if the transaction were starting fresh.
-	return p.seekVersion(prevTS, false)
+	// 4. Emit immediately if the value is inline.
+	return p.addAndAdvance(p.meta.RawBytes)
 }
 
 // nextKey advances to the next user key.

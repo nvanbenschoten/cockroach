@@ -31,10 +31,10 @@ import (
 	"github.com/cockroachdb/cockroach/pkg/storage/batcheval"
 	"github.com/cockroachdb/cockroach/pkg/storage/closedts/ctpb"
 	"github.com/cockroachdb/cockroach/pkg/storage/cloud"
+	"github.com/cockroachdb/cockroach/pkg/storage/concurrency"
 	"github.com/cockroachdb/cockroach/pkg/storage/engine"
 	"github.com/cockroachdb/cockroach/pkg/storage/engine/enginepb"
 	"github.com/cockroachdb/cockroach/pkg/storage/rangefeed"
-	"github.com/cockroachdb/cockroach/pkg/storage/spanlatch"
 	"github.com/cockroachdb/cockroach/pkg/storage/spanset"
 	"github.com/cockroachdb/cockroach/pkg/storage/split"
 	"github.com/cockroachdb/cockroach/pkg/storage/stateloader"
@@ -232,11 +232,8 @@ type Replica struct {
 	// Contains the lease history when enabled.
 	leaseHistory *leaseHistory
 
-	// Enforces at most one command is running per key(s) within each span
-	// scope. The globally-scoped component tracks user writes (i.e. all
-	// keys for which keys.Addr is the identity), the locally-scoped component
-	// the rest (e.g. RangeDescriptor, transaction record, Lease, ...).
-	latchMgr spanlatch.Manager
+	// ...
+	concMgr concurrency.Manager
 
 	mu struct {
 		// Protects all fields in the mu struct.
@@ -757,6 +754,11 @@ func (r *Replica) Engine() engine.Engine {
 	return r.store.Engine()
 }
 
+// ConcurrencyManager returns the Replica's concurrency manager.
+func (r *Replica) ConcurrencyManager() concurrency.Manager {
+	return r.concMgr
+}
+
 // AbortSpan returns the Replica's AbortSpan.
 func (r *Replica) AbortSpan() *abortspan.AbortSpan {
 	// Despite its name, the AbortSpan doesn't hold on-disk data in
@@ -1161,7 +1163,7 @@ func (r *Replica) checkBatchRequest(ba *roachpb.BatchRequest, isReadOnly bool) e
 // command processing.
 type endCmds struct {
 	repl *Replica
-	lg   *spanlatch.Guard
+	rg   concurrency.RequestGuard
 }
 
 // move moves the endCmds into the return value, clearing and making
@@ -1193,9 +1195,7 @@ func (ec *endCmds) done(ba *roachpb.BatchRequest, br *roachpb.BatchResponse, pEr
 
 	// Release the latches acquired by the request back to the spanlatch
 	// manager. Must be done AFTER the timestamp cache is updated.
-	if ec.lg != nil {
-		ec.repl.latchMgr.Release(ec.lg)
-	}
+	ec.repl.concMgr.FinishRequest(&ec.rg)
 }
 
 func (r *Replica) collectSpans(ba *roachpb.BatchRequest) (*spanset.SpanSet, error) {
@@ -1265,7 +1265,7 @@ func (r *Replica) beginCmds(
 	ctx context.Context, ba *roachpb.BatchRequest, spans *spanset.SpanSet,
 ) (endCmds, error) {
 	// Only acquire latches for consistent operations.
-	var lg *spanlatch.Guard
+	var rg concurrency.RequestGuard
 	if ba.ReadConsistency == roachpb.CONSISTENT {
 		// Check for context cancellation before acquiring latches.
 		if err := ctx.Err(); err != nil {
@@ -1278,11 +1278,21 @@ func (r *Replica) beginCmds(
 			beforeLatch = timeutil.Now()
 		}
 
+		req := concurrency.RequestImpl{
+			Ctx:    ctx,
+			Spans:  spans,
+			Ts:     ba.Timestamp,
+			Header: ba.Header,
+		}
+		if ba.Txn != nil {
+			req.Txn = ba.Txn.TxnMeta
+		}
+
 		// Acquire latches for all the request's declared spans to ensure
 		// protected access and to avoid interacting requests from operating at
 		// the same time. The latches will be held for the duration of request.
 		var err error
-		lg, err = r.latchMgr.Acquire(ctx, spans)
+		rg, err = r.concMgr.SequenceRequest(&req)
 		if err != nil {
 			return endCmds{}, err
 		}
@@ -1294,7 +1304,7 @@ func (r *Replica) beginCmds(
 
 		if filter := r.store.cfg.TestingKnobs.TestingLatchFilter; filter != nil {
 			if pErr := filter(*ba); pErr != nil {
-				r.latchMgr.Release(lg)
+				r.concMgr.FinishRequest(&rg)
 				return endCmds{}, pErr.GoError()
 			}
 		}
@@ -1343,7 +1353,7 @@ func (r *Replica) beginCmds(
 			// The store will catch that error and resubmit the request after
 			// mergeCompleteCh closes. See #27442 for the full context.
 			log.Event(ctx, "waiting on in-progress merge")
-			r.latchMgr.Release(lg)
+			r.concMgr.FinishRequest(&rg)
 			return endCmds{}, &roachpb.MergeInProgressError{}
 		}
 	} else {
@@ -1362,7 +1372,7 @@ func (r *Replica) beginCmds(
 
 	ec := endCmds{
 		repl: r,
-		lg:   lg,
+		rg:   rg,
 	}
 	return ec, nil
 }
@@ -1763,6 +1773,16 @@ func (r *Replica) getReplicaDescriptorByIDRLocked(
 func checkIfTxnAborted(
 	ctx context.Context, rec batcheval.EvalContext, b engine.Reader, txn roachpb.Transaction,
 ) *roachpb.Error {
+	// TODO(WIP): We should probably pull the AbortSpan into the concurrency
+	// manager, either by leaving poisoned locks in place when aborted or at
+	// least pulling the abort span under the concurrency manager abstraction
+	// but keeping it as is. The former approach is very appealing because it
+	// would prevent us from needing to copy the abort span on splits. However,
+	// it does lead to O(num aborted locks) entries instead of O(num aborted
+	// txns) entries, which might be a concern.
+	if true {
+		return nil
+	}
 	var entry roachpb.AbortSpanEntry
 	aborted, err := rec.AbortSpan().Get(ctx, b, txn.ID, &entry)
 	if err != nil {

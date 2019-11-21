@@ -409,6 +409,16 @@ func evaluateCommand(
 	var pd result.Result
 
 	if cmd, ok := batcheval.LookupCommand(args.Method()); ok {
+		if h.Txn != nil && cmd.Isolated {
+			if b, ok := batch.(engine.Batch); ok {
+				batch = rec.ConcurrencyManager().NewLockAwareBatch(b, h.Txn)
+			} else {
+				batch = rec.ConcurrencyManager().NewLockAwareReadWriter(batch, h.Txn)
+			}
+			// TODO(WIP): it's awkward that this has a different lifetime than the
+			// Batch/ReadWriter that it wraps.
+		}
+
 		cArgs := batcheval.CommandArgs{
 			EvalCtx: rec,
 			Header:  h,

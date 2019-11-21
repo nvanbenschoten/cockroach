@@ -93,16 +93,19 @@ func (s *initResolvedTSScan) iterateAndConsume(ctx context.Context) error {
 		}
 
 		// If this is an intent, inform the Processor.
-		if meta.Txn != nil {
-			var ops [1]enginepb.MVCCLogicalOp
-			ops[0].SetValue(&enginepb.MVCCWriteIntentOp{
-				TxnID:           meta.Txn.ID,
-				TxnKey:          meta.Txn.Key,
-				TxnMinTimestamp: meta.Txn.MinTimestamp,
-				Timestamp:       meta.Txn.WriteTimestamp,
-			})
-			s.p.sendEvent(event{ops: ops[:]}, 0 /* timeout */)
-		}
+		// TODO(WIP): this entire thing will need to be reworked. It's actually
+		// a lot better because now we can just scan over the lock table and not
+		// need to wade through the MVCC keyspace. That should be much faster.
+		// if meta.Txn != nil {
+		// 	var ops [1]enginepb.MVCCLogicalOp
+		// 	ops[0].SetValue(&enginepb.MVCCWriteIntentOp{
+		// 		TxnID:           meta.Txn.ID,
+		// 		TxnKey:          meta.Txn.Key,
+		// 		TxnMinTimestamp: meta.Txn.MinTimestamp,
+		// 		Timestamp:       meta.Txn.WriteTimestamp,
+		// 	})
+		// 	s.p.sendEvent(event{ops: ops[:]}, 0 /* timeout */)
+		// }
 	}
 	return nil
 }

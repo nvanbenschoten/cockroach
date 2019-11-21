@@ -20,7 +20,7 @@ import (
 )
 
 func init() {
-	RegisterCommand(roachpb.Get, DefaultDeclareKeys, Get)
+	RegisterIsolatedCommand(roachpb.Get, DefaultDeclareKeys, Get, true)
 }
 
 // Get returns the value for a specified key.
@@ -33,7 +33,6 @@ func Get(
 
 	val, intent, err := engine.MVCCGet(ctx, batch, args.Key, h.Timestamp, engine.MVCCGetOptions{
 		Inconsistent: h.ReadConsistency != roachpb.CONSISTENT,
-		Txn:          h.Txn,
 	})
 	if err != nil {
 		return result.Result{}, err

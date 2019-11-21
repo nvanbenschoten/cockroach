@@ -22,7 +22,7 @@ import (
 )
 
 func init() {
-	RegisterCommand(roachpb.Put, declareKeysPut, Put)
+	RegisterIsolatedCommand(roachpb.Put, declareKeysPut, Put, true)
 }
 
 func declareKeysPut(

@@ -169,11 +169,6 @@ MVCCStatsResult MVCCComputeStatsInternal(::rocksdb::Iterator* const iter_rep, DB
         } else {
           stats.gc_bytes_age += total_bytes * age_factor(meta.timestamp().wall_time(), now_nanos);
         }
-        if (meta.has_txn()) {
-          stats.intent_bytes += total_bytes;
-          stats.intent_count++;
-          stats.intent_age += age_factor(meta.timestamp().wall_time(), now_nanos);
-        }
         if (meta.key_bytes() != kMVCCVersionTimestampSize) {
           stats.status = FmtStatus("expected mvcc metadata key bytes to equal %d; got %d",
                                    kMVCCVersionTimestampSize, int(meta.key_bytes()));

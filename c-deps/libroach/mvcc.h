@@ -63,14 +63,12 @@ template <bool reverse> class mvccScanner {
         tombstones_(tombstones),
         check_uncertainty_(timestamp < txn.max_timestamp),
         kvs_(new chunkedBuffer),
-        intents_(new rocksdb::WriteBatch),
         peeked_(false),
         iters_before_seek_(kMaxItersBeforeSeek / 2) {
     memset(&results_, 0, sizeof(results_));
     results_.status = kSuccess;
 
     iter_->kvs.reset();
-    iter_->intents.reset();
   }
 
   // The MVCC data is sorted by key and descending timestamp. If a key
@@ -154,47 +152,15 @@ template <bool reverse> class mvccScanner {
         kvs_->GetChunks(&results_.data.bufs, &results_.data.len);
         results_.data.count = kvs_->Count();
       }
-      if (intents_->Count() > 0) {
-        results_.intents = ToDBSlice(intents_->Data());
-      }
       iter_->kvs.reset(kvs_.release());
-      iter_->intents.reset(intents_.release());
     }
     return results_;
-  }
-
-  bool getFromIntentHistory() {
-    cockroach::storage::engine::enginepb::MVCCMetadata_SequencedIntent readIntent;
-    readIntent.set_sequence(txn_sequence_);
-    // Look for the intent with the sequence number less than or equal to the
-    // read sequence. To do so, search using upper_bound, which returns an
-    // iterator pointing to the first element in the range [first, last) that is
-    // greater than value, or last if no such element is found. Then, return the
-    // previous value.
-    auto up = std::upper_bound(
-        meta_.intent_history().begin(), meta_.intent_history().end(), readIntent,
-        [](const cockroach::storage::engine::enginepb::MVCCMetadata_SequencedIntent& a,
-           const cockroach::storage::engine::enginepb::MVCCMetadata_SequencedIntent& b) -> bool {
-          return a.sequence() < b.sequence();
-        });
-    if (up == meta_.intent_history().begin()) {
-      // It is possible that no intent exists such that the sequence is less
-      // than the read sequence. In this case, we cannot read a value from the
-      // intent history.
-      return false;
-    }
-    const auto intent = *(up - 1);
-    rocksdb::Slice value = intent.value();
-    if (value.size() > 0 || tombstones_) {
-      kvs_->Put(cur_raw_key_, value);
-    }
-    return true;
   }
 
   bool uncertaintyError(DBTimestamp ts) {
     results_.uncertainty_timestamp = ts;
     kvs_->Clear();
-    intents_->Clear();
+    // intents_->Clear();
     return false;
   }
 
@@ -246,103 +212,7 @@ template <bool reverse> class mvccScanner {
       return addAndAdvance(meta_.raw_bytes());
     }
 
-    if (!meta_.has_txn()) {
-      return setStatus(FmtStatus("intent without transaction"));
-    }
-
-    const bool own_intent = (meta_.txn().id() == txn_id_);
-    const DBTimestamp meta_timestamp = ToDBTimestamp(meta_.timestamp());
-    // meta_timestamp is the timestamp of an intent value, which we may or may
-    // not end up ignoring, depending on factors codified below. If we do ignore
-    // the intent then we want to read at a lower timestamp that's strictly
-    // below the intent timestamp (to skip the intent), but also does not exceed
-    // our read timestamp (to avoid erroneously picking up future committed
-    // values); this timestamp is prev_timestamp.
-    const DBTimestamp prev_timestamp =
-        timestamp_ < meta_timestamp ? timestamp_ : PrevTimestamp(meta_timestamp);
-    // Intents for other transactions are visible at or below:
-    //   max(txn.max_timestamp, read_timestamp)
-    const DBTimestamp max_visible_timestamp = check_uncertainty_ ? txn_max_timestamp_ : timestamp_;
-    if (max_visible_timestamp < meta_timestamp && !own_intent) {
-      // 5. The key contains an intent, but we're reading before the
-      // intent. Seek to the desired version. Note that if we own the
-      // intent (i.e. we're reading transactionally) we want to read
-      // the intent regardless of our read timestamp and fall into
-      // case 8 below.
-      return seekVersion(timestamp_, false);
-    }
-
-    if (inconsistent_) {
-      // 6. The key contains an intent and we're doing an inconsistent
-      // read at a timestamp newer than the intent. We ignore the
-      // intent by insisting that the timestamp we're reading at is a
-      // historical timestamp < the intent timestamp. However, we
-      // return the intent separately; the caller may want to resolve
-      // it.
-      if (kvs_->Count() == max_keys_) {
-        // We've already retrieved the desired number of keys and now
-        // we're adding the resume key. We don't want to add the
-        // intent here as the intents should only correspond to KVs
-        // that lie before the resume key.
-        return false;
-      }
-      intents_->Put(cur_raw_key_, cur_value_);
-      return seekVersion(prev_timestamp, false);
-    }
-
-    if (!own_intent) {
-      // 7. The key contains an intent which was not written by our
-      // transaction and our read timestamp is newer than that of the
-      // intent. Note that this will trigger an error on the Go
-      // side. We continue scanning so that we can return all of the
-      // intents in the scan range.
-      intents_->Put(cur_raw_key_, cur_value_);
-      return advanceKey();
-    }
-
-    if (txn_epoch_ == meta_.txn().epoch()) {
-      if (txn_sequence_ >= meta_.txn().sequence()) {
-        // 8. We're reading our own txn's intent at an equal or higher sequence.
-        // Note that we read at the intent timestamp, not at our read timestamp
-        // as the intent timestamp may have been pushed forward by another
-        // transaction. Txn's always need to read their own writes.
-        return seekVersion(meta_timestamp, false);
-      } else {
-        // 9. We're reading our own txn's intent at a lower sequence than is
-        // currently present in the intent. This means the intent we're seeing
-        // was written at a higher sequence than the read and that there may or
-        // may not be earlier versions of the intent (with lower sequence
-        // numbers) that we should read. If there exists a value in the intent
-        // history that has a sequence number equal to or less than the read
-        // sequence, read that value.
-        const bool found = getFromIntentHistory();
-        if (found) {
-          return advanceKey();
-        }
-        // 10. If no value in the intent history has a sequence number equal to
-        // or less than the read, we must ignore the intents laid down by the
-        // transaction all together. We ignore the intent by insisting that the
-        // timestamp we're reading at is a historical timestamp < the intent
-        // timestamp.
-        return seekVersion(prev_timestamp, false);
-      }
-    }
-
-    if (txn_epoch_ < meta_.txn().epoch()) {
-      // 11. We're reading our own txn's intent but the current txn has
-      // an earlier epoch than the intent. Return an error so that the
-      // earlier incarnation of our transaction aborts (presumably
-      // this is some operation that was retried).
-      return setStatus(FmtStatus("failed to read with epoch %u due to a write intent with epoch %u",
-                                 txn_epoch_, meta_.txn().epoch()));
-    }
-
-    // 12. We're reading our own txn's intent but the current txn has a
-    // later epoch than the intent. This can happen if the txn was
-    // restarted and an earlier iteration wrote the value we're now
-    // reading. In this case, we ignore the intent and read the
-    // previous value as if the transaction were starting fresh.
-    return seekVersion(prev_timestamp, false);
+    return setStatus(FmtStatus("intent without transaction"));
   }
 
   // nextKey advances the iterator to point to the next MVCC key
@@ -668,7 +538,7 @@ template <bool reverse> class mvccScanner {
   const bool check_uncertainty_;
   DBScanResults results_;
   std::unique_ptr<chunkedBuffer> kvs_;
-  std::unique_ptr<rocksdb::WriteBatch> intents_;
+  // std::unique_ptr<rocksdb::WriteBatch> intents_;
   std::string key_buf_;
   std::string saved_buf_;
   bool peeked_;

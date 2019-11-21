@@ -307,7 +307,7 @@ MVCCStatsResult MVCCComputeStats(DBIterator* iter, DBKey start, DBKey end, int64
 // SST key is greater than or equal to the timestamp of the tombstone, then it
 // is not considered a collision and we continue iteration from the next key in
 // the existing data.
-DBIterState DBCheckForKeyCollisions(DBIterator* existingIter, DBIterator* sstIter, MVCCStatsResult* skippedKVStats, DBString* write_intent);
+DBIterState DBCheckForKeyCollisions(DBIterator* existingIter, DBIterator* sstIter, MVCCStatsResult* skippedKVStats);
 
 bool MVCCIsValidSplitKey(DBSlice key);
 DBStatus MVCCFindSplitKey(DBIterator* iter, DBKey start, DBKey min_split,
@@ -341,7 +341,6 @@ typedef struct {
 typedef struct {
   DBStatus status;
   DBChunkedBuffer data;
-  DBSlice intents;
   DBTimestamp uncertainty_timestamp;
   DBSlice resume_key;
 } DBScanResults;
@@ -540,7 +539,7 @@ DBStatus DBUnlockFile(DBFileLock lock);
 // DBExportToSst exports changes over the keyrange and time interval between the
 // start and end DBKeys to an SSTable using an IncrementalIterator.
 DBStatus DBExportToSst(DBKey start, DBKey end, bool export_all_revisions, DBIterOptions iter_opts,
-                       DBEngine* engine, DBString* data, DBString* write_intent, DBString* summary);
+                       DBEngine* engine, DBString* data, DBString* summary);
 
 #ifdef __cplusplus
 }  // extern "C"

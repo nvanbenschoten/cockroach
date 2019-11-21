@@ -18,6 +18,7 @@ import (
 	"github.com/cockroachdb/cockroach/pkg/storage/engine"
 	"github.com/cockroachdb/cockroach/pkg/storage/spanset"
 	"github.com/cockroachdb/cockroach/pkg/util/hlc"
+	"github.com/cockroachdb/cockroach/pkg/util/log"
 )
 
 func init() {
@@ -49,6 +50,8 @@ func QueryIntent(
 	h := cArgs.Header
 	reply := resp.(*roachpb.QueryIntentResponse)
 
+	log.Fatalf(ctx, "unsupported")
+
 	// Read at the specified key at the maximum timestamp. This ensures that we
 	// see an intent if one exists, regardless of what timestamp it is written
 	// at.
@@ -56,10 +59,6 @@ func QueryIntent(
 		// Perform an inconsistent read so that intents are returned instead of
 		// causing WriteIntentErrors.
 		Inconsistent: true,
-		// Even if the request header contains a txn, perform the engine lookup
-		// without a transaction so that intents for a matching transaction are
-		// not returned as values (i.e. we don't want to see our own writes).
-		Txn: nil,
 	})
 	if err != nil {
 		return result.Result{}, err

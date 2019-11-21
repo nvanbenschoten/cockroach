@@ -19,7 +19,7 @@ import (
 )
 
 func init() {
-	RegisterCommand(roachpb.Increment, DefaultDeclareKeys, Increment)
+	RegisterIsolatedCommand(roachpb.Increment, DefaultDeclareKeys, Increment, true)
 }
 
 // Increment increments the value (interpreted as varint64 encoded) and

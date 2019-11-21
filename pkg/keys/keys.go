@@ -422,6 +422,23 @@ func TransactionKey(key roachpb.Key, txnID uuid.UUID) roachpb.Key {
 	return MakeRangeKey(rk, LocalTransactionSuffix, roachpb.RKey(txnID.GetBytes()))
 }
 
+// LockTableKey returns a lock table key based on the provided key being locked
+// and transaction ID. The base key is encoded in order to guarantee that a lock
+// table for a range is stored together.
+func LockTableKey(key roachpb.Key, txnID uuid.UUID) roachpb.Key {
+	// Don't unwrap any local prefix on key using Addr(key). This allow for
+	// doubly-local lock table keys.
+	rk := roachpb.RKey(key)
+	return MakeRangeKey(rk, LocalLockTableSuffix, roachpb.RKey(txnID.GetBytes()))
+}
+
+func LockTablePrefixKey(key roachpb.Key) roachpb.Key {
+	// Don't unwrap any local prefix on key using Addr(key). This allow for
+	// doubly-local lock table keys.
+	rk := roachpb.RKey(key)
+	return MakeRangeKey(rk, LocalLockTableSuffix, nil)
+}
+
 // QueueLastProcessedKey returns a range-local key for last processed
 // timestamps for the named queue. These keys represent per-range last
 // processed times.
@@ -456,8 +473,8 @@ func IsLocal(k roachpb.Key) bool {
 //
 // However, not all local keys are addressable in the global map. Only range
 // local keys incorporating a range key (start key or transaction key) are
-// addressable (e.g. range metadata and txn records). Range local keys
-// incorporating the Range ID are not (e.g. AbortSpan Entries, and range
+// addressable (e.g. range metadata, txn records, and txn locks). Range local
+// keys incorporating the Range ID are not (e.g. AbortSpan Entries, and range
 // stats).
 //
 // See AddrUpperBound which is to be used when `k` is the EndKey of an interval.

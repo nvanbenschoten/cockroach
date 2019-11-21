@@ -25,25 +25,6 @@ class TimeBoundTblPropCollector : public rocksdb::TablePropertiesCollector {
   const char* Name() const override { return "TimeBoundTblPropCollector"; }
 
   rocksdb::Status Finish(rocksdb::UserCollectedProperties* properties) override {
-    if (!last_value_.empty()) {
-      // Check to see if an intent was the last key in the SSTable. If
-      // it was, we need to extract the timestamp from the intent and
-      // update the bounds to include that timestamp.
-      cockroach::storage::engine::enginepb::MVCCMetadata meta;
-      if (!meta.ParseFromArray(last_value_.data(), last_value_.size())) {
-        // We're unable to parse the MVCCMetadata. Fail open by not
-        // setting the min/max timestamp properties.
-        return rocksdb::Status::OK();
-      }
-      if (meta.has_txn()) {
-        // We have an intent, use the intent's timestamp to update the
-        // timestamp bounds.
-        std::string ts;
-        EncodeTimestamp(ts, meta.timestamp().wall_time(), meta.timestamp().logical());
-        UpdateBounds(ts);
-      }
-    }
-
     *properties = rocksdb::UserCollectedProperties{
         {"crdb.ts.min", ts_min_},
         {"crdb.ts.max", ts_max_},

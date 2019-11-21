@@ -380,6 +380,22 @@ func (p *pebbleIterator) SetUpperBound(upperBound roachpb.Key) {
 	p.iter.SetBounds(p.options.LowerBound, p.options.UpperBound)
 }
 
+func (p *pebbleIterator) GetLowerBound() roachpb.Key {
+	return p.options.LowerBound
+}
+
+func (p *pebbleIterator) GetUpperBound() roachpb.Key {
+	return p.options.UpperBound
+}
+
+func (p *pebbleIterator) GetPrefix() bool {
+	return p.prefix
+}
+
+func (p *pebbleIterator) SetPrefix(b bool) {
+	p.prefix = b
+}
+
 // Stats implements the Iterator interface.
 func (p *pebbleIterator) Stats() IteratorStats {
 	return IteratorStats{

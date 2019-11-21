@@ -47,13 +47,26 @@ func ResolveIntentRange(
 		Txn:    args.IntentTxn,
 		Status: args.Status,
 	}
-
-	iterAndBuf := engine.GetIterAndBuf(batch, engine.IterOptions{UpperBound: args.EndKey})
-	defer iterAndBuf.Cleanup()
-
-	numKeys, resumeSpan, err := engine.MVCCResolveWriteIntentRangeUsingIter(
-		ctx, batch, iterAndBuf, ms, intent, cArgs.MaxKeys,
-	)
+	cm := cArgs.EvalCtx.ConcurrencyManager()
+	numKeys, resumeSpan, err := cm.RemoveLocks(ctx, batch, ms, intent, cArgs.MaxKeys, func(curKey engine.MVCCKey, intent roachpb.Intent) error {
+		switch intent.Status {
+		case roachpb.COMMITTED:
+			// Rewrite the versioned value at the new timestamp.
+			valBytes, err := batch.Get(curKey)
+			if err != nil {
+				return err
+			}
+			newKey := engine.MVCCKey{Key: curKey.Key, Timestamp: intent.Txn.WriteTimestamp}
+			if err = batch.Put(newKey, valBytes); err != nil {
+				return err
+			}
+			return batch.Clear(curKey)
+		case roachpb.ABORTED:
+			return batch.Clear(curKey)
+		default:
+			panic("unexpected")
+		}
+	})
 	if err != nil {
 		return result.Result{}, err
 	}

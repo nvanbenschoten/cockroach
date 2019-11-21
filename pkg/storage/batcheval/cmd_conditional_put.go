@@ -19,7 +19,7 @@ import (
 )
 
 func init() {
-	RegisterCommand(roachpb.ConditionalPut, DefaultDeclareKeys, ConditionalPut)
+	RegisterIsolatedCommand(roachpb.ConditionalPut, DefaultDeclareKeys, ConditionalPut, true)
 }
 
 // ConditionalPut sets the value for a specified key only if

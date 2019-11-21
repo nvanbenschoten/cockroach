@@ -21,6 +21,7 @@ import (
 	"github.com/cockroachdb/cockroach/pkg/settings/cluster"
 	"github.com/cockroachdb/cockroach/pkg/storage/abortspan"
 	"github.com/cockroachdb/cockroach/pkg/storage/cloud"
+	"github.com/cockroachdb/cockroach/pkg/storage/concurrency"
 	"github.com/cockroachdb/cockroach/pkg/storage/engine"
 	"github.com/cockroachdb/cockroach/pkg/storage/engine/enginepb"
 	"github.com/cockroachdb/cockroach/pkg/storage/spanset"
@@ -65,6 +66,9 @@ func (m *mockEvalCtx) DB() *client.DB {
 	panic("unimplemented")
 }
 func (m *mockEvalCtx) GetLimiters() *Limiters {
+	panic("unimplemented")
+}
+func (m *mockEvalCtx) ConcurrencyManager() concurrency.Manager {
 	panic("unimplemented")
 }
 func (m *mockEvalCtx) AbortSpan() *abortspan.AbortSpan {

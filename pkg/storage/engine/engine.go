@@ -125,6 +125,13 @@ type Iterator interface {
 	Stats() IteratorStats
 }
 
+type WithBounds interface {
+	GetLowerBound() roachpb.Key
+	GetUpperBound() roachpb.Key
+	GetPrefix() bool
+	SetPrefix(bool)
+}
+
 // MVCCIterator is an interface that extends Iterator and provides concrete
 // implementations for MVCCGet and MVCCScan operations. It is used by instances
 // of the interface backed by RocksDB iterators to avoid cgo hops.

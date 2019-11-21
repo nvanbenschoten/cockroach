@@ -19,6 +19,7 @@ import (
 	"github.com/cockroachdb/cockroach/pkg/settings/cluster"
 	"github.com/cockroachdb/cockroach/pkg/storage/abortspan"
 	"github.com/cockroachdb/cockroach/pkg/storage/cloud"
+	"github.com/cockroachdb/cockroach/pkg/storage/concurrency"
 	"github.com/cockroachdb/cockroach/pkg/storage/engine"
 	"github.com/cockroachdb/cockroach/pkg/storage/engine/enginepb"
 	"github.com/cockroachdb/cockroach/pkg/storage/storagebase"
@@ -52,6 +53,7 @@ type EvalContext interface {
 	Engine() engine.Engine
 	Clock() *hlc.Clock
 	DB() *client.DB
+	ConcurrencyManager() concurrency.Manager
 	AbortSpan() *abortspan.AbortSpan
 	GetTxnWaitQueue() *txnwait.Queue
 	GetLimiters() *Limiters

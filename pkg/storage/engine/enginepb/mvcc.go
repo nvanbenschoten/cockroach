@@ -166,57 +166,6 @@ func (meta MVCCMetadata) IsInline() bool {
 	return meta.RawBytes != nil
 }
 
-// AddToIntentHistory adds the sequence and value to the intent history.
-func (meta *MVCCMetadata) AddToIntentHistory(seq TxnSeq, val []byte) {
-	meta.IntentHistory = append(meta.IntentHistory,
-		MVCCMetadata_SequencedIntent{Sequence: seq, Value: val})
-}
-
-// GetPrevIntentSeq goes through the intent history and finds the previous
-// intent's sequence number given the current sequence.
-func (meta *MVCCMetadata) GetPrevIntentSeq(seq TxnSeq) (TxnSeq, bool) {
-	index := sort.Search(len(meta.IntentHistory), func(i int) bool {
-		return meta.IntentHistory[i].Sequence >= seq
-	})
-	if index > 0 && index < len(meta.IntentHistory) {
-		return meta.IntentHistory[index-1].Sequence, true
-	}
-	return 0, false
-}
-
-// GetIntentValue goes through the intent history and finds the value
-// written at the sequence number.
-func (meta *MVCCMetadata) GetIntentValue(seq TxnSeq) ([]byte, bool) {
-	index := sort.Search(len(meta.IntentHistory), func(i int) bool {
-		return meta.IntentHistory[i].Sequence >= seq
-	})
-	if index < len(meta.IntentHistory) && meta.IntentHistory[index].Sequence == seq {
-		return meta.IntentHistory[index].Value, true
-	}
-	return nil, false
-}
-
-// String implements the fmt.Stringer interface.
-func (m *MVCCMetadata_SequencedIntent) String() string {
-	var buf strings.Builder
-	m.FormatW(&buf, false /* expand */)
-	return buf.String()
-}
-
-// Format implements the fmt.Formatter interface.
-func (m *MVCCMetadata_SequencedIntent) Format(f fmt.State, r rune) {
-	m.FormatW(f, f.Flag('+'))
-}
-
-// FormatW enables grouping formatters around a single buffer while
-// avoiding copies.
-func (m *MVCCMetadata_SequencedIntent) FormatW(buf io.Writer, expand bool) {
-	fmt.Fprintf(buf,
-		"{%d %s}",
-		m.Sequence,
-		FormatBytesAsValue(m.Value))
-}
-
 // String implements the fmt.Stringer interface.
 func (meta *MVCCMetadata) String() string {
 	var buf strings.Builder
@@ -232,8 +181,7 @@ func (meta *MVCCMetadata) Format(f fmt.State, r rune) {
 // FormatW enables grouping formatters around a single buffer while
 // avoiding copies.
 func (meta *MVCCMetadata) FormatW(buf io.Writer, expand bool) {
-	fmt.Fprintf(buf, "txn={%s} ts=%s del=%t klen=%d vlen=%d",
-		meta.Txn,
+	fmt.Fprintf(buf, "ts=%s del=%t klen=%d vlen=%d",
 		meta.Timestamp,
 		meta.Deleted,
 		meta.KeyBytes,
@@ -246,17 +194,6 @@ func (meta *MVCCMetadata) FormatW(buf io.Writer, expand bool) {
 			fmt.Fprintf(buf, " rawlen=%d", len(meta.RawBytes))
 		}
 	}
-	if nih := len(meta.IntentHistory); nih > 0 {
-		if expand {
-			fmt.Fprint(buf, " ih={")
-			for i := range meta.IntentHistory {
-				meta.IntentHistory[i].FormatW(buf, expand)
-			}
-			fmt.Fprint(buf, "}")
-		} else {
-			fmt.Fprintf(buf, " nih=%d", nih)
-		}
-	}
 }
 
 // SafeMessage implements the SafeMessager interface.
@@ -265,8 +202,7 @@ func (meta *MVCCMetadata) FormatW(buf io.Writer, expand bool) {
 // can't include sensitive info (e.g. the transaction key).
 func (meta *MVCCMetadata) SafeMessage() string {
 	var buf strings.Builder
-	fmt.Fprintf(&buf, "{%s} ts=%s del=%t klen=%d vlen=%d",
-		meta.Txn.SafeMessage(),
+	fmt.Fprintf(&buf, "ts=%s del=%t klen=%d vlen=%d",
 		meta.Timestamp,
 		meta.Deleted,
 		meta.KeyBytes,
@@ -274,9 +210,6 @@ func (meta *MVCCMetadata) SafeMessage() string {
 	)
 	if len(meta.RawBytes) > 0 {
 		fmt.Fprintf(&buf, " rawlen=%d", len(meta.RawBytes))
-	}
-	if nih := len(meta.IntentHistory); nih > 0 {
-		fmt.Fprintf(&buf, " nih=%d", nih)
 	}
 	return buf.String()
 }
@@ -325,6 +258,45 @@ func (t TxnMeta) SafeMessage() string {
 		t.MinTimestamp,
 		t.Sequence)
 	return buf.String()
+}
+
+// String implements the fmt.Stringer interface.
+func (m *MVCCLock_SequencedIntent) String() string {
+	var buf strings.Builder
+	m.FormatW(&buf, false /* expand */)
+	return buf.String()
+}
+
+// Format implements the fmt.Formatter interface.
+func (m *MVCCLock_SequencedIntent) Format(f fmt.State, r rune) {
+	m.FormatW(f, f.Flag('+'))
+}
+
+// FormatW enables grouping formatters around a single buffer while
+// avoiding copies.
+func (m *MVCCLock_SequencedIntent) FormatW(buf io.Writer, expand bool) {
+	fmt.Fprintf(buf,
+		"{%d %s}",
+		m.Sequence,
+		FormatBytesAsValue(m.Value))
+}
+
+// AddToIntentHistory adds the sequence and value to the intent history.
+func (lock *MVCCLock) AddToIntentHistory(seq TxnSeq, val []byte) {
+	lock.IntentHistory = append(lock.IntentHistory,
+		MVCCLock_SequencedIntent{Sequence: seq, Value: val})
+}
+
+// GetIntentValue goes through the intent history and finds the value
+// written at the sequence number.
+func (lock *MVCCLock) GetIntentValue(seq TxnSeq) ([]byte, bool) {
+	index := sort.Search(len(lock.IntentHistory), func(i int) bool {
+		return lock.IntentHistory[i].Sequence >= seq
+	})
+	if index < len(lock.IntentHistory) && lock.IntentHistory[index].Sequence == seq {
+		return lock.IntentHistory[index].Value, true
+	}
+	return nil, false
 }
 
 var _ log.SafeMessager = (*TxnMeta)(nil)

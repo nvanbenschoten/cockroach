@@ -445,12 +445,6 @@ func resolveLocalIntents(
 		desc = &mergeTrigger.LeftDesc
 	}
 
-	iter := batch.NewIterator(engine.IterOptions{
-		UpperBound: desc.EndKey.AsRawKey(),
-	})
-	iterAndBuf := engine.GetBufUsingIter(iter)
-	defer iterAndBuf.Cleanup()
-
 	var externalIntents []roachpb.Span
 	var resolveAllowance int64 = intentResolutionBatchSize
 	if args.InternalCommitTrigger != nil {
@@ -465,6 +459,26 @@ func resolveLocalIntents(
 				return nil
 			}
 			intent := roachpb.Intent{Span: span, Txn: txn.TxnMeta, Status: txn.Status}
+			intentCB := func(curKey engine.MVCCKey, intent roachpb.Intent) error {
+				switch intent.Status {
+				case roachpb.COMMITTED:
+					// Rewrite the versioned value at the new timestamp.
+					valBytes, err := batch.Get(curKey)
+					if err != nil {
+						return err
+					}
+					newKey := engine.MVCCKey{Key: curKey.Key, Timestamp: intent.Txn.WriteTimestamp}
+					if err = batch.Put(newKey, valBytes); err != nil {
+						return err
+					}
+					return batch.Clear(curKey)
+				case roachpb.ABORTED:
+					return batch.Clear(curKey)
+				default:
+					panic("unexpected")
+				}
+			}
+
 			if len(span.EndKey) == 0 {
 				// For single-key intents, do a KeyAddress-aware check of
 				// whether it's contained in our Range.
@@ -472,10 +486,11 @@ func resolveLocalIntents(
 					externalIntents = append(externalIntents, span)
 					return nil
 				}
-				resolveMS := ms
 				resolveAllowance--
-				return engine.MVCCResolveWriteIntentUsingIter(ctx, batch, iterAndBuf, resolveMS, intent)
+				cm := evalCtx.ConcurrencyManager()
+				return cm.RemoveLock(ctx, batch, ms, intent, intentCB)
 			}
+
 			// For intent ranges, cut into parts inside and outside our key
 			// range. Resolve locally inside, delegate the rest. In particular,
 			// an intent range for range-local data is correctly considered local.
@@ -483,7 +498,8 @@ func resolveLocalIntents(
 			externalIntents = append(externalIntents, outSpans...)
 			if inSpan != nil {
 				intent.Span = *inSpan
-				num, resumeSpan, err := engine.MVCCResolveWriteIntentRangeUsingIter(ctx, batch, iterAndBuf, ms, intent, resolveAllowance)
+				cm := evalCtx.ConcurrencyManager()
+				num, resumeSpan, err := cm.RemoveLocks(ctx, batch, ms, intent, resolveAllowance, intentCB)
 				if err != nil {
 					return err
 				}

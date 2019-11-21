@@ -1047,8 +1047,8 @@ func (t TeeEngineIter) MVCCOpsSpecialized() bool {
 func (t TeeEngineIter) MVCCGet(
 	key roachpb.Key, timestamp hlc.Timestamp, opts MVCCGetOptions,
 ) (*roachpb.Value, *roachpb.Intent, error) {
-	value1, intent1, err := mvccGet(t.ctx, t.iter1, key, timestamp, opts)
-	value2, intent2, err2 := mvccGet(t.ctx, t.iter2, key, timestamp, opts)
+	value1, intent1, err := MVCCGetWithIter(t.ctx, t.iter1, key, timestamp, opts)
+	value2, intent2, err2 := MVCCGetWithIter(t.ctx, t.iter2, key, timestamp, opts)
 	if err = fatalOnErrorMismatch(t.ctx, err, err2); err != nil {
 		return nil, nil, err
 	}
@@ -1087,8 +1087,8 @@ func kvDataEqual(ctx context.Context, data1 []byte, data2 [][]byte) bool {
 func (t TeeEngineIter) MVCCScan(
 	start, end roachpb.Key, max int64, timestamp hlc.Timestamp, opts MVCCScanOptions,
 ) (kvData [][]byte, numKVs int64, resumeSpan *roachpb.Span, intents []roachpb.Intent, err error) {
-	kvData1, numKvs1, resumeSpan1, intents1, err := mvccScanToBytes(t.ctx, t.iter1, start, end, max, timestamp, opts)
-	kvData2, numKvs2, resumeSpan2, intents2, err2 := mvccScanToBytes(t.ctx, t.iter2, start, end, max, timestamp, opts)
+	kvData1, numKvs1, resumeSpan1, intents1, err := MVCCScanToBytesWithIter(t.ctx, t.iter1, start, end, max, timestamp, opts)
+	kvData2, numKvs2, resumeSpan2, intents2, err2 := MVCCScanToBytesWithIter(t.ctx, t.iter2, start, end, max, timestamp, opts)
 
 	if err = fatalOnErrorMismatch(t.ctx, err, err2); err != nil {
 		return nil, 0, nil, nil, err

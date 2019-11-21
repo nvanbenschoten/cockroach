@@ -29,7 +29,6 @@
 #include <google/protobuf/message_lite.h>
 #include <google/protobuf/repeated_field.h>  // IWYU pragma: export
 #include <google/protobuf/extension_set.h>  // IWYU pragma: export
-#include "storage/engine/enginepb/mvcc3.pb.h"
 #include "util/hlc/legacy_timestamp.pb.h"
 // @@protoc_insertion_point(includes)
 #define PROTOBUF_INTERNAL_EXPORT_protobuf_storage_2fengine_2fenginepb_2fmvcc_2eproto 
@@ -39,7 +38,7 @@ namespace protobuf_storage_2fengine_2fenginepb_2fmvcc_2eproto {
 struct TableStruct {
   static const ::google::protobuf::internal::ParseTableField entries[];
   static const ::google::protobuf::internal::AuxillaryParseTableField aux[];
-  static const ::google::protobuf::internal::ParseTable schema[3];
+  static const ::google::protobuf::internal::ParseTable schema[2];
   static const ::google::protobuf::internal::FieldMetadata field_metadata[];
   static const ::google::protobuf::internal::SerializationTable serialization_table[];
   static const ::google::protobuf::uint32 offsets[];
@@ -52,9 +51,6 @@ namespace enginepb {
 class MVCCMetadata;
 class MVCCMetadataDefaultTypeInternal;
 extern MVCCMetadataDefaultTypeInternal _MVCCMetadata_default_instance_;
-class MVCCMetadata_SequencedIntent;
-class MVCCMetadata_SequencedIntentDefaultTypeInternal;
-extern MVCCMetadata_SequencedIntentDefaultTypeInternal _MVCCMetadata_SequencedIntent_default_instance_;
 class MVCCStats;
 class MVCCStatsDefaultTypeInternal;
 extern MVCCStatsDefaultTypeInternal _MVCCStats_default_instance_;
@@ -65,7 +61,6 @@ extern MVCCStatsDefaultTypeInternal _MVCCStats_default_instance_;
 namespace google {
 namespace protobuf {
 template<> ::cockroach::storage::engine::enginepb::MVCCMetadata* Arena::CreateMaybeMessage<::cockroach::storage::engine::enginepb::MVCCMetadata>(Arena*);
-template<> ::cockroach::storage::engine::enginepb::MVCCMetadata_SequencedIntent* Arena::CreateMaybeMessage<::cockroach::storage::engine::enginepb::MVCCMetadata_SequencedIntent>(Arena*);
 template<> ::cockroach::storage::engine::enginepb::MVCCStats* Arena::CreateMaybeMessage<::cockroach::storage::engine::enginepb::MVCCStats>(Arena*);
 }  // namespace protobuf
 }  // namespace google
@@ -75,135 +70,6 @@ namespace engine {
 namespace enginepb {
 
 // ===================================================================
-
-class MVCCMetadata_SequencedIntent : public ::google::protobuf::MessageLite /* @@protoc_insertion_point(class_definition:cockroach.storage.engine.enginepb.MVCCMetadata.SequencedIntent) */ {
- public:
-  MVCCMetadata_SequencedIntent();
-  virtual ~MVCCMetadata_SequencedIntent();
-
-  MVCCMetadata_SequencedIntent(const MVCCMetadata_SequencedIntent& from);
-
-  inline MVCCMetadata_SequencedIntent& operator=(const MVCCMetadata_SequencedIntent& from) {
-    CopyFrom(from);
-    return *this;
-  }
-  #if LANG_CXX11
-  MVCCMetadata_SequencedIntent(MVCCMetadata_SequencedIntent&& from) noexcept
-    : MVCCMetadata_SequencedIntent() {
-    *this = ::std::move(from);
-  }
-
-  inline MVCCMetadata_SequencedIntent& operator=(MVCCMetadata_SequencedIntent&& from) noexcept {
-    if (GetArenaNoVirtual() == from.GetArenaNoVirtual()) {
-      if (this != &from) InternalSwap(&from);
-    } else {
-      CopyFrom(from);
-    }
-    return *this;
-  }
-  #endif
-  inline const ::std::string& unknown_fields() const {
-    return _internal_metadata_.unknown_fields();
-  }
-  inline ::std::string* mutable_unknown_fields() {
-    return _internal_metadata_.mutable_unknown_fields();
-  }
-
-  static const MVCCMetadata_SequencedIntent& default_instance();
-
-  static void InitAsDefaultInstance();  // FOR INTERNAL USE ONLY
-  static inline const MVCCMetadata_SequencedIntent* internal_default_instance() {
-    return reinterpret_cast<const MVCCMetadata_SequencedIntent*>(
-               &_MVCCMetadata_SequencedIntent_default_instance_);
-  }
-  static constexpr int kIndexInFileMessages =
-    0;
-
-  void Swap(MVCCMetadata_SequencedIntent* other);
-  friend void swap(MVCCMetadata_SequencedIntent& a, MVCCMetadata_SequencedIntent& b) {
-    a.Swap(&b);
-  }
-
-  // implements Message ----------------------------------------------
-
-  inline MVCCMetadata_SequencedIntent* New() const final {
-    return CreateMaybeMessage<MVCCMetadata_SequencedIntent>(NULL);
-  }
-
-  MVCCMetadata_SequencedIntent* New(::google::protobuf::Arena* arena) const final {
-    return CreateMaybeMessage<MVCCMetadata_SequencedIntent>(arena);
-  }
-  void CheckTypeAndMergeFrom(const ::google::protobuf::MessageLite& from)
-    final;
-  void CopyFrom(const MVCCMetadata_SequencedIntent& from);
-  void MergeFrom(const MVCCMetadata_SequencedIntent& from);
-  void Clear() final;
-  bool IsInitialized() const final;
-
-  size_t ByteSizeLong() const final;
-  bool MergePartialFromCodedStream(
-      ::google::protobuf::io::CodedInputStream* input) final;
-  void SerializeWithCachedSizes(
-      ::google::protobuf::io::CodedOutputStream* output) const final;
-  void DiscardUnknownFields();
-  int GetCachedSize() const final { return _cached_size_.Get(); }
-
-  private:
-  void SharedCtor();
-  void SharedDtor();
-  void SetCachedSize(int size) const;
-  void InternalSwap(MVCCMetadata_SequencedIntent* other);
-  private:
-  inline ::google::protobuf::Arena* GetArenaNoVirtual() const {
-    return NULL;
-  }
-  inline void* MaybeArenaPtr() const {
-    return NULL;
-  }
-  public:
-
-  ::std::string GetTypeName() const final;
-
-  // nested types ----------------------------------------------------
-
-  // accessors -------------------------------------------------------
-
-  // optional bytes value = 2;
-  bool has_value() const;
-  void clear_value();
-  static const int kValueFieldNumber = 2;
-  const ::std::string& value() const;
-  void set_value(const ::std::string& value);
-  #if LANG_CXX11
-  void set_value(::std::string&& value);
-  #endif
-  void set_value(const char* value);
-  void set_value(const void* value, size_t size);
-  ::std::string* mutable_value();
-  ::std::string* release_value();
-  void set_allocated_value(::std::string* value);
-
-  bool has_sequence() const;
-  void clear_sequence();
-  static const int kSequenceFieldNumber = 1;
-  ::google::protobuf::int32 sequence() const;
-  void set_sequence(::google::protobuf::int32 value);
-
-  // @@protoc_insertion_point(class_scope:cockroach.storage.engine.enginepb.MVCCMetadata.SequencedIntent)
- private:
-  void set_has_sequence();
-  void clear_has_sequence();
-  void set_has_value();
-  void clear_has_value();
-
-  ::google::protobuf::internal::InternalMetadataWithArenaLite _internal_metadata_;
-  ::google::protobuf::internal::HasBits<1> _has_bits_;
-  mutable ::google::protobuf::internal::CachedSize _cached_size_;
-  ::google::protobuf::internal::ArenaStringPtr value_;
-  ::google::protobuf::int32 sequence_;
-  friend struct ::protobuf_storage_2fengine_2fenginepb_2fmvcc_2eproto::TableStruct;
-};
-// -------------------------------------------------------------------
 
 class MVCCMetadata : public ::google::protobuf::MessageLite /* @@protoc_insertion_point(class_definition:cockroach.storage.engine.enginepb.MVCCMetadata) */ {
  public:
@@ -246,7 +112,7 @@ class MVCCMetadata : public ::google::protobuf::MessageLite /* @@protoc_insertio
                &_MVCCMetadata_default_instance_);
   }
   static constexpr int kIndexInFileMessages =
-    1;
+    0;
 
   void Swap(MVCCMetadata* other);
   friend void swap(MVCCMetadata& a, MVCCMetadata& b) {
@@ -295,20 +161,7 @@ class MVCCMetadata : public ::google::protobuf::MessageLite /* @@protoc_insertio
 
   // nested types ----------------------------------------------------
 
-  typedef MVCCMetadata_SequencedIntent SequencedIntent;
-
   // accessors -------------------------------------------------------
-
-  int intent_history_size() const;
-  void clear_intent_history();
-  static const int kIntentHistoryFieldNumber = 8;
-  ::cockroach::storage::engine::enginepb::MVCCMetadata_SequencedIntent* mutable_intent_history(int index);
-  ::google::protobuf::RepeatedPtrField< ::cockroach::storage::engine::enginepb::MVCCMetadata_SequencedIntent >*
-      mutable_intent_history();
-  const ::cockroach::storage::engine::enginepb::MVCCMetadata_SequencedIntent& intent_history(int index) const;
-  ::cockroach::storage::engine::enginepb::MVCCMetadata_SequencedIntent* add_intent_history();
-  const ::google::protobuf::RepeatedPtrField< ::cockroach::storage::engine::enginepb::MVCCMetadata_SequencedIntent >&
-      intent_history() const;
 
   // optional bytes raw_bytes = 6;
   bool has_raw_bytes() const;
@@ -324,18 +177,6 @@ class MVCCMetadata : public ::google::protobuf::MessageLite /* @@protoc_insertio
   ::std::string* mutable_raw_bytes();
   ::std::string* release_raw_bytes();
   void set_allocated_raw_bytes(::std::string* raw_bytes);
-
-  // optional .cockroach.storage.engine.enginepb.TxnMeta txn = 1;
-  bool has_txn() const;
-  void clear_txn();
-  static const int kTxnFieldNumber = 1;
-  private:
-  const ::cockroach::storage::engine::enginepb::TxnMeta& _internal_txn() const;
-  public:
-  const ::cockroach::storage::engine::enginepb::TxnMeta& txn() const;
-  ::cockroach::storage::engine::enginepb::TxnMeta* release_txn();
-  ::cockroach::storage::engine::enginepb::TxnMeta* mutable_txn();
-  void set_allocated_txn(::cockroach::storage::engine::enginepb::TxnMeta* txn);
 
   bool has_timestamp() const;
   void clear_timestamp();
@@ -380,8 +221,6 @@ class MVCCMetadata : public ::google::protobuf::MessageLite /* @@protoc_insertio
 
   // @@protoc_insertion_point(class_scope:cockroach.storage.engine.enginepb.MVCCMetadata)
  private:
-  void set_has_txn();
-  void clear_has_txn();
   void set_has_timestamp();
   void clear_has_timestamp();
   void set_has_deleted();
@@ -398,9 +237,7 @@ class MVCCMetadata : public ::google::protobuf::MessageLite /* @@protoc_insertio
   ::google::protobuf::internal::InternalMetadataWithArenaLite _internal_metadata_;
   ::google::protobuf::internal::HasBits<1> _has_bits_;
   mutable ::google::protobuf::internal::CachedSize _cached_size_;
-  ::google::protobuf::RepeatedPtrField< ::cockroach::storage::engine::enginepb::MVCCMetadata_SequencedIntent > intent_history_;
   ::google::protobuf::internal::ArenaStringPtr raw_bytes_;
-  ::cockroach::storage::engine::enginepb::TxnMeta* txn_;
   ::cockroach::util::hlc::LegacyTimestamp* timestamp_;
   ::cockroach::util::hlc::LegacyTimestamp* merge_timestamp_;
   ::google::protobuf::int64 key_bytes_;
@@ -451,7 +288,7 @@ class MVCCStats : public ::google::protobuf::MessageLite /* @@protoc_insertion_p
                &_MVCCStats_default_instance_);
   }
   static constexpr int kIndexInFileMessages =
-    2;
+    1;
 
   void Swap(MVCCStats* other);
   friend void swap(MVCCStats& a, MVCCStats& b) {
@@ -645,163 +482,16 @@ class MVCCStats : public ::google::protobuf::MessageLite /* @@protoc_insertion_p
   #pragma GCC diagnostic push
   #pragma GCC diagnostic ignored "-Wstrict-aliasing"
 #endif  // __GNUC__
-// MVCCMetadata_SequencedIntent
-
-inline bool MVCCMetadata_SequencedIntent::has_sequence() const {
-  return (_has_bits_[0] & 0x00000002u) != 0;
-}
-inline void MVCCMetadata_SequencedIntent::set_has_sequence() {
-  _has_bits_[0] |= 0x00000002u;
-}
-inline void MVCCMetadata_SequencedIntent::clear_has_sequence() {
-  _has_bits_[0] &= ~0x00000002u;
-}
-inline void MVCCMetadata_SequencedIntent::clear_sequence() {
-  sequence_ = 0;
-  clear_has_sequence();
-}
-inline ::google::protobuf::int32 MVCCMetadata_SequencedIntent::sequence() const {
-  // @@protoc_insertion_point(field_get:cockroach.storage.engine.enginepb.MVCCMetadata.SequencedIntent.sequence)
-  return sequence_;
-}
-inline void MVCCMetadata_SequencedIntent::set_sequence(::google::protobuf::int32 value) {
-  set_has_sequence();
-  sequence_ = value;
-  // @@protoc_insertion_point(field_set:cockroach.storage.engine.enginepb.MVCCMetadata.SequencedIntent.sequence)
-}
-
-// optional bytes value = 2;
-inline bool MVCCMetadata_SequencedIntent::has_value() const {
-  return (_has_bits_[0] & 0x00000001u) != 0;
-}
-inline void MVCCMetadata_SequencedIntent::set_has_value() {
-  _has_bits_[0] |= 0x00000001u;
-}
-inline void MVCCMetadata_SequencedIntent::clear_has_value() {
-  _has_bits_[0] &= ~0x00000001u;
-}
-inline void MVCCMetadata_SequencedIntent::clear_value() {
-  value_.ClearToEmptyNoArena(&::google::protobuf::internal::GetEmptyStringAlreadyInited());
-  clear_has_value();
-}
-inline const ::std::string& MVCCMetadata_SequencedIntent::value() const {
-  // @@protoc_insertion_point(field_get:cockroach.storage.engine.enginepb.MVCCMetadata.SequencedIntent.value)
-  return value_.GetNoArena();
-}
-inline void MVCCMetadata_SequencedIntent::set_value(const ::std::string& value) {
-  set_has_value();
-  value_.SetNoArena(&::google::protobuf::internal::GetEmptyStringAlreadyInited(), value);
-  // @@protoc_insertion_point(field_set:cockroach.storage.engine.enginepb.MVCCMetadata.SequencedIntent.value)
-}
-#if LANG_CXX11
-inline void MVCCMetadata_SequencedIntent::set_value(::std::string&& value) {
-  set_has_value();
-  value_.SetNoArena(
-    &::google::protobuf::internal::GetEmptyStringAlreadyInited(), ::std::move(value));
-  // @@protoc_insertion_point(field_set_rvalue:cockroach.storage.engine.enginepb.MVCCMetadata.SequencedIntent.value)
-}
-#endif
-inline void MVCCMetadata_SequencedIntent::set_value(const char* value) {
-  GOOGLE_DCHECK(value != NULL);
-  set_has_value();
-  value_.SetNoArena(&::google::protobuf::internal::GetEmptyStringAlreadyInited(), ::std::string(value));
-  // @@protoc_insertion_point(field_set_char:cockroach.storage.engine.enginepb.MVCCMetadata.SequencedIntent.value)
-}
-inline void MVCCMetadata_SequencedIntent::set_value(const void* value, size_t size) {
-  set_has_value();
-  value_.SetNoArena(&::google::protobuf::internal::GetEmptyStringAlreadyInited(),
-      ::std::string(reinterpret_cast<const char*>(value), size));
-  // @@protoc_insertion_point(field_set_pointer:cockroach.storage.engine.enginepb.MVCCMetadata.SequencedIntent.value)
-}
-inline ::std::string* MVCCMetadata_SequencedIntent::mutable_value() {
-  set_has_value();
-  // @@protoc_insertion_point(field_mutable:cockroach.storage.engine.enginepb.MVCCMetadata.SequencedIntent.value)
-  return value_.MutableNoArena(&::google::protobuf::internal::GetEmptyStringAlreadyInited());
-}
-inline ::std::string* MVCCMetadata_SequencedIntent::release_value() {
-  // @@protoc_insertion_point(field_release:cockroach.storage.engine.enginepb.MVCCMetadata.SequencedIntent.value)
-  if (!has_value()) {
-    return NULL;
-  }
-  clear_has_value();
-  return value_.ReleaseNonDefaultNoArena(&::google::protobuf::internal::GetEmptyStringAlreadyInited());
-}
-inline void MVCCMetadata_SequencedIntent::set_allocated_value(::std::string* value) {
-  if (value != NULL) {
-    set_has_value();
-  } else {
-    clear_has_value();
-  }
-  value_.SetAllocatedNoArena(&::google::protobuf::internal::GetEmptyStringAlreadyInited(), value);
-  // @@protoc_insertion_point(field_set_allocated:cockroach.storage.engine.enginepb.MVCCMetadata.SequencedIntent.value)
-}
-
-// -------------------------------------------------------------------
-
 // MVCCMetadata
 
-// optional .cockroach.storage.engine.enginepb.TxnMeta txn = 1;
-inline bool MVCCMetadata::has_txn() const {
+inline bool MVCCMetadata::has_timestamp() const {
   return (_has_bits_[0] & 0x00000002u) != 0;
 }
-inline void MVCCMetadata::set_has_txn() {
+inline void MVCCMetadata::set_has_timestamp() {
   _has_bits_[0] |= 0x00000002u;
 }
-inline void MVCCMetadata::clear_has_txn() {
-  _has_bits_[0] &= ~0x00000002u;
-}
-inline const ::cockroach::storage::engine::enginepb::TxnMeta& MVCCMetadata::_internal_txn() const {
-  return *txn_;
-}
-inline const ::cockroach::storage::engine::enginepb::TxnMeta& MVCCMetadata::txn() const {
-  const ::cockroach::storage::engine::enginepb::TxnMeta* p = txn_;
-  // @@protoc_insertion_point(field_get:cockroach.storage.engine.enginepb.MVCCMetadata.txn)
-  return p != NULL ? *p : *reinterpret_cast<const ::cockroach::storage::engine::enginepb::TxnMeta*>(
-      &::cockroach::storage::engine::enginepb::_TxnMeta_default_instance_);
-}
-inline ::cockroach::storage::engine::enginepb::TxnMeta* MVCCMetadata::release_txn() {
-  // @@protoc_insertion_point(field_release:cockroach.storage.engine.enginepb.MVCCMetadata.txn)
-  clear_has_txn();
-  ::cockroach::storage::engine::enginepb::TxnMeta* temp = txn_;
-  txn_ = NULL;
-  return temp;
-}
-inline ::cockroach::storage::engine::enginepb::TxnMeta* MVCCMetadata::mutable_txn() {
-  set_has_txn();
-  if (txn_ == NULL) {
-    auto* p = CreateMaybeMessage<::cockroach::storage::engine::enginepb::TxnMeta>(GetArenaNoVirtual());
-    txn_ = p;
-  }
-  // @@protoc_insertion_point(field_mutable:cockroach.storage.engine.enginepb.MVCCMetadata.txn)
-  return txn_;
-}
-inline void MVCCMetadata::set_allocated_txn(::cockroach::storage::engine::enginepb::TxnMeta* txn) {
-  ::google::protobuf::Arena* message_arena = GetArenaNoVirtual();
-  if (message_arena == NULL) {
-    delete reinterpret_cast< ::google::protobuf::MessageLite*>(txn_);
-  }
-  if (txn) {
-    ::google::protobuf::Arena* submessage_arena = NULL;
-    if (message_arena != submessage_arena) {
-      txn = ::google::protobuf::internal::GetOwnedMessage(
-          message_arena, txn, submessage_arena);
-    }
-    set_has_txn();
-  } else {
-    clear_has_txn();
-  }
-  txn_ = txn;
-  // @@protoc_insertion_point(field_set_allocated:cockroach.storage.engine.enginepb.MVCCMetadata.txn)
-}
-
-inline bool MVCCMetadata::has_timestamp() const {
-  return (_has_bits_[0] & 0x00000004u) != 0;
-}
-inline void MVCCMetadata::set_has_timestamp() {
-  _has_bits_[0] |= 0x00000004u;
-}
 inline void MVCCMetadata::clear_has_timestamp() {
-  _has_bits_[0] &= ~0x00000004u;
+  _has_bits_[0] &= ~0x00000002u;
 }
 inline const ::cockroach::util::hlc::LegacyTimestamp& MVCCMetadata::_internal_timestamp() const {
   return *timestamp_;
@@ -848,13 +538,13 @@ inline void MVCCMetadata::set_allocated_timestamp(::cockroach::util::hlc::Legacy
 }
 
 inline bool MVCCMetadata::has_deleted() const {
-  return (_has_bits_[0] & 0x00000040u) != 0;
+  return (_has_bits_[0] & 0x00000020u) != 0;
 }
 inline void MVCCMetadata::set_has_deleted() {
-  _has_bits_[0] |= 0x00000040u;
+  _has_bits_[0] |= 0x00000020u;
 }
 inline void MVCCMetadata::clear_has_deleted() {
-  _has_bits_[0] &= ~0x00000040u;
+  _has_bits_[0] &= ~0x00000020u;
 }
 inline void MVCCMetadata::clear_deleted() {
   deleted_ = false;
@@ -871,13 +561,13 @@ inline void MVCCMetadata::set_deleted(bool value) {
 }
 
 inline bool MVCCMetadata::has_key_bytes() const {
-  return (_has_bits_[0] & 0x00000010u) != 0;
+  return (_has_bits_[0] & 0x00000008u) != 0;
 }
 inline void MVCCMetadata::set_has_key_bytes() {
-  _has_bits_[0] |= 0x00000010u;
+  _has_bits_[0] |= 0x00000008u;
 }
 inline void MVCCMetadata::clear_has_key_bytes() {
-  _has_bits_[0] &= ~0x00000010u;
+  _has_bits_[0] &= ~0x00000008u;
 }
 inline void MVCCMetadata::clear_key_bytes() {
   key_bytes_ = GOOGLE_LONGLONG(0);
@@ -894,13 +584,13 @@ inline void MVCCMetadata::set_key_bytes(::google::protobuf::int64 value) {
 }
 
 inline bool MVCCMetadata::has_val_bytes() const {
-  return (_has_bits_[0] & 0x00000020u) != 0;
+  return (_has_bits_[0] & 0x00000010u) != 0;
 }
 inline void MVCCMetadata::set_has_val_bytes() {
-  _has_bits_[0] |= 0x00000020u;
+  _has_bits_[0] |= 0x00000010u;
 }
 inline void MVCCMetadata::clear_has_val_bytes() {
-  _has_bits_[0] &= ~0x00000020u;
+  _has_bits_[0] &= ~0x00000010u;
 }
 inline void MVCCMetadata::clear_val_bytes() {
   val_bytes_ = GOOGLE_LONGLONG(0);
@@ -982,44 +672,15 @@ inline void MVCCMetadata::set_allocated_raw_bytes(::std::string* raw_bytes) {
   // @@protoc_insertion_point(field_set_allocated:cockroach.storage.engine.enginepb.MVCCMetadata.raw_bytes)
 }
 
-inline int MVCCMetadata::intent_history_size() const {
-  return intent_history_.size();
-}
-inline void MVCCMetadata::clear_intent_history() {
-  intent_history_.Clear();
-}
-inline ::cockroach::storage::engine::enginepb::MVCCMetadata_SequencedIntent* MVCCMetadata::mutable_intent_history(int index) {
-  // @@protoc_insertion_point(field_mutable:cockroach.storage.engine.enginepb.MVCCMetadata.intent_history)
-  return intent_history_.Mutable(index);
-}
-inline ::google::protobuf::RepeatedPtrField< ::cockroach::storage::engine::enginepb::MVCCMetadata_SequencedIntent >*
-MVCCMetadata::mutable_intent_history() {
-  // @@protoc_insertion_point(field_mutable_list:cockroach.storage.engine.enginepb.MVCCMetadata.intent_history)
-  return &intent_history_;
-}
-inline const ::cockroach::storage::engine::enginepb::MVCCMetadata_SequencedIntent& MVCCMetadata::intent_history(int index) const {
-  // @@protoc_insertion_point(field_get:cockroach.storage.engine.enginepb.MVCCMetadata.intent_history)
-  return intent_history_.Get(index);
-}
-inline ::cockroach::storage::engine::enginepb::MVCCMetadata_SequencedIntent* MVCCMetadata::add_intent_history() {
-  // @@protoc_insertion_point(field_add:cockroach.storage.engine.enginepb.MVCCMetadata.intent_history)
-  return intent_history_.Add();
-}
-inline const ::google::protobuf::RepeatedPtrField< ::cockroach::storage::engine::enginepb::MVCCMetadata_SequencedIntent >&
-MVCCMetadata::intent_history() const {
-  // @@protoc_insertion_point(field_list:cockroach.storage.engine.enginepb.MVCCMetadata.intent_history)
-  return intent_history_;
-}
-
 // optional .cockroach.util.hlc.LegacyTimestamp merge_timestamp = 7;
 inline bool MVCCMetadata::has_merge_timestamp() const {
-  return (_has_bits_[0] & 0x00000008u) != 0;
+  return (_has_bits_[0] & 0x00000004u) != 0;
 }
 inline void MVCCMetadata::set_has_merge_timestamp() {
-  _has_bits_[0] |= 0x00000008u;
+  _has_bits_[0] |= 0x00000004u;
 }
 inline void MVCCMetadata::clear_has_merge_timestamp() {
-  _has_bits_[0] &= ~0x00000008u;
+  _has_bits_[0] &= ~0x00000004u;
 }
 inline const ::cockroach::util::hlc::LegacyTimestamp& MVCCMetadata::_internal_merge_timestamp() const {
   return *merge_timestamp_;
@@ -1394,8 +1055,6 @@ inline void MVCCStats::set_sys_count(::google::protobuf::int64 value) {
 #ifdef __GNUC__
   #pragma GCC diagnostic pop
 #endif  // __GNUC__
-// -------------------------------------------------------------------
-
 // -------------------------------------------------------------------
 
 

@@ -174,6 +174,9 @@ var (
 	// NOTE: if this value changes, it must be updated in C++
 	// (storage/engine/rocksdb/db.cc).
 	LocalTransactionSuffix = roachpb.RKey("txn-")
+	// LocalLockTableSuffix specifies the key suffix for transaction locks.
+	// The additional detail is the transaction id.
+	LocalLockTableSuffix = roachpb.RKey("lock")
 	// LocalQueueLastProcessedSuffix is the suffix for replica queue state keys.
 	LocalQueueLastProcessedSuffix = roachpb.RKey("qlpt")
 

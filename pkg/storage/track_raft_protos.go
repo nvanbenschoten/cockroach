@@ -20,7 +20,6 @@ import (
 	"github.com/cockroachdb/cockroach/pkg/roachpb"
 	"github.com/cockroachdb/cockroach/pkg/storage/apply"
 	"github.com/cockroachdb/cockroach/pkg/storage/compactor"
-	"github.com/cockroachdb/cockroach/pkg/storage/engine/enginepb"
 	"github.com/cockroachdb/cockroach/pkg/storage/storagepb"
 	"github.com/cockroachdb/cockroach/pkg/util/protoutil"
 	"github.com/cockroachdb/cockroach/pkg/util/syncutil"
@@ -75,9 +74,9 @@ func TrackRaftProtos() func() []reflect.Type {
 		// Special handling for MVCCMetadata: we expect MVCCMetadata to be
 		// marshaled below raft, but MVCCMetadata.Txn should always be nil in such
 		// cases.
-		if meta, ok := pb.(*enginepb.MVCCMetadata); ok && meta.Txn != nil {
-			protoutil.Interceptor(meta.Txn)
-		}
+		// if meta, ok := pb.(*enginepb.MVCCMetadata); ok && meta.Txn != nil {
+		// 	protoutil.Interceptor(meta.Txn)
+		// }
 
 		belowRaftProtos.Lock()
 		_, ok := belowRaftProtos.inner[t]

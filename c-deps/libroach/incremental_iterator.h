@@ -18,8 +18,7 @@
 #include "status.h"
 
 struct DBIncrementalIterator {
-  DBIncrementalIterator(DBEngine* engine, DBIterOptions opts, DBKey start, DBKey end,
-                        DBString* write_intent);
+  DBIncrementalIterator(DBEngine* engine, DBIterOptions opts, DBKey start, DBKey end);
   ~DBIncrementalIterator();
   DBIterState seek(DBKey key);
   DBIterState next(bool skip_current_versions);
@@ -27,14 +26,12 @@ struct DBIncrementalIterator {
   const rocksdb::Slice value();
 
   std::unique_ptr<DBIterator> iter;
-  std::unique_ptr<DBIterator> sanity_iter;
 
   DBEngine* engine;
   DBIterOptions opts;
   bool valid;
   DBStatus status;
   DBKey start, end;
-  DBString* write_intent;
 
  private:
   rocksdb::Slice sanityCheckMetadataKey();

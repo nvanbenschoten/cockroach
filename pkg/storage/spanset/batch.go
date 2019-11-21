@@ -350,6 +350,7 @@ func (s spanSetReader) NewIterator(opts engine.IterOptions) engine.Iterator {
 
 // GetDBEngine recursively searches for the underlying rocksDB engine.
 func GetDBEngine(e engine.Reader, span roachpb.Span) engine.Reader {
+	// TODO(WIP): this is weird. Get rid of it.
 	switch v := e.(type) {
 	case ReadWriter:
 		return GetDBEngine(getSpanReader(v, span), span)

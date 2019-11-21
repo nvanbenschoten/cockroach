@@ -148,6 +148,8 @@ func (r gcQueueScore) String() string {
 func (gcq *gcQueue) shouldQueue(
 	ctx context.Context, now hlc.Timestamp, repl *Replica, sysCfg *config.SystemConfig,
 ) (bool, float64) {
+	// TODO(WIP): fix intent score.
+	return false, 0
 	r := makeGCQueueScore(ctx, repl, now, sysCfg)
 	return r.ShouldQueue, r.FinalScore
 }
@@ -693,7 +695,7 @@ func RunGC(
 	infoMu.Now = now
 
 	// Compute intent expiration (intent age at which we attempt to resolve).
-	intentExp := now.Add(-intentAgeThreshold.Nanoseconds(), 0)
+	// intentExp := now.Add(-intentAgeThreshold.Nanoseconds(), 0)
 	txnExp := now.Add(-storagebase.TxnCleanupThreshold.Nanoseconds(), 0)
 
 	gc := engine.MakeGarbageCollector(now, policy)
@@ -732,32 +734,32 @@ func RunGC(
 				// In the event that there's an active intent, send for
 				// intent resolution if older than the threshold.
 				startIdx := 1
-				if meta.Txn != nil {
-					// Keep track of intent to resolve if older than the intent
-					// expiration threshold.
-					if hlc.Timestamp(meta.Timestamp).Less(intentExp) {
-						txnID := meta.Txn.ID
-						if _, ok := txnMap[txnID]; !ok {
-							txnMap[txnID] = &roachpb.Transaction{
-								TxnMeta: *meta.Txn,
-							}
-							// IntentTxns and PushTxn will be equal here, since
-							// pushes to transactions whose record lies in this
-							// range (but which are not associated to a remaining
-							// intent on it) happen asynchronously and are accounted
-							// for separately. Thus higher up in the stack, we
-							// expect PushTxn > IntentTxns.
-							infoMu.IntentTxns++
-							// All transactions in txnMap may be PENDING and
-							// cleanupIntentsFn will push them to finalize them.
-							infoMu.PushTxn++
-						}
-						infoMu.IntentsConsidered++
-						intentSpanMap[txnID] = append(intentSpanMap[txnID], roachpb.Span{Key: expBaseKey})
-					}
-					// With an active intent, GC ignores MVCC metadata & intent value.
-					startIdx = 2
-				}
+				// if meta.Txn != nil {
+				// 	// Keep track of intent to resolve if older than the intent
+				// 	// expiration threshold.
+				// 	if hlc.Timestamp(meta.Timestamp).Less(intentExp) {
+				// 		txnID := meta.Txn.ID
+				// 		if _, ok := txnMap[txnID]; !ok {
+				// 			txnMap[txnID] = &roachpb.Transaction{
+				// 				TxnMeta: *meta.Txn,
+				// 			}
+				// 			// IntentTxns and PushTxn will be equal here, since
+				// 			// pushes to transactions whose record lies in this
+				// 			// range (but which are not associated to a remaining
+				// 			// intent on it) happen asynchronously and are accounted
+				// 			// for separately. Thus higher up in the stack, we
+				// 			// expect PushTxn > IntentTxns.
+				// 			infoMu.IntentTxns++
+				// 			// All transactions in txnMap may be PENDING and
+				// 			// cleanupIntentsFn will push them to finalize them.
+				// 			infoMu.PushTxn++
+				// 		}
+				// 		infoMu.IntentsConsidered++
+				// 		intentSpanMap[txnID] = append(intentSpanMap[txnID], roachpb.Span{Key: expBaseKey})
+				// 	}
+				// 	// With an active intent, GC ignores MVCC metadata & intent value.
+				// 	startIdx = 2
+				// }
 				// See if any values may be GC'd.
 				if idx, gcTS := gc.Filter(keys[startIdx:], vals[startIdx:]); gcTS != (hlc.Timestamp{}) {
 					// Batch keys after the total size of version keys exceeds

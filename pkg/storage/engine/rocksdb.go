@@ -786,21 +786,12 @@ func (r *RocksDB) ExportToSst(
 	end := MVCCKey{Key: endKey, Timestamp: endTS}
 
 	var data C.DBString
-	var intentErr C.DBString
 	var bulkopSummary C.DBString
 
 	err := statusToError(C.DBExportToSst(goToCKey(start), goToCKey(end), C.bool(exportAllRevisions),
-		goToCIterOptions(io), r.rdb, &data, &intentErr, &bulkopSummary))
+		goToCIterOptions(io), r.rdb, &data, &bulkopSummary))
 
 	if err != nil {
-		if err.Error() == "WriteIntentError" {
-			var e roachpb.WriteIntentError
-			if err := protoutil.Unmarshal(cStringToGoBytes(intentErr), &e); err != nil {
-				return nil, roachpb.BulkOpSummary{}, errors.Wrap(err, "failed to decode write intent error")
-			}
-
-			return nil, roachpb.BulkOpSummary{}, &e
-		}
 		return nil, roachpb.BulkOpSummary{}, err
 	}
 
@@ -2389,42 +2380,28 @@ func (r *rocksDBIterator) MVCCOpsSpecialized() bool {
 func (r *rocksDBIterator) MVCCGet(
 	key roachpb.Key, timestamp hlc.Timestamp, opts MVCCGetOptions,
 ) (*roachpb.Value, *roachpb.Intent, error) {
-	if opts.Inconsistent && opts.Txn != nil {
-		return nil, nil, errors.Errorf("cannot allow inconsistent reads within a transaction")
-	}
+	// if opts.Inconsistent && opts.Txn != nil {
+	// 	return nil, nil, errors.Errorf("cannot allow inconsistent reads within a transaction")
+	// }
 	if len(key) == 0 {
 		return nil, nil, emptyKeyError()
 	}
 
 	r.clearState()
 	state := C.MVCCGet(
-		r.iter, goToCSlice(key), goToCTimestamp(timestamp), goToCTxn(opts.Txn),
+		r.iter, goToCSlice(key), goToCTimestamp(timestamp), goToCTxn(nil /*opts.Txn*/),
 		C.bool(opts.Inconsistent), C.bool(opts.Tombstones),
 	)
 
 	if err := statusToError(state.status); err != nil {
 		return nil, nil, err
 	}
-	if err := uncertaintyToError(timestamp, state.uncertainty_timestamp, opts.Txn); err != nil {
+	if err := uncertaintyToError(timestamp, state.uncertainty_timestamp, nil /*opts.Txn*/); err != nil {
 		return nil, nil, err
 	}
 
-	intents, err := buildScanIntents(cSliceToGoBytes(state.intents))
-	if err != nil {
-		return nil, nil, err
-	}
-	if !opts.Inconsistent && len(intents) > 0 {
-		return nil, nil, &roachpb.WriteIntentError{Intents: intents}
-	}
-
-	var intent *roachpb.Intent
-	if len(intents) > 1 {
-		return nil, nil, errors.Errorf("expected 0 or 1 intents, got %d", len(intents))
-	} else if len(intents) == 1 {
-		intent = &intents[0]
-	}
 	if state.data.len == 0 {
-		return nil, intent, nil
+		return nil, nil, nil
 	}
 
 	count := state.data.count
@@ -2432,7 +2409,7 @@ func (r *rocksDBIterator) MVCCGet(
 		return nil, nil, errors.Errorf("expected 0 or 1 result, found %d", count)
 	}
 	if count == 0 {
-		return nil, intent, nil
+		return nil, nil, nil
 	}
 
 	// Extract the value from the batch data.
@@ -2445,15 +2422,12 @@ func (r *rocksDBIterator) MVCCGet(
 		RawBytes:  rawValue,
 		Timestamp: mvccKey.Timestamp,
 	}
-	return value, intent, nil
+	return value, nil, nil
 }
 
 func (r *rocksDBIterator) MVCCScan(
 	start, end roachpb.Key, max int64, timestamp hlc.Timestamp, opts MVCCScanOptions,
 ) (kvData [][]byte, numKVs int64, resumeSpan *roachpb.Span, intents []roachpb.Intent, err error) {
-	if opts.Inconsistent && opts.Txn != nil {
-		return nil, 0, nil, nil, errors.Errorf("cannot allow inconsistent reads within a transaction")
-	}
 	if len(end) == 0 {
 		return nil, 0, nil, nil, emptyKeyError()
 	}
@@ -2466,14 +2440,14 @@ func (r *rocksDBIterator) MVCCScan(
 	state := C.MVCCScan(
 		r.iter, goToCSlice(start), goToCSlice(end),
 		goToCTimestamp(timestamp), C.int64_t(max),
-		goToCTxn(opts.Txn), C.bool(opts.Inconsistent),
+		goToCTxn(nil /*opts.Txn*/), C.bool(opts.Inconsistent),
 		C.bool(opts.Reverse), C.bool(opts.Tombstones),
 	)
 
 	if err := statusToError(state.status); err != nil {
 		return nil, 0, nil, nil, err
 	}
-	if err := uncertaintyToError(timestamp, state.uncertainty_timestamp, opts.Txn); err != nil {
+	if err := uncertaintyToError(timestamp, state.uncertainty_timestamp, nil /*opts.Txn*/); err != nil {
 		return nil, 0, nil, nil, err
 	}
 
@@ -2488,15 +2462,15 @@ func (r *rocksDBIterator) MVCCScan(
 		}
 	}
 
-	intents, err = buildScanIntents(cSliceToGoBytes(state.intents))
-	if err != nil {
-		return nil, 0, nil, nil, err
-	}
-	if !opts.Inconsistent && len(intents) > 0 {
-		// When encountering intents during a consistent scan we still need to
-		// return the resume key.
-		return nil, 0, resumeSpan, nil, &roachpb.WriteIntentError{Intents: intents}
-	}
+	// intents, err = buildScanIntents(cSliceToGoBytes(state.intents))
+	// if err != nil {
+	// 	return nil, 0, nil, nil, err
+	// }
+	// if !opts.Inconsistent && len(intents) > 0 {
+	// 	// When encountering intents during a consistent scan we still need to
+	// 	// return the resume key.
+	// 	return nil, 0, resumeSpan, nil, &roachpb.WriteIntentError{Intents: intents}
+	// }
 
 	return kvData, numKVs, resumeSpan, intents, nil
 }
@@ -2532,20 +2506,13 @@ func (r *rocksDBIterator) CheckForKeyCollisions(
 		return emptyStats, errors.Wrap(err, "checking for key collisions")
 	}
 
-	var intentErr C.DBString
 	var skippedKVStats C.MVCCStatsResult
 
-	state := C.DBCheckForKeyCollisions(r.iter, sstIterator.iter, &skippedKVStats, &intentErr)
+	state := C.DBCheckForKeyCollisions(r.iter, sstIterator.iter, &skippedKVStats)
 
 	err := statusToError(state.status)
 	if err != nil {
-		if err.Error() == "WriteIntentError" {
-			var e roachpb.WriteIntentError
-			if err := protoutil.Unmarshal(cStringToGoBytes(intentErr), &e); err != nil {
-				return emptyStats, errors.Wrap(err, "failed to decode write intent error")
-			}
-			return emptyStats, &e
-		} else if err.Error() == "InlineError" {
+		if err.Error() == "InlineError" {
 			return emptyStats, errors.Errorf("inline values are unsupported when checking for key collisions")
 		}
 		err = errors.Wrap(&Error{msg: cToGoKey(state.key).String()}, "ingested key collides with an existing one")

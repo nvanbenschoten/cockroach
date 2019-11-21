@@ -18,7 +18,7 @@ import (
 	"github.com/cockroachdb/cockroach/pkg/roachpb"
 	"github.com/cockroachdb/cockroach/pkg/rpc"
 	"github.com/cockroachdb/cockroach/pkg/storage/abortspan"
-	"github.com/cockroachdb/cockroach/pkg/storage/spanlatch"
+	"github.com/cockroachdb/cockroach/pkg/storage/concurrency"
 	"github.com/cockroachdb/cockroach/pkg/storage/split"
 	"github.com/cockroachdb/cockroach/pkg/storage/stateloader"
 	"github.com/cockroachdb/cockroach/pkg/storage/storagebase"
@@ -98,7 +98,7 @@ func (r *Replica) initRaftMuLockedReplicaMuLocked(
 		return errors.Errorf("replicaID must be 0 when creating an initialized replica")
 	}
 
-	r.latchMgr = spanlatch.Make(r.store.stopper, r.store.metrics.SlowLatchRequests)
+	r.concMgr = concurrency.NewManager(r.store.stopper, r.store.engine, r.store.intentResolver)
 	r.mu.proposals = map[storagebase.CmdIDKey]*ProposalData{}
 	r.mu.checksums = map[uuid.UUID]ReplicaChecksum{}
 	// Clear the internal raft group in case we're being reset. Since we're
@@ -150,6 +150,7 @@ func (r *Replica) initRaftMuLockedReplicaMuLocked(
 	}
 	r.rangeStr.store(replicaID, r.mu.state.Desc)
 	r.connectionClass.set(rpc.ConnectionClassForKey(desc.StartKey))
+	r.concMgr.SetDescriptor(desc)
 	if r.mu.replicaID == 0 {
 		if err := r.setReplicaIDRaftMuLockedMuLocked(ctx, replicaID); err != nil {
 			return err
@@ -302,5 +303,6 @@ func (r *Replica) setDesc(ctx context.Context, desc *roachpb.RangeDescriptor) {
 
 	r.rangeStr.store(r.mu.replicaID, desc)
 	r.connectionClass.set(rpc.ConnectionClassForKey(desc.StartKey))
+	r.concMgr.SetDescriptor(desc)
 	r.mu.state.Desc = desc
 }
