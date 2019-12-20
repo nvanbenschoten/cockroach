@@ -64,7 +64,7 @@ func (r *Replica) Metrics(
 	_, ticking := r.store.unquiescedReplicas.m[r.RangeID]
 	r.store.unquiescedReplicas.Unlock()
 
-	latchInfoGlobal, latchInfoLocal := r.latchMgr.Info()
+	// latchInfoGlobal, latchInfoLocal := r.latchMgr.Info()
 
 	return calcReplicaMetrics(
 		ctx,
@@ -79,8 +79,8 @@ func (r *Replica) Metrics(
 		r.store.StoreID(),
 		quiescent,
 		ticking,
-		latchInfoLocal,
-		latchInfoGlobal,
+		storagepb.LatchManagerInfo{},
+		storagepb.LatchManagerInfo{},
 		raftLogSize,
 	)
 }

@@ -226,27 +226,3 @@ func (s *Store) Send(
 	}
 	return nil, pErr
 }
-
-// maybeWaitForPushee potentially diverts the incoming request to
-// the txnwait.Queue, where it will wait for updates to the target
-// transaction.
-// TODO(nvanbenschoten): Move this method.
-func (r *Replica) maybeWaitForPushee(ctx context.Context, ba *roachpb.BatchRequest) *roachpb.Error {
-	switch {
-	case ba.IsSinglePushTxnRequest():
-		// If this is a push txn request, check the push queue first, which
-		// may cause this request to wait and either return a successful push
-		// txn response or else allow this request to proceed.
-		if r.store.cfg.TestingKnobs.DontRetryPushTxnFailures {
-			return nil
-		}
-		pushReq := ba.Requests[0].GetInner().(*roachpb.PushTxnRequest)
-		return r.txnWaitQueue.MaybeWaitForPush(ctx, r, pushReq)
-	case ba.IsSingleQueryTxnRequest():
-		// For query txn requests, wait in the txn wait queue either for
-		// transaction update or for dependent transactions to change.
-		queryReq := ba.Requests[0].GetInner().(*roachpb.QueryTxnRequest)
-		return r.txnWaitQueue.MaybeWaitForQuery(ctx, r, queryReq)
-	}
-	return nil
-}

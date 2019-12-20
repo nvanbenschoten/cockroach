@@ -15,7 +15,7 @@ import (
 
 	"github.com/cockroachdb/cockroach/pkg/roachpb"
 	"github.com/cockroachdb/cockroach/pkg/storage/batcheval/result"
-	"github.com/cockroachdb/cockroach/pkg/storage/spanlatch"
+	"github.com/cockroachdb/cockroach/pkg/storage/concurrency"
 	"github.com/cockroachdb/cockroach/pkg/storage/spanset"
 	"github.com/cockroachdb/cockroach/pkg/storage/storagebase"
 	"github.com/cockroachdb/cockroach/pkg/storage/storagepb"
@@ -28,22 +28,15 @@ import (
 // iterator to evaluate the batch and then updates the read timestamp cache to
 // reflect the key spans that it read.
 func (r *Replica) executeReadOnlyBatch(
-	ctx context.Context, ba *roachpb.BatchRequest, spans *spanset.SpanSet, lg *spanlatch.Guard,
-) (br *roachpb.BatchResponse, pErr *roachpb.Error) {
-	// Guarantee we release the provided latches. This is wrapped to delay pErr
-	// evaluation to its value when returning.
-	ec := endCmds{repl: r, lg: lg}
-	defer func() {
-		ec.done(ba, br, pErr)
-	}()
-
+	ctx context.Context, ba *roachpb.BatchRequest, spans *spanset.SpanSet, g *concurrency.Guard,
+) (br *roachpb.BatchResponse, _ bool, pErr *roachpb.Error) {
 	// If the read is not inconsistent, the read requires the range lease or
 	// permission to serve via follower reads.
 	var status storagepb.LeaseStatus
 	if ba.ReadConsistency.RequiresReadLease() {
 		if status, pErr = r.redirectOnOrAcquireLease(ctx); pErr != nil {
 			if nErr := r.canServeFollowerRead(ctx, ba, pErr); nErr != nil {
-				return nil, nErr
+				return nil, false, nErr
 			}
 			r.store.metrics.FollowerReadsCount.Inc(1)
 		}
@@ -55,8 +48,8 @@ func (r *Replica) executeReadOnlyBatch(
 	defer r.readOnlyCmdMu.RUnlock()
 
 	// Verify that the batch can be executed.
-	if err := r.checkExecutionCanProceed(ba, ec.lg, &status); err != nil {
-		return nil, roachpb.NewError(err)
+	if err := r.checkExecutionCanProceed(ba, g, &status); err != nil {
+		return nil, false, roachpb.NewError(err)
 	}
 
 	// Evaluate read-only batch command.
@@ -68,13 +61,14 @@ func (r *Replica) executeReadOnlyBatch(
 	}
 	defer readOnly.Close()
 	br, result, pErr = evaluateBatch(ctx, storagebase.CmdIDKey(""), readOnly, rec, nil, ba, true /* readOnly */)
+	r.updateTimestampCache(ba, br, pErr)
 
 	// A merge is (likely) about to be carried out, and this replica
 	// needs to block all traffic until the merge either commits or
 	// aborts. See docs/tech-notes/range-merges.md.
 	if result.Local.DetachMaybeWatchForMerge() {
 		if err := r.maybeWatchForMerge(ctx); err != nil {
-			return nil, roachpb.NewError(err)
+			return nil, false, roachpb.NewError(err)
 		}
 	}
 
@@ -98,5 +92,5 @@ func (r *Replica) executeReadOnlyBatch(
 	} else {
 		log.Event(ctx, "read completed")
 	}
-	return br, pErr
+	return br, false, pErr
 }

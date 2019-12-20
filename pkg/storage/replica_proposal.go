@@ -413,12 +413,6 @@ func (r *Replica) leasePostApply(ctx context.Context, newLease roachpb.Lease, pe
 		}
 	}
 
-	if leaseChangingHands && !iAmTheLeaseHolder {
-		// Also clear and disable the push transaction queue. Any waiters
-		// must be redirected to the new lease holder.
-		r.txnWaitQueue.Clear(true /* disable */)
-	}
-
 	// If we're the current raft leader, may want to transfer the leadership to
 	// the new leaseholder. Note that this condition is also checked periodically
 	// when ticking the replica.
@@ -439,6 +433,9 @@ func (r *Replica) leasePostApply(ctx context.Context, newLease roachpb.Lease, pe
 		}
 	}
 
+	// Inform the concurrency manager that the lease holder has been updated.
+	r.concMgr.OnLeaseUpdated(iAmTheLeaseHolder)
+
 	// Potentially re-gossip if the range contains system data (e.g. system
 	// config or node liveness). We need to perform this gossip at startup as
 	// soon as possible. Trying to minimize how often we gossip is a fool's
@@ -453,8 +450,6 @@ func (r *Replica) leasePostApply(ctx context.Context, newLease roachpb.Lease, pe
 		if err := r.MaybeGossipNodeLiveness(ctx, keys.NodeLivenessSpan); err != nil {
 			log.Error(ctx, err)
 		}
-		// Make sure the push transaction queue is enabled.
-		r.txnWaitQueue.Enable()
 
 		// Emit an MLAI on the leaseholder replica, as follower will be looking
 		// for one and if we went on to quiesce, they wouldn't necessarily get
@@ -662,9 +657,9 @@ func (r *Replica) handleLocalEvalResult(ctx context.Context, lResult result.Loca
 
 	if lResult.UpdatedTxns != nil {
 		for _, txn := range *lResult.UpdatedTxns {
-			r.txnWaitQueue.UpdateTxn(ctx, txn)
-			lResult.UpdatedTxns = nil
+			r.concMgr.OnTransactionUpdated(ctx, txn)
 		}
+		lResult.UpdatedTxns = nil
 	}
 
 	if (lResult != result.LocalResult{}) {
@@ -677,6 +672,7 @@ func (r *Replica) handleLocalEvalResult(ctx context.Context, lResult result.Loca
 type proposalResult struct {
 	Reply   *roachpb.BatchResponse
 	Err     *roachpb.Error
+	Async   bool
 	Intents []result.IntentsWithArg
 	EndTxns []result.EndTxnIntents
 }

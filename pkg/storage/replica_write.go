@@ -18,9 +18,9 @@ import (
 	"github.com/cockroachdb/cockroach/pkg/storage/batcheval"
 	"github.com/cockroachdb/cockroach/pkg/storage/batcheval/result"
 	"github.com/cockroachdb/cockroach/pkg/storage/closedts/ctpb"
+	"github.com/cockroachdb/cockroach/pkg/storage/concurrency"
 	"github.com/cockroachdb/cockroach/pkg/storage/engine"
 	"github.com/cockroachdb/cockroach/pkg/storage/engine/enginepb"
-	"github.com/cockroachdb/cockroach/pkg/storage/spanlatch"
 	"github.com/cockroachdb/cockroach/pkg/storage/spanset"
 	"github.com/cockroachdb/cockroach/pkg/storage/storagebase"
 	"github.com/cockroachdb/cockroach/pkg/storage/storagepb"
@@ -39,9 +39,6 @@ import (
 //
 // Concretely,
 //
-// - Latches for the keys affected by the command are acquired (i.e.
-//   tracked as in-flight mutations).
-// - In doing so, we wait until no overlapping mutations are in flight.
 // - The timestamp cache is checked to determine if the command's affected keys
 //   were accessed with a timestamp exceeding that of the command; if so, the
 //   command's timestamp is incremented accordingly.
@@ -61,18 +58,9 @@ import (
 // as this method makes the assumption that it operates on a shallow copy (see
 // call to applyTimestampCache).
 func (r *Replica) executeWriteBatch(
-	ctx context.Context, ba *roachpb.BatchRequest, spans *spanset.SpanSet, lg *spanlatch.Guard,
-) (br *roachpb.BatchResponse, pErr *roachpb.Error) {
+	ctx context.Context, ba *roachpb.BatchRequest, spans *spanset.SpanSet, g *concurrency.Guard,
+) (br *roachpb.BatchResponse, async bool, pErr *roachpb.Error) {
 	startTime := timeutil.Now()
-
-	// Guarantee we release the provided latches if we never make it to
-	// passing responsibility to evalAndPropose. This is wrapped to delay
-	// pErr evaluation to its value when returning.
-	ec := endCmds{repl: r, lg: lg}
-	defer func() {
-		// No-op if we move ec into evalAndPropose.
-		ec.done(ba, br, pErr)
-	}()
 
 	// Determine the lease under which to evaluate the write.
 	var lease roachpb.Lease
@@ -84,7 +72,7 @@ func (r *Replica) executeWriteBatch(
 		// Other write commands require that this replica has the range
 		// lease.
 		if status, pErr = r.redirectOnOrAcquireLease(ctx); pErr != nil {
-			return nil, pErr
+			return nil, false, pErr
 		}
 		lease = status.Lease
 	}
@@ -95,8 +83,8 @@ func (r *Replica) executeWriteBatch(
 	// at proposal time, not at application time, because the spanlatch manager
 	// will synchronize all requests (notably EndTransaction with SplitTrigger)
 	// that may cause this condition to change.
-	if err := r.checkExecutionCanProceed(ba, ec.lg, &status); err != nil {
-		return nil, roachpb.NewError(err)
+	if err := r.checkExecutionCanProceed(ba, g, &status); err != nil {
+		return nil, false, roachpb.NewError(err)
 	}
 
 	minTS, untrack := r.store.cfg.ClosedTimestamp.Tracker.Track(ctx)
@@ -129,12 +117,12 @@ func (r *Replica) executeWriteBatch(
 	// Checking the context just before proposing can help avoid ambiguous errors.
 	if err := ctx.Err(); err != nil {
 		log.VEventf(ctx, 2, "%s before proposing: %s", err, ba.Summary())
-		return nil, roachpb.NewError(errors.Wrap(err, "aborted before proposing"))
+		return nil, false, roachpb.NewError(errors.Wrap(err, "aborted before proposing"))
 	}
 
 	// After the command is proposed to Raft, invoking endCmds.done is the
 	// responsibility of Raft, so move the endCmds into evalAndPropose.
-	ch, abandon, maxLeaseIndex, pErr := r.evalAndPropose(ctx, &lease, ba, spans, ec.move())
+	ch, abandon, maxLeaseIndex, release, pErr := r.evalAndPropose(ctx, &lease, ba, spans, g)
 	if pErr != nil {
 		if maxLeaseIndex != 0 {
 			log.Fatalf(
@@ -142,7 +130,7 @@ func (r *Replica) executeWriteBatch(
 				maxLeaseIndex, ba, pErr,
 			)
 		}
-		return nil, pErr
+		return nil, false, pErr
 	}
 	// A max lease index of zero is returned when no proposal was made or a lease was proposed.
 	// In both cases, we don't need to communicate a MLAI. Furthermore, for lease proposals we
@@ -150,6 +138,11 @@ func (r *Replica) executeWriteBatch(
 	// as a side effect of stepping up as leaseholder.
 	if maxLeaseIndex != 0 {
 		untrack(ctx, ctpb.Epoch(lease.Epoch), r.RangeID, ctpb.LAI(maxLeaseIndex))
+	}
+	// If the proposal made it into raft then its concurrency guard has been
+	// released to the "below Raft" machinery. Don't use it or return it.
+	if release {
+		g = nil
 	}
 
 	// If the command was accepted by raft, wait for the range to apply it.
@@ -198,7 +191,7 @@ func (r *Replica) executeWriteBatch(
 					log.Warning(ctx, err)
 				}
 			}
-			return propResult.Reply, propResult.Err
+			return propResult.Reply, propResult.Async, propResult.Err
 		case <-slowTimer.C:
 			slowTimer.Read = true
 			r.store.metrics.SlowRaftRequests.Inc(1)
@@ -224,14 +217,14 @@ and the following Raft status: %+v`,
 			abandon()
 			log.VEventf(ctx, 2, "context cancellation after %0.1fs of attempting command %s",
 				timeutil.Since(startTime).Seconds(), ba)
-			return nil, roachpb.NewError(roachpb.NewAmbiguousResultError(ctx.Err().Error()))
+			return nil, false, roachpb.NewError(roachpb.NewAmbiguousResultError(ctx.Err().Error()))
 		case <-shouldQuiesce:
 			// If shutting down, return an AmbiguousResultError, which indicates
 			// to the caller that the command may have executed.
 			abandon()
 			log.VEventf(ctx, 2, "shutdown cancellation after %0.1fs of attempting command %s",
 				timeutil.Since(startTime).Seconds(), ba)
-			return nil, roachpb.NewError(roachpb.NewAmbiguousResultError("server shutdown"))
+			return nil, false, roachpb.NewError(roachpb.NewAmbiguousResultError("server shutdown"))
 		}
 	}
 }

@@ -77,6 +77,6 @@ func QueryTxn(
 		reply.QueriedTxn = SynthesizeTxnFromMeta(cArgs.EvalCtx, args.Txn)
 	}
 	// Get the list of txns waiting on this txn.
-	reply.WaitingTxns = cArgs.EvalCtx.GetTxnWaitQueue().GetDependents(args.Txn.ID)
+	reply.WaitingTxns = cArgs.EvalCtx.GetConcurrencyManager().GetDependents(args.Txn.ID)
 	return result.Result{}, nil
 }

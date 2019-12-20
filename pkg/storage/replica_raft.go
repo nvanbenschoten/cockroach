@@ -20,6 +20,7 @@ import (
 	"github.com/cockroachdb/cockroach/pkg/keys"
 	"github.com/cockroachdb/cockroach/pkg/roachpb"
 	"github.com/cockroachdb/cockroach/pkg/storage/apply"
+	"github.com/cockroachdb/cockroach/pkg/storage/concurrency"
 	"github.com/cockroachdb/cockroach/pkg/storage/engine"
 	"github.com/cockroachdb/cockroach/pkg/storage/spanset"
 	"github.com/cockroachdb/cockroach/pkg/storage/stateloader"
@@ -68,21 +69,14 @@ func (r *Replica) evalAndPropose(
 	lease *roachpb.Lease,
 	ba *roachpb.BatchRequest,
 	spans *spanset.SpanSet,
-	ec endCmds,
-) (_ chan proposalResult, _ func(), _ int64, pErr *roachpb.Error) {
+	g *concurrency.Guard,
+) (_ chan proposalResult, _ func(), _ int64, release bool, pErr *roachpb.Error) {
 	idKey := makeIDKey()
 	proposal, pErr := r.requestToProposal(ctx, idKey, ba, spans)
 	log.Event(proposal.ctx, "evaluated request")
 
-	// Attach the endCmds to the proposal. This moves responsibility of
-	// releasing latches to "below Raft" machinery. However, we make sure
-	// we clean up this resource if the proposal doesn't make it to Raft.
-	proposal.ec = ec.move()
-	defer func() {
-		if pErr != nil {
-			proposal.ec.done(ba, nil /* br */, pErr)
-		}
-	}()
+	// Attach the endCmds to the proposal.
+	proposal.ec = endCmds{repl: r}
 
 	// Pull out proposal channel to return. proposal.doneCh may be set to
 	// nil if it is signaled in this function.
@@ -106,8 +100,9 @@ func (r *Replica) evalAndPropose(
 			EndTxns: endTxns,
 		}
 		proposal.finishApplication(pr)
-		return proposalCh, func() {}, 0, nil
+		return proposalCh, func() {}, 0, release, nil
 	}
+	release = true
 
 	// If the request requested that Raft consensus be performed asynchronously,
 	// return a proposal result immediately on the proposal's done channel.
@@ -117,7 +112,7 @@ func (r *Replica) evalAndPropose(
 			// Disallow async consensus for commands with EndTxnIntents because
 			// any !Always EndTxnIntent can't be cleaned up until after the
 			// command succeeds.
-			return nil, nil, 0, roachpb.NewErrorf("cannot perform consensus asynchronously for "+
+			return nil, nil, 0, release, roachpb.NewErrorf("cannot perform consensus asynchronously for "+
 				"proposal with EndTxnIntents=%v; %v", ets, ba)
 		}
 
@@ -125,11 +120,15 @@ func (r *Replica) evalAndPropose(
 		// can outlive the original proposer's context.
 		proposal.ctx, proposal.sp = tracing.ForkCtxSpan(ctx, "async consensus")
 
+		// Assume responsibility for releasing the concurrency guard.
+		proposal.ec.g = g
+
 		// Signal the proposal's response channel immediately.
 		reply := *proposal.Local.Reply
 		reply.Responses = append([]roachpb.ResponseUnion(nil), reply.Responses...)
 		pr := proposalResult{
 			Reply:   &reply,
+			Async:   true,
 			Intents: proposal.Local.DetachIntents(),
 		}
 		proposal.signalProposalResult(pr)
@@ -154,14 +153,14 @@ func (r *Replica) evalAndPropose(
 	// behavior.
 	quotaSize := uint64(proposal.command.Size())
 	if maxSize := uint64(MaxCommandSize.Get(&r.store.cfg.Settings.SV)); quotaSize > maxSize {
-		return nil, nil, 0, roachpb.NewError(errors.Errorf(
+		return nil, nil, 0, release, roachpb.NewError(errors.Errorf(
 			"command is too large: %d bytes (max: %d)", quotaSize, maxSize,
 		))
 	}
 	var err error
 	proposal.quotaAlloc, err = r.maybeAcquireProposalQuota(ctx, quotaSize)
 	if err != nil {
-		return nil, nil, 0, roachpb.NewError(err)
+		return nil, nil, 0, release, roachpb.NewError(err)
 	}
 	// Make sure we clean up the proposal if we fail to insert it into the
 	// proposal buffer successfully. This ensures that we always release any
@@ -180,13 +179,13 @@ func (r *Replica) evalAndPropose(
 			Req:   *ba,
 		}
 		if pErr := filter(filterArgs); pErr != nil {
-			return nil, nil, 0, pErr
+			return nil, nil, 0, release, pErr
 		}
 	}
 
 	maxLeaseIndex, pErr := r.propose(ctx, proposal)
 	if pErr != nil {
-		return nil, nil, 0, pErr
+		return nil, nil, 0, release, pErr
 	}
 	// Abandoning a proposal unbinds its context so that the proposal's client
 	// is free to terminate execution. However, it does nothing to try to
@@ -208,7 +207,7 @@ func (r *Replica) evalAndPropose(
 		// We'd need to make sure the span is finished eventually.
 		proposal.ctx = r.AnnotateCtx(context.TODO())
 	}
-	return proposalCh, abandon, maxLeaseIndex, nil
+	return proposalCh, abandon, maxLeaseIndex, release, nil
 }
 
 // propose encodes a command, starts tracking it, and proposes it to raft. The
