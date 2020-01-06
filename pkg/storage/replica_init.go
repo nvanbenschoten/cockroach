@@ -18,11 +18,10 @@ import (
 	"github.com/cockroachdb/cockroach/pkg/roachpb"
 	"github.com/cockroachdb/cockroach/pkg/rpc"
 	"github.com/cockroachdb/cockroach/pkg/storage/abortspan"
-	"github.com/cockroachdb/cockroach/pkg/storage/spanlatch"
+	"github.com/cockroachdb/cockroach/pkg/storage/concurrency"
 	"github.com/cockroachdb/cockroach/pkg/storage/split"
 	"github.com/cockroachdb/cockroach/pkg/storage/stateloader"
 	"github.com/cockroachdb/cockroach/pkg/storage/storagebase"
-	"github.com/cockroachdb/cockroach/pkg/storage/txnwait"
 	"github.com/cockroachdb/cockroach/pkg/util"
 	"github.com/cockroachdb/cockroach/pkg/util/log"
 	"github.com/cockroachdb/cockroach/pkg/util/timeutil"
@@ -70,8 +69,8 @@ func newUnloadedReplica(
 		RangeID:        desc.RangeID,
 		store:          store,
 		abortSpan:      abortspan.New(desc.RangeID),
+		concMgr:        concurrency.NewManager(store, desc),
 	}
-	r.txnWaitQueue = txnwait.NewQueue(store, r)
 	r.mu.pendingLeaseRequest = makePendingLeaseRequest(r)
 	r.mu.stateLoader = stateloader.Make(desc.RangeID)
 	r.mu.quiescent = true
@@ -80,7 +79,6 @@ func newUnloadedReplica(
 	split.Init(&r.loadBasedSplitter, rand.Intn, func() float64 {
 		return float64(SplitByLoadQPSThreshold.Get(&store.cfg.Settings.SV))
 	})
-	r.latchMgr = spanlatch.Make(r.store.stopper, r.store.metrics.SlowLatchRequests)
 	r.mu.proposals = map[storagebase.CmdIDKey]*ProposalData{}
 	r.mu.checksums = map[uuid.UUID]ReplicaChecksum{}
 	r.mu.proposalBuf.Init((*replicaProposer)(r))
@@ -300,5 +298,6 @@ func (r *Replica) setDescLockedRaftMuLocked(ctx context.Context, desc *roachpb.R
 
 	r.rangeStr.store(r.mu.replicaID, desc)
 	r.connectionClass.set(rpc.ConnectionClassForKey(desc.StartKey))
+	r.concMgr.OnDescriptorUpdated(desc)
 	r.mu.state.Desc = desc
 }
