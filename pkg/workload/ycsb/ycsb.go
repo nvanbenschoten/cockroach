@@ -39,29 +39,29 @@ const (
 
 	usertableSchemaRelational = `(
 		ycsb_key VARCHAR(255) PRIMARY KEY NOT NULL,
-		FIELD0 TEXT,
-		FIELD1 TEXT,
-		FIELD2 TEXT,
-		FIELD3 TEXT,
-		FIELD4 TEXT,
-		FIELD5 TEXT,
-		FIELD6 TEXT,
-		FIELD7 TEXT,
-		FIELD8 TEXT,
-		FIELD9 TEXT
+		FIELD0 TEXT NOT NULL,
+		FIELD1 TEXT NOT NULL,
+		FIELD2 TEXT NOT NULL,
+		FIELD3 TEXT NOT NULL,
+		FIELD4 TEXT NOT NULL,
+		FIELD5 TEXT NOT NULL,
+		FIELD6 TEXT NOT NULL,
+		FIELD7 TEXT NOT NULL,
+		FIELD8 TEXT NOT NULL,
+		FIELD9 TEXT NOT NULL
 	)`
 	usertableSchemaRelationalWithFamilies = `(
 		ycsb_key VARCHAR(255) PRIMARY KEY NOT NULL,
-		FIELD0 TEXT,
-		FIELD1 TEXT,
-		FIELD2 TEXT,
-		FIELD3 TEXT,
-		FIELD4 TEXT,
-		FIELD5 TEXT,
-		FIELD6 TEXT,
-		FIELD7 TEXT,
-		FIELD8 TEXT,
-		FIELD9 TEXT,
+		FIELD0 TEXT NOT NULL,
+		FIELD1 TEXT NOT NULL,
+		FIELD2 TEXT NOT NULL,
+		FIELD3 TEXT NOT NULL,
+		FIELD4 TEXT NOT NULL,
+		FIELD5 TEXT NOT NULL,
+		FIELD6 TEXT NOT NULL,
+		FIELD7 TEXT NOT NULL,
+		FIELD8 TEXT NOT NULL,
+		FIELD9 TEXT NOT NULL,
 		FAMILY (ycsb_key),
 		FAMILY (FIELD0),
 		FAMILY (FIELD1),
@@ -91,6 +91,7 @@ type ycsb struct {
 	json        bool
 	families    bool
 	splits      int
+	singleRow   bool
 
 	workload                                                        string
 	requestDistribution                                             string
@@ -121,6 +122,7 @@ var ycsbMeta = workload.Meta{
 		g.flags.BoolVar(&g.json, `json`, false, `Use JSONB rather than relational data`)
 		g.flags.BoolVar(&g.families, `families`, true, `Place each column in its own column family`)
 		g.flags.IntVar(&g.splits, `splits`, 0, `Number of splits to perform before starting normal operations`)
+		g.flags.BoolVar(&g.singleRow, `single-row`, false, `Read and write to a single row`)
 		g.flags.StringVar(&g.workload, `workload`, `B`, `Workload type. Choose from A-F.`)
 		g.flags.StringVar(&g.requestDistribution, `request-distribution`, ``, `Distribution for request key generation [zipfian, uniform, latest]. The default for workloads A, B, C, E, and F is zipfian, and the default for workload D is latest.`)
 		g.flags.StringVar(&g.scanLengthDistribution, `scan-length-distribution`, `uniform`, `Distribution for scan length generation [zipfian, uniform]. Primarily used for workload E.`)
@@ -170,6 +172,9 @@ func (g *ycsb) Hooks() workload.Hooks {
 				g.readFreq = 0.5
 				g.readModifyWriteFreq = 0.5
 				g.requestDistribution = "zipfian"
+			case "U", "u":
+				g.updateFreq = 1.0
+				g.requestDistribution = "zipfian"
 			default:
 				return errors.Errorf("Unknown workload: %q", g.workload)
 			}
@@ -210,7 +215,10 @@ func (g *ycsb) Tables() []workload.Table {
 		if g.json {
 			return []interface{}{key, "{}"}
 		}
-		return []interface{}{key, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil}
+		if g.singleRow && rowIdx == 0 {
+			key = keyNameFromHash(0)
+		}
+		return []interface{}{key, "", "", "", "", "", "", "", "", "", "", "", ""}
 	}
 	if g.json {
 		usertable.Schema = usertableSchemaJSON
@@ -490,6 +498,9 @@ func (yw *ycsbWorker) nextReadKey() string {
 	// distribution, so it might be worthwhile to exactly emulate what they're
 	// doing.
 	rowIndex := yw.requestGen.Uint64() % rowCount
+	if yw.config.singleRow {
+		return keyNameFromHash(0)
+	}
 	return yw.buildKeyName(rowIndex)
 }
 

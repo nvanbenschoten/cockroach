@@ -14,13 +14,34 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/cockroachdb/cockroach/pkg/keys"
 	"github.com/cockroachdb/cockroach/pkg/roachpb"
 	"github.com/cockroachdb/cockroach/pkg/storage/batcheval/result"
+	"github.com/cockroachdb/cockroach/pkg/storage/concurrency/lock"
 	"github.com/cockroachdb/cockroach/pkg/storage/engine"
+	"github.com/cockroachdb/cockroach/pkg/storage/spanset"
 )
 
 func init() {
-	RegisterReadOnlyCommand(roachpb.Scan, DefaultDeclareKeys, Scan)
+	RegisterReadOnlyCommand(roachpb.Scan, scanDeclareKeys, Scan)
+}
+
+func scanDeclareKeys(
+	desc *roachpb.RangeDescriptor, header roachpb.Header, req roachpb.Request, spans *spanset.SpanSet,
+) {
+	scan := req.(*roachpb.ScanRequest)
+	var access spanset.SpanAccess
+	if scan.KeyLocking != lock.None {
+		access = spanset.SpanReadWrite
+	} else {
+		access = spanset.SpanReadOnly
+	}
+
+	if keys.IsLocal(scan.Key) {
+		spans.AddNonMVCC(access, scan.Span())
+	} else {
+		spans.AddMVCC(access, scan.Span(), header.Timestamp)
+	}
 }
 
 // Scan scans the key range specified by start key through end key
@@ -34,45 +55,78 @@ func Scan(
 	h := cArgs.Header
 	reply := resp.(*roachpb.ScanResponse)
 
-	var res engine.MVCCScanResult
-	var err error
-
-	opts := engine.MVCCScanOptions{
-		Inconsistent: h.ReadConsistency != roachpb.CONSISTENT,
-		Txn:          h.Txn,
-		TargetBytes:  h.TargetBytes,
-		Reverse:      false,
+	var failOnMoreRecent bool
+	if args.KeyLocking != lock.None {
+		failOnMoreRecent = true
+	} else {
+		failOnMoreRecent = false
 	}
+
+	var scanRes engine.MVCCScanResult
+	var err error
+	var res result.Result
 
 	switch args.ScanFormat {
 	case roachpb.BATCH_RESPONSE:
-		res, err = engine.MVCCScanToBytes(
-			ctx, reader, args.Key, args.EndKey, cArgs.MaxKeys, h.Timestamp, opts)
+		scanRes, err = engine.MVCCScanToBytes(
+			ctx, reader, args.Key, args.EndKey, cArgs.MaxKeys, h.Timestamp,
+			engine.MVCCScanOptions{
+				Inconsistent:     h.ReadConsistency != roachpb.CONSISTENT,
+				Txn:              h.Txn,
+				TargetBytes:      h.TargetBytes,
+				FailOnMoreRecent: failOnMoreRecent,
+			})
 		if err != nil {
 			return result.Result{}, err
 		}
-		reply.BatchResponses = res.KVData
+		reply.BatchResponses = scanRes.KVData
+		if args.KeyLocking != lock.None && h.Txn != nil {
+			res.Local.UpdatedIntents = make([]roachpb.Intent, scanRes.NumKeys)
+			var i int
+			if err := engine.MVCCScanDecodeKeyValues(scanRes.KVData, func(key engine.MVCCKey, _ []byte) error {
+				res.Local.UpdatedIntents[i] = roachpb.Intent{
+					Span: roachpb.Span{Key: key.Key}, Txn: h.Txn.TxnMeta, Status: roachpb.PENDING,
+				}
+				return nil
+			}); err != nil {
+				return result.Result{}, err
+			}
+		}
 	case roachpb.KEY_VALUES:
-		res, err = engine.MVCCScan(
-			ctx, reader, args.Key, args.EndKey, cArgs.MaxKeys, h.Timestamp, opts)
+		scanRes, err = engine.MVCCScan(
+			ctx, reader, args.Key, args.EndKey, cArgs.MaxKeys, h.Timestamp, engine.MVCCScanOptions{
+				Inconsistent:     h.ReadConsistency != roachpb.CONSISTENT,
+				Txn:              h.Txn,
+				TargetBytes:      h.TargetBytes,
+				FailOnMoreRecent: failOnMoreRecent,
+			})
 		if err != nil {
 			return result.Result{}, err
 		}
-		reply.Rows = res.KVs
+		reply.Rows = scanRes.KVs
+		if args.KeyLocking != lock.None && h.Txn != nil {
+			res.Local.UpdatedIntents = make([]roachpb.Intent, scanRes.NumKeys)
+			for i, row := range scanRes.KVs {
+				res.Local.UpdatedIntents[i] = roachpb.Intent{
+					Span: roachpb.Span{Key: row.Key}, Txn: h.Txn.TxnMeta, Status: roachpb.PENDING,
+				}
+			}
+		}
 	default:
 		panic(fmt.Sprintf("Unknown scanFormat %d", args.ScanFormat))
 	}
 
-	reply.NumKeys = res.NumKeys
-	reply.NumBytes = res.NumBytes
+	reply.NumKeys = scanRes.NumKeys
+	reply.NumBytes = scanRes.NumBytes
 
-	if res.ResumeSpan != nil {
-		reply.ResumeSpan = res.ResumeSpan
+	if scanRes.ResumeSpan != nil {
+		reply.ResumeSpan = scanRes.ResumeSpan
 		reply.ResumeReason = roachpb.RESUME_KEY_LIMIT
 	}
 
 	if h.ReadConsistency == roachpb.READ_UNCOMMITTED {
-		reply.IntentRows, err = CollectIntentRows(ctx, reader, cArgs, res.Intents)
+		reply.IntentRows, err = CollectIntentRows(ctx, reader, cArgs, scanRes.Intents)
 	}
-	return result.FromEncounteredIntents(res.Intents), err
+	res.Local.EncounteredIntents = scanRes.Intents
+	return res, err
 }

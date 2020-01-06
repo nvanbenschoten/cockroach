@@ -26,6 +26,7 @@ import (
 	"github.com/cockroachdb/cockroach/pkg/sql/sqlbase"
 	"github.com/cockroachdb/cockroach/pkg/sql/types"
 	"github.com/cockroachdb/cockroach/pkg/util"
+	"github.com/cockroachdb/cockroach/pkg/util/envutil"
 	"github.com/cockroachdb/errors"
 )
 
@@ -186,6 +187,8 @@ func (mb *mutationBuilder) fetchColID(tabOrd int) opt.ColumnID {
 	return mb.scopeOrdToColID(mb.fetchOrds[tabOrd])
 }
 
+var sfu = envutil.EnvOrDefaultBool("COCKROACH_SFU", false)
+
 // buildInputForUpdate constructs a Select expression from the fields in
 // the Update operator, similar to this:
 //
@@ -229,12 +232,17 @@ func (mb *mutationBuilder) buildInputForUpdate(
 	//   UPDATE abc SET a=b
 	//
 
+	locking := noRowLocking
+	if sfu {
+		locking = updateRowLocking
+	}
+
 	// FROM
 	mb.outScope = mb.b.buildScan(
 		mb.b.addTable(mb.tab, &mb.alias),
 		nil, /* ordinals */
 		indexFlags,
-		noRowLocking,
+		locking,
 		includeMutations,
 		inScope,
 	)

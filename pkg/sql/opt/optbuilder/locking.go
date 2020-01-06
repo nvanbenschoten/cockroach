@@ -63,6 +63,8 @@ type lockingSpec []*tree.LockingItem
 // noRowLocking indicates that no row-level locking has been specified.
 var noRowLocking lockingSpec
 
+var updateRowLocking = lockingSpec{&tree.LockingItem{Strength: tree.ForUpdate}}
+
 // isSet returns whether the spec contains any row-level locking modes.
 func (lm lockingSpec) isSet() bool {
 	return len(lm) != 0
