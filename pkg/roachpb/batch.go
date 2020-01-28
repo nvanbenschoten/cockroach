@@ -352,10 +352,11 @@ func (br *BatchResponse) String() string {
 // contained in the requests are used, but when a response contains a
 // ResumeSpan the ResumeSpan is subtracted from the request span to provide a
 // more minimal span of keys affected by the request.
+// WIP: rename.
 func (ba *BatchRequest) IntentSpanIterate(br *BatchResponse, fn func(Span)) {
 	for i, arg := range ba.Requests {
 		req := arg.GetInner()
-		if !IsTransactionWrite(req) {
+		if !IsAcquiringLocks(req) {
 			continue
 		}
 		var resp Response

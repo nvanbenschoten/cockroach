@@ -250,7 +250,7 @@ func (tp *txnPipeliner) attachWritesToEndTxn(
 	for _, ru := range ba.Requests[:len(ba.Requests)-1] {
 		req := ru.GetInner()
 		h := req.Header()
-		if roachpb.IsTransactionWrite(req) {
+		if roachpb.IsAcquiringLocks(req) {
 			// Ranged writes are added immediately to the intent spans because
 			// it's not clear where they will actually leave intents. Point
 			// writes are added to the in-flight writes set.
@@ -259,11 +259,11 @@ func (tp *txnPipeliner) attachWritesToEndTxn(
 			// will fold the in-flight writes into the intent spans immediately
 			// and forgo a parallel commit, but let's not break that abstraction
 			// boundary here.
-			if roachpb.IsRange(req) {
-				et.IntentSpans = append(et.IntentSpans, h.Span())
-			} else {
+			if roachpb.IsTransactionWrite(req) && !roachpb.IsRange(req) {
 				w := roachpb.SequencedWrite{Key: h.Key, Sequence: h.Sequence}
 				et.InFlightWrites = append(et.InFlightWrites, w)
+			} else {
+				et.IntentSpans = append(et.IntentSpans, h.Span())
 			}
 		}
 	}
@@ -489,7 +489,7 @@ func (tp *txnPipeliner) updateWriteTracking(
 				// Move to write footprint.
 				tp.footprint.insert(roachpb.Span{Key: qiReq.Key})
 			}
-		} else if roachpb.IsTransactionWrite(req) {
+		} else if roachpb.IsAcquiringLocks(req) {
 			// If the request was a transactional write, track its intents.
 			if ba.AsyncConsensus {
 				// Record any writes that were performed asynchronously. We'll
@@ -498,7 +498,8 @@ func (tp *txnPipeliner) updateWriteTracking(
 				tp.ifWrites.insert(header.Key, header.Sequence)
 			} else {
 				// If the writes weren't performed asynchronously then add them
-				// directly to our write footprint.
+				// directly to our write footprint. ScanRequests will always hit
+				// this path because it will never use async consensus.
 				if sp, ok := roachpb.ActualSpan(req, resp); ok {
 					tp.footprint.insert(sp)
 				}

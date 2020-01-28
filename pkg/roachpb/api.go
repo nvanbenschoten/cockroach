@@ -15,6 +15,7 @@ import (
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials"
+	"github.com/cockroachdb/cockroach/pkg/storage/concurrency/lock"
 	"github.com/cockroachdb/cockroach/pkg/util/protoutil"
 	"github.com/pkg/errors"
 )
@@ -124,6 +125,20 @@ func IsTransactional(args Request) bool {
 // intents when used within a transaction.
 func IsTransactionWrite(args Request) bool {
 	return (args.flags() & isTxnWrite) != 0
+}
+
+// IsAcquiringLocks ...
+func IsAcquiringLocks(args Request) bool {
+	if IsTransactionWrite(args) {
+		return true
+	}
+	switch t := args.(type) {
+	case *ScanRequest:
+		return t.KeyLocking != lock.None
+	case *ReverseScanRequest:
+		return t.KeyLocking != lock.None
+	}
+	return false
 }
 
 // IsRange returns true if the command is range-based and must include

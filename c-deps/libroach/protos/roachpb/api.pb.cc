@@ -7943,6 +7943,7 @@ void ScanRequest::InitAsDefaultInstance() {
 #if !defined(_MSC_VER) || _MSC_VER >= 1900
 const int ScanRequest::kHeaderFieldNumber;
 const int ScanRequest::kScanFormatFieldNumber;
+const int ScanRequest::kKeyLockingFieldNumber;
 #endif  // !defined(_MSC_VER) || _MSC_VER >= 1900
 
 ScanRequest::ScanRequest()
@@ -7961,14 +7962,16 @@ ScanRequest::ScanRequest(const ScanRequest& from)
   } else {
     header_ = NULL;
   }
-  scan_format_ = from.scan_format_;
+  ::memcpy(&scan_format_, &from.scan_format_,
+    static_cast<size_t>(reinterpret_cast<char*>(&key_locking_) -
+    reinterpret_cast<char*>(&scan_format_)) + sizeof(key_locking_));
   // @@protoc_insertion_point(copy_constructor:cockroach.roachpb.ScanRequest)
 }
 
 void ScanRequest::SharedCtor() {
   ::memset(&header_, 0, static_cast<size_t>(
-      reinterpret_cast<char*>(&scan_format_) -
-      reinterpret_cast<char*>(&header_)) + sizeof(scan_format_));
+      reinterpret_cast<char*>(&key_locking_) -
+      reinterpret_cast<char*>(&header_)) + sizeof(key_locking_));
 }
 
 ScanRequest::~ScanRequest() {
@@ -7999,7 +8002,9 @@ void ScanRequest::Clear() {
     delete header_;
   }
   header_ = NULL;
-  scan_format_ = 0;
+  ::memset(&scan_format_, 0, static_cast<size_t>(
+      reinterpret_cast<char*>(&key_locking_) -
+      reinterpret_cast<char*>(&scan_format_)) + sizeof(key_locking_));
   _internal_metadata_.Clear();
 }
 
@@ -8045,6 +8050,21 @@ bool ScanRequest::MergePartialFromCodedStream(
         break;
       }
 
+      // .cockroach.storage.concurrency.lock.Strength key_locking = 5;
+      case 5: {
+        if (static_cast< ::google::protobuf::uint8>(tag) ==
+            static_cast< ::google::protobuf::uint8>(40u /* 40 & 0xFF */)) {
+          int value;
+          DO_((::google::protobuf::internal::WireFormatLite::ReadPrimitive<
+                   int, ::google::protobuf::internal::WireFormatLite::TYPE_ENUM>(
+                 input, &value)));
+          set_key_locking(static_cast< ::cockroach::storage::concurrency::lock::Strength >(value));
+        } else {
+          goto handle_unusual;
+        }
+        break;
+      }
+
       default: {
       handle_unusual:
         if (tag == 0) {
@@ -8082,6 +8102,12 @@ void ScanRequest::SerializeWithCachedSizes(
       4, this->scan_format(), output);
   }
 
+  // .cockroach.storage.concurrency.lock.Strength key_locking = 5;
+  if (this->key_locking() != 0) {
+    ::google::protobuf::internal::WireFormatLite::WriteEnum(
+      5, this->key_locking(), output);
+  }
+
   output->WriteRaw((::google::protobuf::internal::GetProto3PreserveUnknownsDefault()   ? _internal_metadata_.unknown_fields()   : _internal_metadata_.default_instance()).data(),
                    static_cast<int>((::google::protobuf::internal::GetProto3PreserveUnknownsDefault()   ? _internal_metadata_.unknown_fields()   : _internal_metadata_.default_instance()).size()));
   // @@protoc_insertion_point(serialize_end:cockroach.roachpb.ScanRequest)
@@ -8103,6 +8129,12 @@ size_t ScanRequest::ByteSizeLong() const {
   if (this->scan_format() != 0) {
     total_size += 1 +
       ::google::protobuf::internal::WireFormatLite::EnumSize(this->scan_format());
+  }
+
+  // .cockroach.storage.concurrency.lock.Strength key_locking = 5;
+  if (this->key_locking() != 0) {
+    total_size += 1 +
+      ::google::protobuf::internal::WireFormatLite::EnumSize(this->key_locking());
   }
 
   int cached_size = ::google::protobuf::internal::ToCachedSize(total_size);
@@ -8128,6 +8160,9 @@ void ScanRequest::MergeFrom(const ScanRequest& from) {
   if (from.scan_format() != 0) {
     set_scan_format(from.scan_format());
   }
+  if (from.key_locking() != 0) {
+    set_key_locking(from.key_locking());
+  }
 }
 
 void ScanRequest::CopyFrom(const ScanRequest& from) {
@@ -8149,6 +8184,7 @@ void ScanRequest::InternalSwap(ScanRequest* other) {
   using std::swap;
   swap(header_, other->header_);
   swap(scan_format_, other->scan_format_);
+  swap(key_locking_, other->key_locking_);
   _internal_metadata_.Swap(&other->_internal_metadata_);
 }
 
@@ -8458,6 +8494,7 @@ void ReverseScanRequest::InitAsDefaultInstance() {
 #if !defined(_MSC_VER) || _MSC_VER >= 1900
 const int ReverseScanRequest::kHeaderFieldNumber;
 const int ReverseScanRequest::kScanFormatFieldNumber;
+const int ReverseScanRequest::kKeyLockingFieldNumber;
 #endif  // !defined(_MSC_VER) || _MSC_VER >= 1900
 
 ReverseScanRequest::ReverseScanRequest()
@@ -8476,14 +8513,16 @@ ReverseScanRequest::ReverseScanRequest(const ReverseScanRequest& from)
   } else {
     header_ = NULL;
   }
-  scan_format_ = from.scan_format_;
+  ::memcpy(&scan_format_, &from.scan_format_,
+    static_cast<size_t>(reinterpret_cast<char*>(&key_locking_) -
+    reinterpret_cast<char*>(&scan_format_)) + sizeof(key_locking_));
   // @@protoc_insertion_point(copy_constructor:cockroach.roachpb.ReverseScanRequest)
 }
 
 void ReverseScanRequest::SharedCtor() {
   ::memset(&header_, 0, static_cast<size_t>(
-      reinterpret_cast<char*>(&scan_format_) -
-      reinterpret_cast<char*>(&header_)) + sizeof(scan_format_));
+      reinterpret_cast<char*>(&key_locking_) -
+      reinterpret_cast<char*>(&header_)) + sizeof(key_locking_));
 }
 
 ReverseScanRequest::~ReverseScanRequest() {
@@ -8514,7 +8553,9 @@ void ReverseScanRequest::Clear() {
     delete header_;
   }
   header_ = NULL;
-  scan_format_ = 0;
+  ::memset(&scan_format_, 0, static_cast<size_t>(
+      reinterpret_cast<char*>(&key_locking_) -
+      reinterpret_cast<char*>(&scan_format_)) + sizeof(key_locking_));
   _internal_metadata_.Clear();
 }
 
@@ -8560,6 +8601,21 @@ bool ReverseScanRequest::MergePartialFromCodedStream(
         break;
       }
 
+      // .cockroach.storage.concurrency.lock.Strength key_locking = 5;
+      case 5: {
+        if (static_cast< ::google::protobuf::uint8>(tag) ==
+            static_cast< ::google::protobuf::uint8>(40u /* 40 & 0xFF */)) {
+          int value;
+          DO_((::google::protobuf::internal::WireFormatLite::ReadPrimitive<
+                   int, ::google::protobuf::internal::WireFormatLite::TYPE_ENUM>(
+                 input, &value)));
+          set_key_locking(static_cast< ::cockroach::storage::concurrency::lock::Strength >(value));
+        } else {
+          goto handle_unusual;
+        }
+        break;
+      }
+
       default: {
       handle_unusual:
         if (tag == 0) {
@@ -8597,6 +8653,12 @@ void ReverseScanRequest::SerializeWithCachedSizes(
       4, this->scan_format(), output);
   }
 
+  // .cockroach.storage.concurrency.lock.Strength key_locking = 5;
+  if (this->key_locking() != 0) {
+    ::google::protobuf::internal::WireFormatLite::WriteEnum(
+      5, this->key_locking(), output);
+  }
+
   output->WriteRaw((::google::protobuf::internal::GetProto3PreserveUnknownsDefault()   ? _internal_metadata_.unknown_fields()   : _internal_metadata_.default_instance()).data(),
                    static_cast<int>((::google::protobuf::internal::GetProto3PreserveUnknownsDefault()   ? _internal_metadata_.unknown_fields()   : _internal_metadata_.default_instance()).size()));
   // @@protoc_insertion_point(serialize_end:cockroach.roachpb.ReverseScanRequest)
@@ -8618,6 +8680,12 @@ size_t ReverseScanRequest::ByteSizeLong() const {
   if (this->scan_format() != 0) {
     total_size += 1 +
       ::google::protobuf::internal::WireFormatLite::EnumSize(this->scan_format());
+  }
+
+  // .cockroach.storage.concurrency.lock.Strength key_locking = 5;
+  if (this->key_locking() != 0) {
+    total_size += 1 +
+      ::google::protobuf::internal::WireFormatLite::EnumSize(this->key_locking());
   }
 
   int cached_size = ::google::protobuf::internal::ToCachedSize(total_size);
@@ -8643,6 +8711,9 @@ void ReverseScanRequest::MergeFrom(const ReverseScanRequest& from) {
   if (from.scan_format() != 0) {
     set_scan_format(from.scan_format());
   }
+  if (from.key_locking() != 0) {
+    set_key_locking(from.key_locking());
+  }
 }
 
 void ReverseScanRequest::CopyFrom(const ReverseScanRequest& from) {
@@ -8664,6 +8735,7 @@ void ReverseScanRequest::InternalSwap(ReverseScanRequest* other) {
   using std::swap;
   swap(header_, other->header_);
   swap(scan_format_, other->scan_format_);
+  swap(key_locking_, other->key_locking_);
   _internal_metadata_.Swap(&other->_internal_metadata_);
 }
 

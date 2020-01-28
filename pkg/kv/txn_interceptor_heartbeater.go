@@ -395,6 +395,7 @@ func (h *txnHeartbeater) abortTxnAsyncLocked(ctx context.Context) {
 // BatchRequest. Returns -1 if the batch has not intention to write. It also
 // verifies that if an EndTxnRequest is included, then it is the last request
 // in the batch.
+// WIP: rename.
 func firstWriteIndex(ba *roachpb.BatchRequest) (int, *roachpb.Error) {
 	for i, ru := range ba.Requests {
 		args := ru.GetInner()
@@ -403,7 +404,7 @@ func firstWriteIndex(ba *roachpb.BatchRequest) (int, *roachpb.Error) {
 				return -1, roachpb.NewErrorf("%s sent as non-terminal call", args.Method())
 			}
 		}
-		if roachpb.IsTransactionWrite(args) {
+		if roachpb.IsAcquiringLocks(args) {
 			return i, nil
 		}
 	}
