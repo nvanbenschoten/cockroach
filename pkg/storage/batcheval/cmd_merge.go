@@ -19,7 +19,7 @@ import (
 )
 
 func init() {
-	RegisterReadWriteCommand(roachpb.Merge, DefaultDeclareKeys, Merge)
+	RegisterReadWriteCommand(roachpb.Merge, DefaultDeclareNonMVCCKeys, Merge)
 }
 
 // Merge is used to merge a value into an existing key. Merge is an

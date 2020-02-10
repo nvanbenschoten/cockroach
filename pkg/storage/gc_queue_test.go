@@ -451,6 +451,7 @@ func TestGCQueueProcess(t *testing.T) {
 				// Overwrite the timestamps set by newTransaction().
 				txn.ReadTimestamp = datum.ts
 				txn.WriteTimestamp = datum.ts
+				txn.MinTimestamp = datum.ts
 				txn.DeprecatedOrigTimestamp = datum.ts
 				assignSeqNumsForReqs(txn, &dArgs)
 			}
@@ -468,6 +469,7 @@ func TestGCQueueProcess(t *testing.T) {
 				// Overwrite the timestamps set by newTransaction().
 				txn.ReadTimestamp = datum.ts
 				txn.WriteTimestamp = datum.ts
+				txn.MinTimestamp = datum.ts
 				txn.DeprecatedOrigTimestamp = datum.ts
 				assignSeqNumsForReqs(txn, &pArgs)
 			}
@@ -854,6 +856,7 @@ func TestGCQueueTransactionTable(t *testing.T) {
 // intents spanning just two transactions.
 func TestGCQueueIntentResolution(t *testing.T) {
 	defer leaktest.AfterTest(t)()
+	t.Skip("WIP")
 	ctx := context.Background()
 	tc := testContext{}
 	stopper := stop.NewStopper()

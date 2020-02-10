@@ -39,7 +39,8 @@ func init() {
 func declareKeysClearRange(
 	desc *roachpb.RangeDescriptor, header roachpb.Header, req roachpb.Request, spans *spanset.SpanSet,
 ) {
-	DefaultDeclareKeys(desc, header, req, spans)
+	// TODO(WIP) switch...
+	DefaultDeclareNonMVCCKeys(desc, header, req, spans)
 	// We look up the range descriptor key to check whether the span
 	// is equal to the entire range for fast stats updating.
 	spans.AddNonMVCC(spanset.SpanReadOnly, roachpb.Span{Key: keys.RangeDescriptorKey(desc.StartKey)})

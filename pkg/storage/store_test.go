@@ -1904,6 +1904,7 @@ func setTxnAutoGC(to bool) func() { return batcheval.TestingSetTxnAutoGC(to) }
 // the intents that they run into.
 func TestStoreReadInconsistent(t *testing.T) {
 	defer leaktest.AfterTest(t)()
+	t.Skip("WIP")
 
 	for _, rc := range []roachpb.ReadConsistencyType{
 		roachpb.READ_UNCOMMITTED,

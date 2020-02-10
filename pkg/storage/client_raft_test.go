@@ -2990,6 +2990,7 @@ HAVING
 }
 
 func TestDecommission(t *testing.T) {
+	t.Skip("WIP")
 	defer leaktest.AfterTest(t)()
 
 	if util.RaceEnabled {

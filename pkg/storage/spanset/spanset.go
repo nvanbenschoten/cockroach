@@ -127,6 +127,7 @@ func (s *SpanSet) AddMVCC(access SpanAccess, span roachpb.Span, timestamp hlc.Ti
 	scope := SpanGlobal
 	if keys.IsLocal(span.Key) {
 		scope = SpanLocal
+		timestamp = hlc.Timestamp{}
 	}
 
 	s.spans[access][scope] = append(s.spans[access][scope], Span{Span: span, Timestamp: timestamp})
@@ -185,9 +186,10 @@ func (s *SpanSet) AssertAllowed(access SpanAccess, span roachpb.Span) {
 // is also a problem if the added spans were read only and the spanset wasn't
 // already SortAndDedup-ed.
 func (s *SpanSet) CheckAllowed(access SpanAccess, span roachpb.Span) error {
-	return s.checkAllowed(access, span, func(a SpanAccess, s SpanScope, cur Span) bool {
-		return true
-	})
+	return s.checkAllowed(
+		access, span, hlc.Timestamp{},
+		func(_ SpanAccess, _ SpanScope, _ Span) (allowed bool) { return true },
+	)
 }
 
 // CheckAllowedAt is like CheckAllowed, except it returns an error if the access
@@ -195,34 +197,66 @@ func (s *SpanSet) CheckAllowed(access SpanAccess, span roachpb.Span) error {
 func (s *SpanSet) CheckAllowedAt(
 	access SpanAccess, span roachpb.Span, timestamp hlc.Timestamp,
 ) error {
-	return s.checkAllowed(access, span, func(a SpanAccess, s SpanScope, cur Span) bool {
-		if cur.Timestamp.IsEmpty() {
-			// When the span is acquired as non-MVCC (i.e. with an empty
-			// timestamp), it's equivalent to a read/write mutex where we don't
-			// consider access timestamps.
-			return true
-		}
-
-		if access == SpanReadWrite {
-			// Writes under a write span with an associated timestamp at that
-			// specific timestamp.
-			if timestamp == cur.Timestamp {
+	return s.checkAllowed(
+		access, span, timestamp,
+		func(declAccess SpanAccess, _ SpanScope, declSpan Span) (allowed bool) {
+			declTimestamp := declSpan.Timestamp
+			if declTimestamp.IsEmpty() {
+				// When the span is declared as non-MVCC (i.e. with an empty
+				// timestamp), it's equivalent to a read/write mutex where we
+				// don't consider access timestamps.
 				return true
 			}
-		} else {
-			// Read spans acquired at a specific timestamp only allow reads at
-			// that timestamp and below. Non-MVCC access is not allowed.
-			if !timestamp.IsEmpty() && (timestamp.Less(cur.Timestamp) || timestamp == cur.Timestamp) {
+			if timestamp.IsEmpty() {
+				// If the timestamp is empty, this is either an inline write or
+				// an intent. Inline writes should not be allowed with non-MVCC
+				// access but intent writes should be. We can't easily tell the
+				// difference between the two here, so let both cases through.
 				return true
 			}
-		}
 
-		return false
-	})
+			// The span was declared as MVCC and the access is MVCC.
+			switch declAccess {
+			case SpanReadOnly:
+				// The span was declared as read-only.
+				switch access {
+				case SpanReadOnly:
+					// Read spans declared at a specific timestamp allow reads at
+					// that timestamp and below.
+					return timestamp.LessEq(declTimestamp)
+				case SpanReadWrite:
+					// Read spans declared at a specific timestamp do not allow
+					// writes.
+					return false
+				default:
+					panic("unexpected span access")
+				}
+			case SpanReadWrite:
+				// The span was declared as read-write.
+				switch access {
+				case SpanReadOnly:
+					// Write spans declared at a specific timestamp allow reads at
+					// any timestamp.
+					return true
+				case SpanReadWrite:
+					// Write spans declared at a specific timestamp allow writes at
+					// that timestamp and above.
+					return declTimestamp.LessEq(timestamp)
+				default:
+					panic("unexpected span access")
+				}
+			default:
+				panic("unexpected span access")
+			}
+		},
+	)
 }
 
 func (s *SpanSet) checkAllowed(
-	access SpanAccess, span roachpb.Span, check func(SpanAccess, SpanScope, Span) bool,
+	access SpanAccess,
+	span roachpb.Span,
+	timestamp hlc.Timestamp,
+	check func(SpanAccess, SpanScope, Span) bool,
 ) error {
 	scope := SpanGlobal
 	if keys.IsLocal(span.Key) {
@@ -237,7 +271,10 @@ func (s *SpanSet) checkAllowed(
 		}
 	}
 
-	return errors.Errorf("cannot %s undeclared span %s\ndeclared:\n%s", access, span, s)
+	// log.Fatal(context.Background(), errors.Errorf("cannot %s undeclared span %s @ %s\ndeclared:\n%s",
+	// 	access, span, timestamp, s).Error())
+	return errors.Errorf("cannot %s undeclared span %s @ %s\ndeclared:\n%s",
+		access, span, timestamp, s)
 }
 
 // contains returns whether s1 contains s2. Unlike Span.Contains, this function

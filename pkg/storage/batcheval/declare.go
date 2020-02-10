@@ -23,18 +23,33 @@ import (
 func DefaultDeclareKeys(
 	_ *roachpb.RangeDescriptor, header roachpb.Header, req roachpb.Request, spans *spanset.SpanSet,
 ) {
-	var access spanset.SpanAccess
-	if roachpb.IsReadOnly(req) {
-		access = spanset.SpanReadOnly
-	} else {
-		access = spanset.SpanReadWrite
+	access := accessForReq(req)
+	timestamp := header.Timestamp
+	if txn := header.Txn; txn != nil {
+		switch access {
+		case spanset.SpanReadOnly:
+			timestamp.Forward(txn.WriteTimestamp)
+		case spanset.SpanReadWrite:
+			timestamp.Backward(txn.MinTimestamp)
+		}
 	}
+	spans.AddMVCC(access, req.Header().Span(), timestamp)
+}
 
-	if keys.IsLocal(req.Header().Span().Key) {
-		spans.AddNonMVCC(access, req.Header().Span())
-	} else {
-		spans.AddMVCC(access, req.Header().Span(), header.Timestamp)
+// DefaultDeclareNonMVCCKeys is like DefaultDeclareKeys, except it declares keys
+// for a request using non-MVCC semantics, regardless of the keyspace that the
+// request touches.
+func DefaultDeclareNonMVCCKeys(
+	_ *roachpb.RangeDescriptor, _ roachpb.Header, req roachpb.Request, spans *spanset.SpanSet,
+) {
+	spans.AddNonMVCC(accessForReq(req), req.Header().Span())
+}
+
+func accessForReq(req roachpb.Request) spanset.SpanAccess {
+	if roachpb.IsReadOnly(req) {
+		return spanset.SpanReadOnly
 	}
+	return spanset.SpanReadWrite
 }
 
 // DeclareKeysForBatch adds all keys that the batch with the provided header
