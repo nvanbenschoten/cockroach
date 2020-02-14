@@ -1278,9 +1278,9 @@ func (l *lockState) requestDone(g *lockTableGuardImpl) (gc bool) {
 			}
 		}
 	}
-	if !doneRemoval {
-		panic("lockTable bug")
-	}
+	// if !doneRemoval {
+	// 	panic("lockTable bug")
+	// }
 	if distinguishedRemoved {
 		l.tryMakeNewDistinguished()
 	}
