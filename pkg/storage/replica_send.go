@@ -187,6 +187,7 @@ func (r *Replica) executeBatchWithConcurrencyRetries(
 		if pErr != nil {
 			return nil, pErr
 		} else if resp != nil {
+			br := new(roachpb.BatchResponse)
 			br.Responses = resp
 			return br, nil
 		}
