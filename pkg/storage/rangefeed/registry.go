@@ -52,6 +52,7 @@ type Stream interface {
 // channel is sent an error to inform it that the registration
 // has finished.
 type registration struct {
+	reg *registry
 	// Input.
 	span             roachpb.Span
 	catchupTimestamp hlc.Timestamp
@@ -196,6 +197,8 @@ func (r *registration) maybeStripEvent(event *roachpb.RangeFeedEvent) *roachpb.R
 			t = copyOnWrite().(*roachpb.RangeFeedCheckpoint)
 			t.Span = r.span
 		}
+		log.Infof(r.reg.ctx, "maybeStripEvent req=%s-%s event=%s-%s ts=%s",
+			r.span.Key, r.span.EndKey, t.Span.Key, t.Span.EndKey, t.ResolvedTS)
 	default:
 		panic(fmt.Sprintf("unexpected RangeFeedEvent variant: %v", t))
 	}
@@ -425,12 +428,14 @@ func (r registration) String() string {
 
 // registry holds a set of registrations and manages their lifecycle.
 type registry struct {
+	ctx     context.Context
 	tree    interval.Tree // *registration items
 	idAlloc int64
 }
 
-func makeRegistry() registry {
+func makeRegistry(ctx context.Context) registry {
 	return registry{
+		ctx:  ctx,
 		tree: interval.NewTree(interval.ExclusiveOverlapper),
 	}
 }
@@ -448,6 +453,8 @@ func (reg *registry) NewFilter() *Filter {
 
 // Register adds the provided registration to the registry.
 func (reg *registry) Register(r *registration) {
+	log.Infof(reg.ctx, "register %s %s", r.span, r.catchupTimestamp)
+	r.reg = reg
 	r.id = reg.nextID()
 	r.keys = r.span.AsRange()
 	if err := reg.tree.Insert(r, false /* fast */); err != nil {
@@ -477,6 +484,8 @@ func (reg *registry) PublishToOverlapping(span roachpb.Span, event *roachpb.Rang
 		//
 		// TODO(dan): It's unclear if this is the right contract, it's certainly
 		// surprising. Revisit this once RangeFeed has more users.
+		log.Infof(reg.ctx, "PublishToOverlapping event=%s-%s ts=%s",
+			span.Key, span.EndKey, t.ResolvedTS)
 		minTS = hlc.MaxTimestamp
 	default:
 		panic(fmt.Sprintf("unexpected RangeFeedEvent variant: %v", t))
@@ -496,6 +505,7 @@ func (reg *registry) PublishToOverlapping(span roachpb.Span, event *roachpb.Rang
 // registration has already been disconnected, this is intended only to clean
 // up the registry.
 func (reg *registry) Unregister(r *registration) {
+	log.Infof(reg.ctx, "remove %s %s", r.span, r.catchupTimestamp)
 	if err := reg.tree.Delete(r, false /* fast */); err != nil {
 		panic(err)
 	}
@@ -530,6 +540,7 @@ func (reg *registry) forOverlappingRegs(
 		r := i.(*registration)
 		dis, pErr := fn(r)
 		if dis {
+			log.Infof(reg.ctx, "remove %s %s %v", r.span, r.catchupTimestamp, pErr)
 			r.disconnect(pErr)
 			toDelete = append(toDelete, i)
 		}
