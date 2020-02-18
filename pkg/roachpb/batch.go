@@ -119,9 +119,9 @@ func (ba *BatchRequest) IsAllTransactional() bool {
 	return ba.hasFlagForAll(isTxn)
 }
 
-// IsTransactionWrite returns true iff the BatchRequest contains a txn write.
-func (ba *BatchRequest) IsTransactionWrite() bool {
-	return ba.hasFlag(isTxnWrite)
+// IsIntentWrites returns true iff the BatchRequest contains an intent write.
+func (ba *BatchRequest) IsIntentWrites() bool {
+	return ba.hasFlag(isIntentWrite)
 }
 
 // IsUnsplittable returns true iff the BatchRequest an un-splittable request.
@@ -264,7 +264,7 @@ func (ba *BatchRequest) IsCompleteTransaction() bool {
 			return false
 		}
 		if seq == nextSeq {
-			if !IsTransactionWrite(req) {
+			if !IsIntentWrites(req) {
 				return false
 			}
 			nextSeq++
@@ -352,10 +352,11 @@ func (br *BatchResponse) String() string {
 // contained in the requests are used, but when a response contains a
 // ResumeSpan the ResumeSpan is subtracted from the request span to provide a
 // more minimal span of keys affected by the request.
+// WIP: rename.
 func (ba *BatchRequest) IntentSpanIterate(br *BatchResponse, fn func(Span)) {
 	for i, arg := range ba.Requests {
 		req := arg.GetInner()
-		if !IsTransactionWrite(req) {
+		if !IsLocking(req) {
 			continue
 		}
 		var resp Response

@@ -88,7 +88,8 @@ const (
 	isRead                          // read-only cmds don't go through raft, but may run on lease holder
 	isWrite                         // write cmds go through raft and must be proposed on lease holder
 	isTxn                           // txn commands may be part of a transaction
-	isTxnWrite                      // txn write cmds start heartbeat and are marked for intent resolution
+	isLocking                       // locking cmds acquire locks for their transaction  (implies isTxn)
+	isIntentWrite                   // intent write cmds leave intents when they succeed (implies isWrite and isLocking)
 	isRange                         // range commands may span multiple keys
 	isReverse                       // reverse commands traverse ranges in descending direction
 	isAlone                         // requests which must be alone in a batch
@@ -121,10 +122,16 @@ func IsTransactional(args Request) bool {
 	return (args.flags() & isTxn) != 0
 }
 
-// IsTransactionWrite returns true if the request produces write
+// IsLocking returns true if the request acquires locks when
+// used within a transaction.
+func IsLocking(args Request) bool {
+	return (args.flags() & isLocking) != 0
+}
+
+// IsIntentWrites returns true if the request produces write
 // intents when used within a transaction.
-func IsTransactionWrite(args Request) bool {
-	return (args.flags() & isTxnWrite) != 0
+func IsIntentWrites(args Request) bool {
+	return (args.flags() & isIntentWrite) != 0
 }
 
 // IsRange returns true if the command is range-based and must include
@@ -995,9 +1002,12 @@ func NewReverseScan(key, endKey Key) Request {
 	}
 }
 
-func (*GetRequest) flags() int { return isRead | isTxn | updatesTSCache | needsRefresh }
+func (*GetRequest) flags() int {
+	return isRead | isTxn | updatesTSCache | needsRefresh
+}
+
 func (*PutRequest) flags() int {
-	return isWrite | isTxn | isTxnWrite | consultsTSCache | canBackpressure
+	return isWrite | isTxn | isLocking | isIntentWrite | consultsTSCache | canBackpressure
 }
 
 // ConditionalPut effectively reads without writing if it hits a
@@ -1006,7 +1016,7 @@ func (*PutRequest) flags() int {
 // they return an error immediately instead of continuing a serializable
 // transaction to be retried at end transaction.
 func (*ConditionalPutRequest) flags() int {
-	return isRead | isWrite | isTxn | isTxnWrite | consultsTSCache | updatesTSCache | updatesTSCacheOnErr | canBackpressure
+	return isRead | isWrite | isTxn | isLocking | isIntentWrite | consultsTSCache | updatesTSCache | updatesTSCacheOnErr | canBackpressure
 }
 
 // InitPut, like ConditionalPut, effectively reads without writing if it hits a
@@ -1015,7 +1025,7 @@ func (*ConditionalPutRequest) flags() int {
 // return an error immediately instead of continuing a serializable transaction
 // to be retried at end transaction.
 func (*InitPutRequest) flags() int {
-	return isRead | isWrite | isTxn | isTxnWrite | consultsTSCache | updatesTSCache | updatesTSCacheOnErr | canBackpressure
+	return isRead | isWrite | isTxn | isLocking | isIntentWrite | consultsTSCache | updatesTSCache | updatesTSCacheOnErr | canBackpressure
 }
 
 // Increment reads the existing value, but always leaves an intent so
@@ -1024,12 +1034,13 @@ func (*InitPutRequest) flags() int {
 // error immediately instead of continuing a serializable transaction
 // to be retried at end transaction.
 func (*IncrementRequest) flags() int {
-	return isRead | isWrite | isTxn | isTxnWrite | consultsTSCache | canBackpressure
+	return isRead | isWrite | isTxn | isLocking | isIntentWrite | consultsTSCache | canBackpressure
 }
 
 func (*DeleteRequest) flags() int {
-	return isWrite | isTxn | isTxnWrite | consultsTSCache | canBackpressure
+	return isWrite | isTxn | isLocking | isIntentWrite | consultsTSCache | canBackpressure
 }
+
 func (drr *DeleteRangeRequest) flags() int {
 	// DeleteRangeRequest has different properties if the "inline" flag is set.
 	// This flag indicates that the request is deleting inline MVCC values,
@@ -1053,7 +1064,7 @@ func (drr *DeleteRangeRequest) flags() int {
 	// anybody from writing under it. Note that, even if we didn't update the ts
 	// cache, deletes of keys that exist would not be lost (since the DeleteRange
 	// leaves intents on those keys), but deletes of "empty space" would.
-	return isWrite | isTxn | isTxnWrite | isRange | consultsTSCache | updatesTSCache | needsRefresh | canBackpressure
+	return isWrite | isTxn | isLocking | isIntentWrite | isRange | consultsTSCache | updatesTSCache | needsRefresh | canBackpressure
 }
 
 // Note that ClearRange commands cannot be part of a transaction as
@@ -1064,9 +1075,20 @@ func (*ClearRangeRequest) flags() int { return isWrite | isRange | isAlone }
 // they clear all MVCC versions above their target time.
 func (*RevertRangeRequest) flags() int { return isWrite | isRange }
 
-func (*ScanRequest) flags() int { return isRead | isRange | isTxn | updatesTSCache | needsRefresh }
-func (*ReverseScanRequest) flags() int {
-	return isRead | isRange | isReverse | isTxn | updatesTSCache | needsRefresh
+func (sr *ScanRequest) flags() int {
+	maybeLocking := 0
+	if sr.KeyLocking != lock.None {
+		maybeLocking = isLocking
+	}
+	return isRead | isRange | isTxn | maybeLocking | updatesTSCache | needsRefresh
+}
+
+func (rsr *ReverseScanRequest) flags() int {
+	maybeLocking := 0
+	if rsr.KeyLocking != lock.None {
+		maybeLocking = isLocking
+	}
+	return isRead | isRange | isReverse | isTxn | maybeLocking | updatesTSCache | needsRefresh
 }
 
 // EndTxn updates the timestamp cache to prevent replays.
