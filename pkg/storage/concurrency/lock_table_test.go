@@ -182,7 +182,7 @@ func TestLockTableBasic(t *testing.T) {
 				spans := scanSpans(t, d, ts)
 				req := Request{
 					Timestamp: ts,
-					Spans:     spans,
+					LockSpans: spans,
 				}
 				if txnMeta != nil {
 					// Update the transaction's timestamp, if necessary. The transaction
@@ -469,7 +469,7 @@ func doWork(ctx context.Context, item *workItem, e *workloadExecutor) error {
 			// cancellation, the code makes sure to release latches when returning
 			// early due to error. Otherwise other requests will get stuck and
 			// group.Wait() will not return until the test times out.
-			lg, err = e.lm.Acquire(context.TODO(), item.request.Spans)
+			lg, err = e.lm.Acquire(context.TODO(), item.request.LockSpans)
 			if err != nil {
 				return err
 			}
@@ -852,7 +852,7 @@ func TestLockTableConcurrentSingleRequests(t *testing.T) {
 		request := &Request{
 			Txn:       txn,
 			Timestamp: ts,
-			Spans:     spans,
+			LockSpans: spans,
 		}
 		items = append(items, workloadItem{request: request})
 		if txn != nil {
@@ -929,7 +929,7 @@ func TestLockTableConcurrentRequests(t *testing.T) {
 		numKeys := rng.Intn(len(keys)-1) + 1
 		request := &Request{
 			Timestamp: ts,
-			Spans:     spans,
+			LockSpans: spans,
 		}
 		if txnMeta != nil {
 			request.Txn = &roachpb.Transaction{TxnMeta: *txnMeta}
@@ -999,7 +999,7 @@ func doBenchWork(item *benchWorkItem, env benchEnv, doneCh chan<- error) {
 	var err error
 	firstIter := true
 	for {
-		if lg, err = env.lm.Acquire(context.TODO(), item.Spans); err != nil {
+		if lg, err = env.lm.Acquire(context.TODO(), item.LockSpans); err != nil {
 			doneCh <- err
 			return
 		}
@@ -1033,7 +1033,7 @@ func doBenchWork(item *benchWorkItem, env benchEnv, doneCh chan<- error) {
 		return
 	}
 	// Release locks.
-	if lg, err = env.lm.Acquire(context.TODO(), item.Spans); err != nil {
+	if lg, err = env.lm.Acquire(context.TODO(), item.LockSpans); err != nil {
 		doneCh <- err
 		return
 	}
@@ -1063,7 +1063,7 @@ func createRequests(index int, numOutstanding int, numKeys int, numReadKeys int)
 	wi := benchWorkItem{
 		Request: Request{
 			Timestamp: ts,
-			Spans:     spans,
+			LockSpans: spans,
 		},
 	}
 	for i := 0; i < numKeys; i++ {

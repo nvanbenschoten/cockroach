@@ -25,15 +25,19 @@ func init() {
 }
 
 func declareKeysPut(
-	_ *roachpb.RangeDescriptor, header roachpb.Header, req roachpb.Request, spans *spanset.SpanSet,
+	_ *roachpb.RangeDescriptor,
+	header roachpb.Header,
+	req roachpb.Request,
+	latchSpans, lockSpans *spanset.SpanSet,
 ) {
 	args := req.(*roachpb.PutRequest)
 	access := spanset.SpanReadWrite
 
 	if args.Inline {
-		spans.AddNonMVCC(access, req.Header().Span())
+		latchSpans.AddNonMVCC(access, req.Header().Span())
 	} else {
-		spans.AddMVCC(access, req.Header().Span(), header.Timestamp)
+		latchSpans.AddMVCC(access, req.Header().Span(), header.Timestamp)
+		lockSpans.AddMVCC(access, req.Header().Span(), header.Timestamp)
 	}
 }
 

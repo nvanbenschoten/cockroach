@@ -1390,7 +1390,7 @@ func (t *lockTableImpl) ScanAndEnqueue(req Request, guard lockTableGuard) lockTa
 		g = &lockTableGuardImpl{
 			seqNum: seqNum,
 			table:  t,
-			spans:  req.Spans,
+			spans:  req.LockSpans,
 			ts:     req.Timestamp,
 			sa:     spanset.NumSpanAccess - 1,
 			index:  -1,
