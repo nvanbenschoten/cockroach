@@ -39,6 +39,8 @@ type lockTableWaiterImpl struct {
 	// How long to wait until pushing conflicting transactions to detect
 	// dependency cycles.
 	dependencyCyclePushDelay time.Duration
+
+	dontPushOnWriteIntentError bool
 }
 
 // IntentResolver is an interface used by lockTableWaiterImpl to push
@@ -175,6 +177,17 @@ func (w *lockTableWaiterImpl) WaitOn(
 }
 
 func (w *lockTableWaiterImpl) pushTxn(ctx context.Context, req Request, ws waitingState) *Error {
+	if w.dontPushOnWriteIntentError {
+		intent := roachpb.Intent{
+			Span:   roachpb.Span{Key: ws.key},
+			Txn:    *ws.txn,
+			Status: roachpb.PENDING,
+		}
+		return roachpb.NewError(&roachpb.WriteIntentError{
+			Intents: []roachpb.Intent{intent},
+		})
+	}
+
 	h := roachpb.Header{
 		Timestamp:    req.Timestamp,
 		UserPriority: req.Priority,

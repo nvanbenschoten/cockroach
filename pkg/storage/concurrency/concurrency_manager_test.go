@@ -375,6 +375,7 @@ func (c *cluster) Clock() *hlc.Clock                          { return nil }
 func (c *cluster) Stopper() *stop.Stopper                     { return nil }
 func (c *cluster) IntentResolver() concurrency.IntentResolver { return c }
 func (c *cluster) GetTxnWaitKnobs() txnwait.TestingKnobs      { return txnwait.TestingKnobs{} }
+func (c *cluster) DontPushOnWriteIntentError() bool           { return false }
 func (c *cluster) GetTxnWaitMetrics() *txnwait.Metrics        { return txnwait.NewMetrics(time.Minute) }
 func (c *cluster) GetSlowLatchGauge() *metric.Gauge           { return nil }
 

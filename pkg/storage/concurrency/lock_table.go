@@ -901,7 +901,8 @@ func (l *lockState) acquireLock(
 		if len(seqs) > 0 {
 			lastSeq := seqs[len(seqs)-1]
 			if lastSeq > txn.Sequence {
-				return errors.Errorf("caller violated contract")
+				return nil
+				// return errors.Errorf("caller violated contract found ya")
 			}
 			if lastSeq == txn.Sequence {
 				// Idempotent lock acquisition.
@@ -911,11 +912,14 @@ func (l *lockState) acquireLock(
 		if add {
 			l.holder.holder[durability].seqs = append(seqs, txn.Sequence)
 		}
+		if ts.Less(l.holder.holder[durability].ts) {
+			return nil
+		}
 		l.holder.holder[durability].txn = txn
 		l.holder.holder[durability].ts = ts
 		_, afterTs := l.getLockerInfo()
 		if afterTs.Less(beforeTs) {
-			return errors.Errorf("caller violated contract")
+			return errors.Errorf("caller violated contract found ya 2")
 		} else if beforeTs.Less(afterTs) {
 			l.increasedLockTs(afterTs)
 		}

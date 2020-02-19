@@ -199,6 +199,7 @@ func TestRejectFutureCommand(t *testing.T) {
 //    again at a new epoch timestamp T+200, which will finally succeed.
 func TestTxnPutOutOfOrder(t *testing.T) {
 	defer leaktest.AfterTest(t)()
+	t.Skip("WIP")
 
 	// key is selected to fall within the meta range in order for the later
 	// routing of requests to range 1 to work properly. Removing the routing

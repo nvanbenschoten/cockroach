@@ -55,6 +55,8 @@ type Store interface {
 	IntentResolver() IntentResolver
 	// Knobs.
 	GetTxnWaitKnobs() txnwait.TestingKnobs
+	// WIP: make these configs.
+	DontPushOnWriteIntentError() bool
 	// Metrics.
 	GetTxnWaitMetrics() *txnwait.Metrics
 	GetSlowLatchGauge() *metric.Gauge
@@ -74,10 +76,11 @@ func NewManager(store Store, rng *roachpb.RangeDescriptor) Manager {
 		},
 		lt: newLockTable(10000 /* arbitrary */),
 		ltw: &lockTableWaiterImpl{
-			nodeID:                   store.NodeDescriptor().NodeID,
-			stopper:                  store.Stopper(),
-			ir:                       store.IntentResolver(),
-			dependencyCyclePushDelay: defaultDependencyCyclePushDelay,
+			nodeID:                     store.NodeDescriptor().NodeID,
+			stopper:                    store.Stopper(),
+			ir:                         store.IntentResolver(),
+			dependencyCyclePushDelay:   defaultDependencyCyclePushDelay,
+			dontPushOnWriteIntentError: store.DontPushOnWriteIntentError(),
 		},
 		// TODO(nvanbenschoten): move pkg/storage/txnwait to a new
 		// pkg/storage/concurrency/txnwait package.
@@ -252,6 +255,11 @@ func (m *managerImpl) FinishReq(g *Guard) {
 func (m *managerImpl) HandleWriterIntentError(
 	ctx context.Context, g *Guard, t *roachpb.WriteIntentError,
 ) *Guard {
+	if g.ltg == nil {
+		log.Fatalf(ctx, "cannot handle WriteIntentError %v for request without "+
+			"lockTableGuard; were lock spans declared for this request?", t)
+	}
+
 	// Add a discovered lock to lock-table for each intent and enter each lock's
 	// wait-queue.
 	for i := range t.Intents {
@@ -350,6 +358,11 @@ func (m *managerImpl) LockTableDebug() string {
 	return m.lt.String()
 }
 
+// TxnWaitQueue implements...
+func (m *managerImpl) TxnWaitQueue() *txnwait.Queue {
+	return m.twq.(*txnwait.Queue)
+}
+
 // ContainsKey implements the txnwait.ReplicaInterface interface.
 func (m *managerImpl) ContainsKey(key roachpb.Key) bool {
 	return storagebase.ContainsKey(m.rng, key)
@@ -367,8 +380,13 @@ func newGuard(req Request) *Guard {
 	return &Guard{req: req}
 }
 
+// HoldingLatches returned whether the guard is holding latches or not.
+func (g *Guard) HoldingLatches() bool {
+	return g != nil && g.lg != nil
+}
+
 func (g *Guard) assertNoLatches() {
-	if g.lg != nil {
+	if g.HoldingLatches() {
 		panic("unexpected latches held")
 	}
 }

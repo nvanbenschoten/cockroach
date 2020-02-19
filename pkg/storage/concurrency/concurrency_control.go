@@ -21,6 +21,7 @@ import (
 	"github.com/cockroachdb/cockroach/pkg/storage/engine/enginepb"
 	"github.com/cockroachdb/cockroach/pkg/storage/spanset"
 	"github.com/cockroachdb/cockroach/pkg/storage/storagepb"
+	"github.com/cockroachdb/cockroach/pkg/storage/txnwait"
 	"github.com/cockroachdb/cockroach/pkg/util/hlc"
 	"github.com/cockroachdb/cockroach/pkg/util/uuid"
 )
@@ -151,6 +152,8 @@ type Manager interface {
 	TransactionManager
 	RangeStateListener
 	MetricExporter
+
+	TxnWaitQueue() *txnwait.Queue
 }
 
 // RequestSequencer is concerned with the sequencing of concurrent requests. It

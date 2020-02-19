@@ -170,7 +170,7 @@ func prepareRightReplicaForSplit(
 	// The right hand side of the split was already created (and its raftMu
 	// acquired) in Replica.acquireSplitLock. It must be present here.
 	rightRng, err := r.store.GetReplica(split.RightDesc.RangeID)
-	// If the RHS replica at the point of the split was known to be removed when
+	// If the RHS replica at the point of the split was known to be removed
 	// during the application of the split then we may not find it here. That's
 	// fine, carry on. See also:
 	_, _ = r.acquireSplitLock, splitPostApply

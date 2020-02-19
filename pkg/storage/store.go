@@ -2565,6 +2565,11 @@ func (s *Store) GetSlowLatchGauge() *metric.Gauge {
 	return s.metrics.SlowLatchRequests
 }
 
+// DontPushOnWriteIntentError is part of concurrency.StoreInterface.
+func (s *Store) DontPushOnWriteIntentError() bool {
+	return s.TestingKnobs().DontPushOnWriteIntentError
+}
+
 func init() {
 	tracing.RegisterTagRemapping("s", "store")
 }
