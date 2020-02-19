@@ -43,6 +43,7 @@ import (
 	"github.com/cockroachdb/cockroach/pkg/storage/closedts/ctpb"
 	"github.com/cockroachdb/cockroach/pkg/storage/cloud"
 	"github.com/cockroachdb/cockroach/pkg/storage/compactor"
+	"github.com/cockroachdb/cockroach/pkg/storage/concurrency"
 	"github.com/cockroachdb/cockroach/pkg/storage/engine"
 	"github.com/cockroachdb/cockroach/pkg/storage/engine/enginepb"
 	"github.com/cockroachdb/cockroach/pkg/storage/idalloc"
@@ -2052,6 +2053,9 @@ func (s *Store) Gossip() *gossip.Gossip { return s.cfg.Gossip }
 // Compactor accessor.
 func (s *Store) Compactor() *compactor.Compactor { return s.compactor }
 
+// IntentResolver accessor.
+func (s *Store) IntentResolver() concurrency.IntentResolver { return s.intentResolver }
+
 // Stopper accessor.
 func (s *Store) Stopper() *stop.Stopper { return s.stopper }
 
@@ -2554,6 +2558,11 @@ func (s *Store) GetTxnWaitKnobs() txnwait.TestingKnobs {
 // the shared metrics instance.
 func (s *Store) GetTxnWaitMetrics() *txnwait.Metrics {
 	return s.txnWaitMetrics
+}
+
+// GetSlowLatchGauge is part of concurrency.StoreInterface.
+func (s *Store) GetSlowLatchGauge() *metric.Gauge {
+	return s.metrics.SlowLatchRequests
 }
 
 func init() {
