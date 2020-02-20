@@ -10,7 +10,10 @@
 
 package result
 
-import "github.com/cockroachdb/cockroach/pkg/roachpb"
+import (
+	"github.com/cockroachdb/cockroach/pkg/roachpb"
+	"github.com/cockroachdb/cockroach/pkg/storage/concurrency/lock"
+)
 
 // FromWrittenIntent creates a Result communicating that an intent was written
 // or re-written by the given request and should be handled.
@@ -19,8 +22,11 @@ func FromWrittenIntent(txn *roachpb.Transaction, key roachpb.Key) Result {
 	if txn == nil {
 		return pd
 	}
-	pd.Local.WrittenIntents = []roachpb.Intent{{
-		Span: roachpb.Span{Key: key}, Txn: txn.TxnMeta, Status: roachpb.PENDING,
+	pd.Local.WrittenIntents = []roachpb.LockUpdate{{
+		Span:       roachpb.Span{Key: key},
+		Txn:        txn.TxnMeta,
+		Status:     roachpb.PENDING,
+		Durability: lock.Replicated,
 	}}
 	return pd
 }
@@ -32,10 +38,13 @@ func FromWrittenIntents(txn *roachpb.Transaction, keys []roachpb.Key) Result {
 	if txn == nil {
 		return pd
 	}
-	pd.Local.WrittenIntents = make([]roachpb.Intent, len(keys))
+	pd.Local.WrittenIntents = make([]roachpb.LockUpdate, len(keys))
 	for i := range pd.Local.WrittenIntents {
-		pd.Local.WrittenIntents[i] = roachpb.Intent{
-			Span: roachpb.Span{Key: keys[i]}, Txn: txn.TxnMeta, Status: roachpb.PENDING,
+		pd.Local.WrittenIntents[i] = roachpb.LockUpdate{
+			Span:       roachpb.Span{Key: keys[i]},
+			Txn:        txn.TxnMeta,
+			Status:     roachpb.PENDING,
+			Durability: lock.Replicated,
 		}
 	}
 	return pd

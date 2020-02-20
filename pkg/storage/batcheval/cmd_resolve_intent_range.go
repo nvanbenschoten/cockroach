@@ -45,13 +45,13 @@ func ResolveIntentRange(
 		return result.Result{}, ErrTransactionUnsupported
 	}
 
-	intent := args.AsIntent()
+	update := args.AsLockUpdate()
 
 	iterAndBuf := engine.GetIterAndBuf(readWriter, engine.IterOptions{UpperBound: args.EndKey})
 	defer iterAndBuf.Cleanup()
 
 	numKeys, resumeSpan, err := engine.MVCCResolveWriteIntentRangeUsingIter(
-		ctx, readWriter, iterAndBuf, ms, intent, cArgs.MaxKeys,
+		ctx, readWriter, iterAndBuf, ms, update, cArgs.MaxKeys,
 	)
 	if err != nil {
 		return result.Result{}, err
@@ -59,13 +59,13 @@ func ResolveIntentRange(
 	reply := resp.(*roachpb.ResolveIntentRangeResponse)
 	reply.NumKeys = numKeys
 	if resumeSpan != nil {
-		intent.EndKey = resumeSpan.Key
+		update.EndKey = resumeSpan.Key
 		reply.ResumeSpan = resumeSpan
 		reply.ResumeReason = roachpb.RESUME_KEY_LIMIT
 	}
 
 	var res result.Result
-	res.Local.ResolvedIntents = []roachpb.Intent{intent}
+	res.Local.ResolvedIntents = []roachpb.LockUpdate{update}
 	res.Local.Metrics = resolveToMetricType(args.Status, args.Poison)
 
 	if WriteAbortSpanOnResolve(args.Status, args.Poison, numKeys > 0) {

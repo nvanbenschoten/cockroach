@@ -86,14 +86,14 @@ func ResolveIntent(
 		return result.Result{}, ErrTransactionUnsupported
 	}
 
-	intent := args.AsIntent()
-	ok, err := engine.MVCCResolveWriteIntent(ctx, readWriter, ms, intent)
+	update := args.AsLockUpdate()
+	ok, err := engine.MVCCResolveWriteIntent(ctx, readWriter, ms, update)
 	if err != nil {
 		return result.Result{}, err
 	}
 
 	var res result.Result
-	res.Local.ResolvedIntents = []roachpb.Intent{intent}
+	res.Local.ResolvedIntents = []roachpb.LockUpdate{update}
 	res.Local.Metrics = resolveToMetricType(args.Status, args.Poison)
 
 	if WriteAbortSpanOnResolve(args.Status, args.Poison, ok) {

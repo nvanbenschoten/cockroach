@@ -56,7 +56,7 @@ type IntentResolver interface {
 	) (roachpb.Transaction, *Error)
 
 	// ResolveIntent resolves the provided intent according to the options.
-	ResolveIntent(context.Context, roachpb.Intent, intentresolver.ResolveOptions) *Error
+	ResolveIntent(context.Context, roachpb.LockUpdate, intentresolver.ResolveOptions) *Error
 }
 
 // WaitOn implements the lockTableWaiter interface.
@@ -181,7 +181,6 @@ func (w *lockTableWaiterImpl) pushTxn(ctx context.Context, req Request, ws waiti
 		intent := roachpb.Intent{
 			Span:   roachpb.Span{Key: ws.key},
 			Txn:    *ws.txn,
-			Status: roachpb.PENDING,
 		}
 		return roachpb.NewError(&roachpb.WriteIntentError{
 			Intents: []roachpb.Intent{intent},
@@ -240,10 +239,9 @@ func (w *lockTableWaiterImpl) pushTxn(ctx context.Context, req Request, ws waiti
 	//
 	// To do better here, we need per-intent information on whether we need to
 	// poison.
-	resolveIntent := roachpb.Intent{Span: roachpb.Span{Key: ws.key}}
-	resolveIntent.SetTxn(&pusheeTxn)
+	resolve := roachpb.MakeLockUpdate(&pusheeTxn, roachpb.Span{Key: ws.key}, ws.dur)
 	opts := intentresolver.ResolveOptions{Wait: false, Poison: true}
-	return w.ir.ResolveIntent(ctx, resolveIntent, opts)
+	return w.ir.ResolveIntent(ctx, resolve, opts)
 }
 
 func hasMinPriority(txn *enginepb.TxnMeta) bool {

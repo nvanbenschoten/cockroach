@@ -29,6 +29,7 @@ import (
 	"github.com/cockroachdb/cockroach/pkg/roachpb"
 	"github.com/cockroachdb/cockroach/pkg/storage/batcheval"
 	"github.com/cockroachdb/cockroach/pkg/storage/concurrency"
+	"github.com/cockroachdb/cockroach/pkg/storage/concurrency/lock"
 	"github.com/cockroachdb/cockroach/pkg/storage/engine/enginepb"
 	"github.com/cockroachdb/cockroach/pkg/storage/intentresolver"
 	"github.com/cockroachdb/cockroach/pkg/storage/spanset"
@@ -252,10 +253,9 @@ func TestConcurrencyManagerBasic(t *testing.T) {
 
 				mon.runSync("acquire lock", func(ctx context.Context) {
 					log.Eventf(ctx, "%s @ %s", txnName, key)
-					m.OnLockAcquired(ctx, &roachpb.Intent{
-						Span: roachpb.Span{Key: roachpb.Key(key)},
-						Txn:  txn.TxnMeta,
-					})
+					span := roachpb.Span{Key: roachpb.Key(key)}
+					up := roachpb.MakeLockUpdate(txn, span, lock.Unreplicated)
+					m.OnLockAcquired(ctx, &up)
 				})
 				return mon.waitAndCollect(t)
 
@@ -411,8 +411,8 @@ func (c *cluster) PushTransaction(
 
 // ResolveIntent implements the concurrency.IntentResolver interface.
 func (c *cluster) ResolveIntent(
-	ctx context.Context, intent roachpb.Intent, _ intentresolver.ResolveOptions,
-) *roachpb.Error {
+	ctx context.Context, intent roachpb.LockUpdate, _ intentresolver.ResolveOptions,
+) *Error {
 	log.Eventf(ctx, "resolving intent %s for txn %s with %s status", intent.Key, intent.Txn.ID, intent.Status)
 	c.m.OnLockUpdated(ctx, &intent)
 	return nil

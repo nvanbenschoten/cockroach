@@ -22,6 +22,7 @@ import (
 	"github.com/cockroachdb/cockroach/pkg/settings/cluster"
 	"github.com/cockroachdb/cockroach/pkg/storage/abortspan"
 	"github.com/cockroachdb/cockroach/pkg/storage/batcheval/result"
+	"github.com/cockroachdb/cockroach/pkg/storage/concurrency/lock"
 	"github.com/cockroachdb/cockroach/pkg/storage/engine"
 	"github.com/cockroachdb/cockroach/pkg/storage/engine/enginepb"
 	"github.com/cockroachdb/cockroach/pkg/storage/rditer"
@@ -457,7 +458,7 @@ func resolveLocalIntents(
 	args *roachpb.EndTxnRequest,
 	txn *roachpb.Transaction,
 	evalCtx EvalContext,
-) (resolvedIntents []roachpb.Intent, externalIntents []roachpb.Span, _ error) {
+) (resolvedIntents []roachpb.LockUpdate, externalIntents []roachpb.Span, _ error) {
 	if mergeTrigger := args.InternalCommitTrigger.GetMergeTrigger(); mergeTrigger != nil {
 		// If this is a merge, then use the post-merge descriptor to determine
 		// which intents are local (note that for a split, we want to use the
@@ -483,7 +484,7 @@ func resolveLocalIntents(
 				externalIntents = append(externalIntents, span)
 				return nil
 			}
-			intent := roachpb.MakeIntent(txn, span)
+			intent := roachpb.MakeLockUpdate(txn, span, lock.Replicated)
 			if len(span.EndKey) == 0 {
 				// For single-key intents, do a KeyAddress-aware check of
 				// whether it's contained in our Range.

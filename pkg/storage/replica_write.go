@@ -13,6 +13,8 @@ package storage
 import (
 	"context"
 
+	"github.com/cockroachdb/cockroach/pkg/storage/concurrency/lock"
+
 	"github.com/cockroachdb/cockroach/pkg/base"
 	"github.com/cockroachdb/cockroach/pkg/roachpb"
 	"github.com/cockroachdb/cockroach/pkg/storage/batcheval"
@@ -423,12 +425,13 @@ func (r *Replica) evaluate1PC(
 	// may have acquired unreplicated locks, so inform the concurrency manager
 	// that it is finalized.
 	res.Local.UpdatedTxns = []*roachpb.Transaction{clonedTxn}
-	res.Local.ResolvedIntents = make([]roachpb.Intent, len(etArg.IntentSpans))
+	res.Local.ResolvedIntents = make([]roachpb.LockUpdate, len(etArg.IntentSpans))
 	for i, sp := range etArg.IntentSpans {
-		res.Local.ResolvedIntents[i] = roachpb.Intent{
-			Span:   sp,
-			Txn:    clonedTxn.TxnMeta,
-			Status: clonedTxn.Status,
+		res.Local.ResolvedIntents[i] = roachpb.LockUpdate{
+			Span:       sp,
+			Txn:        clonedTxn.TxnMeta,
+			Status:     clonedTxn.Status,
+			Durability: lock.Unreplicated,
 		}
 	}
 
