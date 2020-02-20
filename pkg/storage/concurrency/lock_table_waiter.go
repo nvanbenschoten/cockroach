@@ -20,10 +20,11 @@ import (
 	"github.com/cockroachdb/cockroach/pkg/storage/spanset"
 	"github.com/cockroachdb/cockroach/pkg/util/stop"
 	"github.com/cockroachdb/cockroach/pkg/util/timeutil"
+	"github.com/cockroachdb/cockroach/pkg/util/log"
 )
 
 // Default delay before pushing in order to detect dependency cycles.
-const defaultDependencyCyclePushDelay = 100 * time.Millisecond
+const defaultDependencyCyclePushDelay = 10000 * time.Millisecond
 
 // Silence unused warning.
 var _ = defaultDependencyCyclePushDelay
@@ -76,6 +77,10 @@ func (w *lockTableWaiterImpl) WaitOn(
 			state := guard.CurState()
 			switch state.stateKind {
 			case waitFor:
+				log.Eventf(ctx, "waitFor held=%v %v %v %v", state.held, state.txn, state.ts, state.key)
+				if !state.held {
+					continue
+				}
 				// waitFor indicates that the request is waiting on another
 				// transaction. This transaction may be the lock holder of a
 				// conflicting lock or the head of a lock-wait queue that the
@@ -110,6 +115,10 @@ func (w *lockTableWaiterImpl) WaitOn(
 				timerWaitingState = state
 
 			case waitForDistinguished:
+                                if !state.held {
+                                        continue
+                                }
+				log.Eventf(ctx, "waitForDistinguished held=%v %v %v %v", state.held, state.txn, state.ts, state.key)
 				// waitForDistinguished is like waitFor, except it instructs the
 				// waiter to immediately push the conflicting transaction instead of
 				// first waiting out the dependencyCyclePushDelay. The lockTable
@@ -123,11 +132,22 @@ func (w *lockTableWaiterImpl) WaitOn(
 				// aborted transaction IDs that allowed us to notice and immediately
 				// resolve abandoned intents then we might be able to get rid of
 				// this state.
-				if err := w.pushTxn(ctx, req, state); err != nil {
-					return err
+				if timer == nil {
+					timer = timeutil.NewTimer()
+					defer timer.Stop()
 				}
+				timer.Reset(20*time.Millisecond)
+				timerC = timer.C
+				timerWaitingState = state
+				//if err := w.pushTxn(ctx, req, state); err != nil {
+				//	return err
+				//}
 
 			case waitElsewhere:
+				if !state.held {
+                                        return nil
+                                }
+				log.Eventf(ctx, "waitElsewhere held=%v %v %v %v", state.held, state.txn, state.ts, state.key)
 				// The lockTable has hit a memory limit and is no longer maintaining
 				// proper lock wait-queues. However, the waiting request is still
 				// not safe to proceed with evaluation because there is still a
@@ -143,6 +163,7 @@ func (w *lockTableWaiterImpl) WaitOn(
 				// holder of this lock wait-queue. This can only happen when the
 				// request's transaction is sending multiple requests concurrently.
 				// Proceed with waiting without pushing anyone.
+				log.Event(ctx, "waitSelf")
 
 			case doneWaiting:
 				// The request has waited for all conflicting locks to be released
@@ -150,6 +171,7 @@ func (w *lockTableWaiterImpl) WaitOn(
 				// waiting, re-acquire latches, and check the lockTable again for
 				// any new conflicts. If it find none, it can proceed with
 				// evaluation.
+				log.Event(ctx, "doneWaiting")
 				return nil
 
 			default:
@@ -157,6 +179,7 @@ func (w *lockTableWaiterImpl) WaitOn(
 			}
 
 		case <-timerC:
+			log.Event(ctx, "timer")
 			// If the transactional request was in the waitFor state and did not
 			// observe any update to its state for a dependencyCyclePushDelay,
 			// it should push. It may be the case that the transaction is part
@@ -225,9 +248,9 @@ func (w *lockTableWaiterImpl) pushTxn(ctx context.Context, req Request, ws waiti
 	if err != nil {
 		return err
 	}
-	if !ws.held {
-		return nil
-	}
+	//if !ws.held {
+	//	return nil
+	//}
 
 	// We always poison due to limitations of the API: not poisoning equals
 	// clearing the AbortSpan, and if our pushee transaction first got pushed

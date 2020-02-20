@@ -298,7 +298,7 @@ func evaluateBatch(
 				// speculative result, or leave behind a type of lock that wouldn't
 				// prevent the request for evaluating again at the same sequence number
 				// but at a bumped timestamp.
-				if roachpb.IsReadAndWrite(args) {
+				if roachpb.IsReadAndWrite(args) || roachpb.IsReadOnly(args) {
 					writeTooOldState.cantDeferWTOE = true
 				}
 
