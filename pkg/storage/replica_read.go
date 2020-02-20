@@ -21,6 +21,7 @@ import (
 	"github.com/cockroachdb/cockroach/pkg/storage/storagepb"
 	"github.com/cockroachdb/cockroach/pkg/util"
 	"github.com/cockroachdb/cockroach/pkg/util/log"
+	"github.com/cockroachdb/cockroach/pkg/util/hlc"
 	"github.com/kr/pretty"
 )
 
@@ -65,7 +66,12 @@ func (r *Replica) executeReadOnlyBatch(
 		rw = spanset.NewReadWriterAt(rw, spans, ba.Timestamp)
 	}
 	defer rw.Close()
-	br, result, pErr = evaluateBatch(ctx, storagebase.CmdIDKey(""), rw, rec, nil, ba, true /* readOnly */)
+	for {
+		br, result, pErr = evaluateBatch(ctx, storagebase.CmdIDKey(""), rw, rec, nil, ba, true /* readOnly */)
+		if !canDoServersideReadRetry(ctx, pErr, ba, br) {
+			break
+		}
+	}
 	if err := r.handleReadOnlyLocalEvalResult(ctx, ba, result.Local); err != nil {
 		pErr = roachpb.NewError(err)
 	}
@@ -77,6 +83,40 @@ func (r *Replica) executeReadOnlyBatch(
 		log.Event(ctx, "read completed")
 	}
 	return br, false, pErr
+}
+
+func canDoServersideReadRetry(
+	ctx context.Context,
+	pErr *roachpb.Error,
+	ba *roachpb.BatchRequest,
+	br *roachpb.BatchResponse,
+) bool {
+	if pErr == nil {
+		return false
+	}
+	var newTimestamp hlc.Timestamp
+	switch tErr := pErr.GetDetail().(type) {
+	case *roachpb.WriteTooOldError:
+		newTimestamp = tErr.ActualTimestamp
+	default:
+		return false
+	}
+
+	if ba.Txn == nil {
+		return false
+	}
+	if len(ba.Requests) != 1 {
+		return false
+	}
+	scan := ba.Requests[0].GetScan()
+	if scan == nil {
+		return false
+	}
+	if scan.KeyLocking == 0 {
+		return false
+	}
+	bumpBatchTimestamp(ctx, ba, newTimestamp)
+	return true
 }
 
 func (r *Replica) handleReadOnlyLocalEvalResult(

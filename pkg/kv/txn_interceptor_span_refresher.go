@@ -200,6 +200,8 @@ func (sr *txnSpanRefresher) SendLocked(
 		return br, nil
 	}
 
+	sr.refreshedTimestamp.Forward(br.Txn.ReadTimestamp)
+
 	// Iterate over and aggregate refresh spans in the requests,
 	// qualified by possible resume spans in the responses, if we
 	// haven't yet exceeded the max read key bytes.
