@@ -202,7 +202,10 @@ func registerKVContention(r *testRegistry) {
 			// If requests ever get stuck on a transaction that was abandoned
 			// then it will take 2m for them to get unstuck, at which point the
 			// QPS threshold check in the test is likely to fail.
-			args := startArgs("--env=COCKROACH_TXN_LIVENESS_HEARTBEAT_MULTIPLIER=120")
+			args := startArgs(
+				"--env=COCKROACH_TXN_LIVENESS_HEARTBEAT_MULTIPLIER=120",
+				"--env=COCKROACH_TXN_HEARTBEAT_DURING_1PC=true",
+			)
 			c.Start(ctx, t, args, c.Range(1, nodes))
 
 			// Enable request tracing, which is a good tool for understanding
