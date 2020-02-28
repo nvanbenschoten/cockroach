@@ -71,47 +71,29 @@ type IntentResolver interface {
 func (w *lockTableWaiterImpl) WaitOn(
 	ctx context.Context, req Request, guard lockTableGuard,
 ) *Error {
-	newStateC := guard.NewStateChan()
-	ctxDoneC := ctx.Done()
-	shouldQuiesceC := w.stopper.ShouldQuiesce()
+	// Used to delay liveness and deadlock detection pushes.
 	var timer *timeutil.Timer
 	var timerC <-chan time.Time
 	var timerWaitingState waitingState
+
+	// Used to push conflicting requests (but not locks) asynchronously.
+	var asyncPushC <-chan *Error
+	var asyncPushCancel context.CancelFunc = func() {}
+	defer asyncPushCancel()
+
+	newStateC := guard.NewStateChan()
+	ctxDoneC := ctx.Done()
+	shouldQuiesceC := w.stopper.ShouldQuiesce()
 	for {
 		select {
 		case <-newStateC:
 			timerC = nil
-			state := guard.CurState()
-			if !state.held {
-				// If the lock is not held and instead has a reservation, we don't
-				// want to push the reservation transaction. A transaction push will
-				// block until the pushee transaction has either committed, aborted,
-				// pushed, or rolled back savepoints, i.e., there is some state
-				// change that has happened to the transaction record that unblocks
-				// the pusher. It will not unblock merely because a request issued
-				// by the pushee transaction has completed and released a
-				// reservation. Note that:
-				// - reservations are not a guarantee that the lock will be acquired.
-				// - the following two reasons to push do not apply to requests
-				// holding reservations:
-				//  1. competing requests compete at exactly one lock table, so there
-				//  is no possibility of distributed deadlock due to reservations.
-				//  2. the lock table can prioritize requests based on transaction
-				//  priorities.
-				//
-				// TODO(sbhola): remove the need for this by only notifying waiters
-				// for held locks and never for reservations.
-				// TODO(sbhola): now that we never push reservation holders, we
-				// should stop special-casing non-transactional writes and let them
-				// acquire reservations.
-				switch state.stateKind {
-				case waitFor, waitForDistinguished:
-					continue
-				case waitElsewhere:
-					return nil
-				}
+			if asyncPushC != nil {
+				asyncPushC = nil
+				asyncPushCancel()
 			}
 
+			state := guard.CurState()
 			switch state.stateKind {
 			case waitFor:
 				// waitFor indicates that the request is waiting on another
@@ -188,6 +170,9 @@ func (w *lockTableWaiterImpl) WaitOn(
 				// txnWaitQueue. Once this completes, the request should stop
 				// waiting on this lockTableGuard, as it will no longer observe
 				// lock-table state transitions.
+				if !state.held {
+					return nil
+				}
 				return w.pushTxn(ctx, req, state)
 
 			case waitSelf:
@@ -216,9 +201,23 @@ func (w *lockTableWaiterImpl) WaitOn(
 			// has crashed.
 			timerC = nil
 			timer.Read = true
-			if err := w.pushTxn(ctx, req, timerWaitingState); err != nil {
+
+			if timerWaitingState.held {
+				if err := w.pushTxn(ctx, req, timerWaitingState); err != nil {
+					return err
+				}
+			} else {
+				var asyncPushCtx context.Context
+				asyncPushCtx, asyncPushCancel = context.WithCancel(ctx)
+				asyncPushC = w.pushTxnAsync(asyncPushCtx, req, timerWaitingState)
+			}
+
+		case err := <-asyncPushC:
+			if err != nil {
 				return err
 			}
+			asyncPushC = nil
+			asyncPushCancel()
 
 		case <-ctxDoneC:
 			return roachpb.NewError(ctx.Err())
@@ -230,7 +229,7 @@ func (w *lockTableWaiterImpl) WaitOn(
 }
 
 func (w *lockTableWaiterImpl) pushTxn(ctx context.Context, req Request, ws waitingState) *Error {
-	if w.disableTxnPushing {
+	if w.disableTxnPushing && ws.held {
 		return roachpb.NewError(&roachpb.WriteIntentError{
 			Intents: []roachpb.Intent{roachpb.MakeIntent(ws.txn, ws.key)},
 		})
@@ -288,6 +287,16 @@ func (w *lockTableWaiterImpl) pushTxn(ctx context.Context, req Request, ws waiti
 	resolve := roachpb.MakeLockUpdateWithDur(&pusheeTxn, roachpb.Span{Key: ws.key}, ws.dur)
 	opts := intentresolver.ResolveOptions{Poison: true}
 	return w.ir.ResolveIntent(ctx, resolve, opts)
+}
+
+func (w *lockTableWaiterImpl) pushTxnAsync(ctx context.Context, req Request, ws waitingState) <-chan *Error {
+	c := make(chan *Error, 1)
+	if err := w.stopper.RunAsyncTask(ctx, "push", func(context.Context) {
+		c <- w.pushTxn(ctx, req, ws)
+	}); err != nil {
+		c <- roachpb.NewError(err)
+	}
+	return c
 }
 
 func hasMinPriority(txn *enginepb.TxnMeta) bool {
