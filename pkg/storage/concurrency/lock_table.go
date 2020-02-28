@@ -1198,6 +1198,28 @@ func (l *lockState) discoveredLock(
 		}
 	}
 
+	// If there are waiting requests from the same txn, they no longer need to wait.
+	for e := l.queuedWriters.Front(); e != nil; {
+		qg := e.Value.(*queuedGuard)
+		curr := e
+		e = e.Next()
+		g := qg.guard
+		if g.isTxn(txn) {
+			if qg.active {
+				if g == l.distinguishedWaiter {
+					informWaiters = true
+					l.distinguishedWaiter = nil
+				}
+				g.doneWaitingAtLock(false, l)
+			} else {
+				g.mu.Lock()
+				delete(g.mu.locks, l)
+				g.mu.Unlock()
+			}
+			l.queuedWriters.Remove(curr)
+		}
+	}
+
 	// Active waiters need to be told about who they are waiting for.
 	if informWaiters {
 		l.informActiveWaiters()
