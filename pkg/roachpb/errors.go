@@ -539,6 +539,13 @@ func NewTransactionCommittedStatusError() *TransactionStatusError {
 	}
 }
 
+func NewTransactionCommittedStatusErrorWithMsg(msg string) *TransactionStatusError {
+	return &TransactionStatusError{
+		Msg:    "already committed " + msg,
+		Reason: TransactionStatusError_REASON_TXN_COMMITTED,
+	}
+}
+
 func (e *TransactionStatusError) Error() string {
 	return fmt.Sprintf("TransactionStatusError: %s (%s)", e.Msg, e.Reason)
 }
