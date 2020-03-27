@@ -1011,7 +1011,7 @@ func (l *lockState) tryActiveWait(g *lockTableGuardImpl, sa spanset.SpanAccess, 
 			return false
 		}
 		// Locked by some other txn.
-		if g.readTS.Less(waitForTs) {
+		if g.readTS.Less(waitForTs) || waitForDur == lock.Unreplicated {
 			return false
 		}
 		g.mu.Lock()
