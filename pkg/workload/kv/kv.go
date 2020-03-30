@@ -264,7 +264,7 @@ func (w *kv) Ops(urls []string, reg *histogram.Registry) (workload.QueryLoad, er
 			fmt.Fprintf(&buf, `(mod($%d, %d), $%d)`, i+1, w.shards, i+1)
 		}
 	}
-	buf.WriteString(`)`)
+	buf.WriteString(`) FOR SHARE`)
 	readStmtStr := buf.String()
 
 	// Write statement

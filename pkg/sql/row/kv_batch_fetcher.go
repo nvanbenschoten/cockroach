@@ -283,12 +283,20 @@ func (f *txnKVFetcher) fetch(ctx context.Context) error {
 			ba.Requests[i].MustSetInner(&scans[i])
 		}
 	} else {
-		scans := make([]roachpb.ScanRequest, len(f.spans))
-		for i := range f.spans {
-			scans[i].SetSpan(f.spans[i])
-			scans[i].ScanFormat = roachpb.BATCH_RESPONSE
-			scans[i].KeyLocking = keyLocking
-			ba.Requests[i].MustSetInner(&scans[i])
+		if f.lockStr == sqlbase.ScanLockingStrength_FOR_SHARE {
+			scans := make([]roachpb.GetRequest, len(f.spans))
+			for i := range f.spans {
+				scans[i].Key = f.spans[i].Key
+				ba.Requests[i].MustSetInner(&scans[i])
+			}
+		} else {
+			scans := make([]roachpb.ScanRequest, len(f.spans))
+			for i := range f.spans {
+				scans[i].SetSpan(f.spans[i])
+				scans[i].ScanFormat = roachpb.BATCH_RESPONSE
+				scans[i].KeyLocking = keyLocking
+				ba.Requests[i].MustSetInner(&scans[i])
+			}
 		}
 	}
 	if cap(f.requestSpans) < len(f.spans) {
@@ -391,6 +399,14 @@ func (f *txnKVFetcher) nextBatch(
 				f.remainingBatches = t.BatchResponses[1:]
 			}
 			return true, t.Rows, batchResp, origSpan, nil
+		case *roachpb.GetResponse:
+			if t.Value != nil {
+				kvs = []roachpb.KeyValue{{
+					Key:   origSpan.Key,
+					Value: *t.Value,
+				}}
+			}
+			return true, kvs, batchResp, origSpan, nil
 		}
 	}
 	if f.fetchEnd {
