@@ -671,23 +671,38 @@ func (s *Store) sendQueuedHeartbeatsToNode(
 	}
 
 	chReq := newRaftMessageRequest()
-	*chReq = RaftMessageRequest{
-		RangeID: 0,
-		ToReplica: roachpb.ReplicaDescriptor{
-			NodeID:    to.NodeID,
-			StoreID:   to.StoreID,
-			ReplicaID: 0,
-		},
-		FromReplica: roachpb.ReplicaDescriptor{
-			NodeID:  s.Ident.NodeID,
-			StoreID: s.Ident.StoreID,
-		},
-		Message: raftpb.Message{
-			Type: msgType,
-		},
-		Heartbeats:     beats,
-		HeartbeatResps: resps,
+	chReq.RangeID = 0
+	chReq.ToReplica = roachpb.ReplicaDescriptor{
+		NodeID:    to.NodeID,
+		StoreID:   to.StoreID,
+		ReplicaID: 0,
 	}
+	chReq.FromReplica = roachpb.ReplicaDescriptor{
+		NodeID:  s.Ident.NodeID,
+		StoreID: s.Ident.StoreID,
+	}
+	chReq.Message = raftpb.Message{
+		Type: msgType,
+	}
+	chReq.Heartbeats = beats
+	chReq.HeartbeatResps = resps
+	// *chReq = RaftMessageRequest{
+	// 	RangeID: 0,
+	// 	ToReplica: roachpb.ReplicaDescriptor{
+	// 		NodeID:    to.NodeID,
+	// 		StoreID:   to.StoreID,
+	// 		ReplicaID: 0,
+	// 	},
+	// 	FromReplica: roachpb.ReplicaDescriptor{
+	// 		NodeID:  s.Ident.NodeID,
+	// 		StoreID: s.Ident.StoreID,
+	// 	},
+	// 	Message: raftpb.Message{
+	// 		Type: msgType,
+	// 	},
+	// 	Heartbeats:     beats,
+	// 	HeartbeatResps: resps,
+	// }
 
 	if log.V(4) {
 		log.Infof(ctx, "sending raft request (coalesced) %+v", chReq)

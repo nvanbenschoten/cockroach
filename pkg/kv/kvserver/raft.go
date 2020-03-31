@@ -15,6 +15,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"sync/atomic"
 
 	"github.com/cockroachdb/cockroach/pkg/kv/kvserver/storagebase"
 	"github.com/cockroachdb/cockroach/pkg/util/log"
@@ -227,10 +228,22 @@ var raftMessageRequestPool = sync.Pool{
 }
 
 func newRaftMessageRequest() *RaftMessageRequest {
-	return raftMessageRequestPool.Get().(*RaftMessageRequest)
+	m := raftMessageRequestPool.Get().(*RaftMessageRequest)
+	m.RefCounting = true
+	if n := atomic.AddInt64(&m.RefCount, 1); n != 1 {
+		// log.Warningf(context.Background(), "NATHAN ref count violation: %d", n)
+		log.Fatalf(context.Background(), "ref count violation: %d", n)
+	}
+	return m
 }
 
 func (m *RaftMessageRequest) release() {
+	if m.RefCounting {
+		if n := atomic.AddInt64(&m.RefCount, -1); n != 0 {
+			// log.Warningf(context.Background(), "NATHAN ref count violation: %d", n)
+			log.Fatalf(context.Background(), "ref count violation: %d", n)
+		}
+	}
 	*m = RaftMessageRequest{}
 	raftMessageRequestPool.Put(m)
 }
