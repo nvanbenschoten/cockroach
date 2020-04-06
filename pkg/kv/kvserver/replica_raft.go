@@ -1137,13 +1137,19 @@ func (r *Replica) sendRaftMessage(ctx context.Context, msg raftpb.Message) {
 	}
 
 	req := newRaftMessageRequest()
-	*req = RaftMessageRequest{
-		RangeID:       r.RangeID,
-		ToReplica:     toReplica,
-		FromReplica:   fromReplica,
-		Message:       msg,
-		RangeStartKey: startKey, // usually nil
-	}
+	req.RangeID = r.RangeID
+	req.ToReplica = toReplica
+	req.FromReplica = fromReplica
+	req.Message = msg
+	req.RangeStartKey = startKey
+
+	// *req = RaftMessageRequest{
+	// 	RangeID:       r.RangeID,
+	// 	ToReplica:     toReplica,
+	// 	FromReplica:   fromReplica,
+	// 	Message:       msg,
+	// 	RangeStartKey: startKey, // usually nil
+	// }
 	if !r.sendRaftMessageRequest(ctx, req) {
 		req.release()
 		if err := r.withRaftGroup(true, func(raftGroup *raft.RawNode) (bool, error) {

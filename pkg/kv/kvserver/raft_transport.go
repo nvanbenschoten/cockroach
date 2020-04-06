@@ -501,6 +501,9 @@ func (t *RaftTransport) processQueue(
 				case req = <-ch:
 					batch.Requests = append(batch.Requests, *req)
 					req.release()
+				//case req2 := <-ch:
+				//	batch.Requests = append(batch.Requests, *req2)
+				//	req2.release()
 				default:
 					done = true
 				}

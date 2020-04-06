@@ -78,6 +78,8 @@ message RaftMessageRequest {
   // heartbeats or heartbeat_resps.
   repeated RaftHeartbeat heartbeats = 6 [(gogoproto.nullable) = false];
   repeated RaftHeartbeat heartbeat_resps = 7 [(gogoproto.nullable) = false];
+  optional bool ref_counting = 9 [(gogoproto.nullable) = false];
+  optional int64 ref_count = 10 [(gogoproto.nullable) = false];
 }
 
 message RaftMessageRequestBatch {
