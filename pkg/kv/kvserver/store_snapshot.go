@@ -93,6 +93,7 @@ func assertStrategy(
 type kvBatchSnapshotStrategy struct {
 	raftCfg *base.RaftConfig
 	status  string
+	applied uint64
 
 	// The size of the batches of PUT operations to send to the receiver of the
 	// snapshot. Only used on the sender side.
@@ -325,6 +326,7 @@ func (kvSS *kvBatchSnapshotStrategy) Receive(
 				LogEntries:                     logEntries,
 				State:                          &header.State,
 				snapType:                       header.Type,
+				appliedPrev:                    kvSS.applied,
 			}
 
 			expLen := inSnap.State.RaftAppliedIndex - inSnap.State.TruncatedState.Index
@@ -737,10 +739,11 @@ func (s *Store) checkSnapshotOverlapLocked(
 // snapshot.
 func (s *Store) shouldAcceptSnapshotData(
 	ctx context.Context, snapHeader *SnapshotRequest_Header,
-) error {
+) (uint64, error) {
 	if snapHeader.IsPreemptive() {
-		return crdberrors.AssertionFailedf(`expected a raft or learner snapshot`)
+		return 0, crdberrors.AssertionFailedf(`expected a raft or learner snapshot`)
 	}
+	var applied uint64
 	pErr := s.withReplicaForRequest(ctx, &snapHeader.RaftMessageRequest,
 		func(ctx context.Context, r *Replica) *roachpb.Error {
 			// If the current replica is not initialized then we should accept this
@@ -752,9 +755,10 @@ func (s *Store) shouldAcceptSnapshotData(
 			}
 			// If the current range is initialized then we need to accept this
 			// snapshot.
+			applied = r.RaftStatus().Applied
 			return nil
 		})
-	return pErr.GoError()
+	return applied, pErr.GoError()
 }
 
 // receiveSnapshot receives an incoming snapshot via a pre-opened GRPC stream.
@@ -796,7 +800,8 @@ func (s *Store) receiveSnapshot(
 	// We'll perform this check again later after receiving the rest of the
 	// snapshot data - this is purely an optimization to prevent downloading
 	// a snapshot that we know we won't be able to apply.
-	if err := s.shouldAcceptSnapshotData(ctx, header); err != nil {
+	applied, err := s.shouldAcceptSnapshotData(ctx, header)
+	if err != nil {
 		return sendSnapshotError(stream,
 			errors.Wrapf(err, "%s,r%d: cannot apply snapshot", s, header.State.Desc.RangeID),
 		)
@@ -816,6 +821,7 @@ func (s *Store) receiveSnapshot(
 
 		ss = &kvBatchSnapshotStrategy{
 			raftCfg:      &s.cfg.RaftConfig,
+			applied:      applied,
 			scratch:      s.sstSnapshotStorage.NewScratchSpace(header.State.Desc.RangeID, snapUUID),
 			sstChunkSize: snapshotSSTWriteSyncRate.Get(&s.cfg.Settings.SV),
 			reader:       s.Engine(),

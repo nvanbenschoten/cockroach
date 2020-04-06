@@ -493,6 +493,7 @@ type IncomingSnapshot struct {
 	// See the comment on VersionUnreplicatedRaftTruncatedState for details.
 	UsesUnreplicatedTruncatedState bool
 	snapType                       SnapshotRequest_Type
+	appliedPrev                    uint64
 }
 
 func (s *IncomingSnapshot) String() string {
@@ -769,6 +770,12 @@ func (r *Replica) applySnapshot(
 		// nonempty snapshot because we discard snapshots that do not increase
 		// the commit index.
 		log.Fatalf(ctx, "found empty HardState for non-empty Snapshot %+v", snap)
+	}
+
+	applied := r.RaftStatus().Applied
+	if applied != inSnap.appliedPrev {
+		log.Fatalf(ctx, "applied index changed between receiving snapshot and applying snapshot: "+
+			"was %d, now is %d", inSnap.appliedPrev, applied)
 	}
 
 	var stats struct {
