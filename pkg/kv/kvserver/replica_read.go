@@ -23,6 +23,7 @@ import (
 	"github.com/cockroachdb/cockroach/pkg/storage"
 	"github.com/cockroachdb/cockroach/pkg/util"
 	"github.com/cockroachdb/cockroach/pkg/util/log"
+	"github.com/davecgh/go-spew/spew"
 	"github.com/kr/pretty"
 )
 
@@ -65,7 +66,7 @@ func (r *Replica) executeReadOnlyBatch(
 
 	var result result.Result
 	br, result, pErr = r.executeReadOnlyBatchWithServersideRefreshes(ctx, rw, rec, ba, spans)
-	if err := r.handleReadOnlyLocalEvalResult(ctx, ba, result.Local); err != nil {
+	if err := r.handleReadOnlyLocalEvalResult(ctx, ba, result.Local, pErr); err != nil {
 		pErr = roachpb.NewError(err)
 	}
 	r.updateTimestampCache(ctx, ba, br, pErr)
@@ -104,7 +105,7 @@ func (r *Replica) executeReadOnlyBatchWithServersideRefreshes(
 }
 
 func (r *Replica) handleReadOnlyLocalEvalResult(
-	ctx context.Context, ba *roachpb.BatchRequest, lResult result.LocalResult,
+	ctx context.Context, ba *roachpb.BatchRequest, lResult result.LocalResult, pErr *roachpb.Error,
 ) error {
 	// Fields for which no action is taken in this method are zeroed so that
 	// they don't trigger an assertion at the end of the method (which checks
@@ -126,7 +127,11 @@ func (r *Replica) handleReadOnlyLocalEvalResult(
 	if lResult.AcquiredLocks != nil {
 		// These will all be unreplicated locks.
 		for i := range lResult.AcquiredLocks {
-			r.concMgr.OnLockAcquired(ctx, &lResult.AcquiredLocks[i])
+			acq := &lResult.AcquiredLocks[i]
+			if pErr != nil {
+				log.Infof(ctx, "acquiring lock %s even though error was hit: %s", spew.Sprint(acq), spew.Sprint(pErr))
+			}
+			r.concMgr.OnLockAcquired(ctx, acq)
 		}
 		lResult.AcquiredLocks = nil
 	}

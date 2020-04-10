@@ -12,6 +12,7 @@ package concurrency
 
 import (
 	"container/list"
+	"context"
 	"fmt"
 	"sort"
 	"strings"
@@ -24,6 +25,7 @@ import (
 	"github.com/cockroachdb/cockroach/pkg/roachpb"
 	"github.com/cockroachdb/cockroach/pkg/storage/enginepb"
 	"github.com/cockroachdb/cockroach/pkg/util/hlc"
+	"github.com/cockroachdb/cockroach/pkg/util/log"
 	"github.com/cockroachdb/cockroach/pkg/util/syncutil"
 	"github.com/cockroachdb/cockroach/pkg/util/uuid"
 	"github.com/cockroachdb/errors"
@@ -223,12 +225,14 @@ var _ lockTable = &lockTableImpl{}
 //   lockTableGuard that returns false from StartWaiting()).
 type lockTableGuardImpl struct {
 	seqNum uint64
+	iter   int
 
 	// Information about this request.
 	txn     *enginepb.TxnMeta
 	spans   *spanset.SpanSet
 	readTS  hlc.Timestamp
 	writeTS hlc.Timestamp
+	reqs    []roachpb.RequestUnion
 
 	// Snapshots of the trees for which this request has some spans. Note that
 	// the lockStates in these snapshots may have been removed from
@@ -1271,8 +1275,8 @@ func (l *lockState) discoveredLock(
 		if !l.isLockedBy(txn.ID) {
 			return errors.Errorf("caller violated contract: "+
 				"discovered lock by different transaction than existing lock; "+
-				"existing=%s, discovered={txn=%s, ts=%s sa=%s}, discoverer=%s",
-				spew.Sprint(l.holder), spew.Sprint(txn), ts, sa, spew.Sprint(g.txn))
+				"key=%s, existing=%s, discovered={txn=%s, ts=%s sa=%s}, discoverer={%s iter=%d, spans=%s, reqs=%s}",
+				l.key, spew.Sprint(l.holder), spew.Sprint(txn), ts, sa, spew.Sprint(g.txn), g.iter, spew.Sprint(g.spans), spew.Sprint(g.reqs))
 		}
 	} else {
 		l.holder.locked = true
@@ -1711,6 +1715,7 @@ func (t *lockTableImpl) ScanAndEnqueue(req Request, guard lockTableGuard) lockTa
 		g.writeTS = req.writeConflictTimestamp()
 		g.sa = spanset.NumSpanAccess - 1
 		g.index = -1
+		g.reqs = req.Requests
 	} else {
 		g = guard.(*lockTableGuardImpl)
 		g.key = nil
@@ -1835,6 +1840,8 @@ func (t *lockTableImpl) AcquireLock(
 	if !iter.Valid() {
 		if durability == lock.Replicated {
 			tree.mu.Unlock()
+			log.Infof(context.Background(),
+				"AcquireLock ignoring replicated: txn=%s, key=%s", spew.Sprint(txn), key)
 			// Don't remember uncontended replicated locks.
 			return nil
 		}
@@ -1844,8 +1851,12 @@ func (t *lockTableImpl) AcquireLock(
 		l.waitingReaders.Init()
 		tree.Set(l)
 		atomic.AddInt64(&tree.numLocks, 1)
+		log.Infof(context.Background(),
+			"AcquireLock adding unreplicated: txn=%s, key=%s", spew.Sprint(txn), key)
 	} else {
 		l = iter.Cur()
+		log.Infof(context.Background(),
+			"AcquireLock updating: txn=%s, key=%s, existing={key=%s, holder=%s}", spew.Sprint(txn), key, l.key, spew.Sprint(l.holder))
 	}
 	err := l.acquireLock(strength, durability, txn, txn.WriteTimestamp)
 	tree.mu.Unlock()
