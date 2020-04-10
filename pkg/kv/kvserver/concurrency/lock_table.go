@@ -27,6 +27,7 @@ import (
 	"github.com/cockroachdb/cockroach/pkg/util/syncutil"
 	"github.com/cockroachdb/cockroach/pkg/util/uuid"
 	"github.com/cockroachdb/errors"
+	"github.com/davecgh/go-spew/spew"
 )
 
 // Default upper bound on the number of locks in a lockTable.
@@ -1268,8 +1269,10 @@ func (l *lockState) discoveredLock(
 
 	if l.holder.locked {
 		if !l.isLockedBy(txn.ID) {
-			return errors.Errorf("caller violated contract: " +
-				"discovered lock by different transaction than existing lock")
+			return errors.Errorf("caller violated contract: "+
+				"discovered lock by different transaction than existing lock; "+
+				"existing=%s, discovered={txn=%s, ts=%s sa=%s}, discoverer=%s",
+				spew.Sprint(l.holder), spew.Sprint(txn), ts, sa, spew.Sprint(g.txn))
 		}
 	} else {
 		l.holder.locked = true
