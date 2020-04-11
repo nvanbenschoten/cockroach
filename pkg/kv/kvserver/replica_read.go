@@ -126,11 +126,10 @@ func (r *Replica) handleReadOnlyLocalEvalResult(
 
 	if lResult.AcquiredLocks != nil {
 		// These will all be unreplicated locks.
+		log.Infof(ctx, "AcquireLock adding unreplicated: txn=%s, num=%d, pErr=%s",
+			spew.Sprint(ba.Txn), len(lResult.AcquiredLocks), spew.Sprint(pErr))
 		for i := range lResult.AcquiredLocks {
 			acq := &lResult.AcquiredLocks[i]
-			if pErr != nil {
-				log.Infof(ctx, "acquiring lock %s even though error was hit: %s", spew.Sprint(acq), spew.Sprint(pErr))
-			}
 			r.concMgr.OnLockAcquired(ctx, acq)
 		}
 		lResult.AcquiredLocks = nil

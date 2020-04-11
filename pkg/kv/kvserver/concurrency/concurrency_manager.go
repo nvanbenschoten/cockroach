@@ -115,7 +115,7 @@ func (m *managerImpl) SequenceReq(
 	} else {
 		g = prev
 		g.AssertNoLatches()
-		if g := g.ltg.(*lockTableGuardImpl); g != nil {
+		if g, ok := g.ltg.(*lockTableGuardImpl); ok && g != nil {
 			g.iter++
 		}
 		log.Event(ctx, "re-sequencing request")

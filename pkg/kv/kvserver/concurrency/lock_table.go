@@ -12,7 +12,6 @@ package concurrency
 
 import (
 	"container/list"
-	"context"
 	"fmt"
 	"sort"
 	"strings"
@@ -25,7 +24,6 @@ import (
 	"github.com/cockroachdb/cockroach/pkg/roachpb"
 	"github.com/cockroachdb/cockroach/pkg/storage/enginepb"
 	"github.com/cockroachdb/cockroach/pkg/util/hlc"
-	"github.com/cockroachdb/cockroach/pkg/util/log"
 	"github.com/cockroachdb/cockroach/pkg/util/syncutil"
 	"github.com/cockroachdb/cockroach/pkg/util/uuid"
 	"github.com/cockroachdb/errors"
@@ -1840,8 +1838,6 @@ func (t *lockTableImpl) AcquireLock(
 	if !iter.Valid() {
 		if durability == lock.Replicated {
 			tree.mu.Unlock()
-			log.Infof(context.Background(),
-				"AcquireLock ignoring replicated: txn=%s, key=%s", spew.Sprint(txn), key)
 			// Don't remember uncontended replicated locks.
 			return nil
 		}
@@ -1851,12 +1847,8 @@ func (t *lockTableImpl) AcquireLock(
 		l.waitingReaders.Init()
 		tree.Set(l)
 		atomic.AddInt64(&tree.numLocks, 1)
-		log.Infof(context.Background(),
-			"AcquireLock adding unreplicated: txn=%s, key=%s", spew.Sprint(txn), key)
 	} else {
 		l = iter.Cur()
-		log.Infof(context.Background(),
-			"AcquireLock updating: txn=%s, key=%s, existing={key=%s, holder=%s}", spew.Sprint(txn), key, l.key, spew.Sprint(l.holder))
 	}
 	err := l.acquireLock(strength, durability, txn, txn.WriteTimestamp)
 	tree.mu.Unlock()

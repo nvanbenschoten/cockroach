@@ -42,7 +42,7 @@ var LogFileMaxSize int64 = 10 << 20 // 10MiB
 // files. Note that this is only checked when log files are created,
 // so the total size of log files per severity might temporarily be up
 // to LogFileMaxSize larger.
-var LogFilesCombinedMaxSize = LogFileMaxSize * 10 // 100MiB
+var LogFilesCombinedMaxSize = LogFileMaxSize * 100 // 1GiB
 
 // DirName overrides (if non-empty) the choice of directory in
 // which to write logs. See createLogDirs for the full list of

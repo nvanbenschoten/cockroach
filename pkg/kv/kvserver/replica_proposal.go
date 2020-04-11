@@ -40,6 +40,7 @@ import (
 	"github.com/cockroachdb/cockroach/pkg/util/sysutil"
 	"github.com/cockroachdb/cockroach/pkg/util/timeutil"
 	"github.com/cockroachdb/cockroach/pkg/util/tracing"
+	"github.com/davecgh/go-spew/spew"
 	"github.com/kr/pretty"
 	opentracing "github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
@@ -611,6 +612,8 @@ func (r *Replica) handleReadWriteLocalEvalResult(ctx context.Context, lResult re
 	}
 
 	if lResult.AcquiredLocks != nil {
+		log.Infof(ctx, "AcquireLock adding replicated: txn=%s, num=%d, pErr=%s",
+			spew.Sprint(lResult.AcquiredLocks[0].Txn), len(lResult.AcquiredLocks))
 		for i := range lResult.AcquiredLocks {
 			r.concMgr.OnLockAcquired(ctx, &lResult.AcquiredLocks[i])
 		}
