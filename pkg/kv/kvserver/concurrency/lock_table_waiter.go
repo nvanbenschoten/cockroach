@@ -148,7 +148,7 @@ func (w *lockTableWaiterImpl) WaitOn(
 				// there's no need to perform a liveness push - the request must be
 				// alive or its context would have been canceled and it would have
 				// exited its lock wait-queues.
-				if !state.held {
+				if state.req != nil {
 					livenessPush = false
 				}
 
@@ -207,7 +207,7 @@ func (w *lockTableWaiterImpl) WaitOn(
 			case waitElsewhere:
 				// The lockTable has hit a memory limit and is no longer maintaining
 				// proper lock wait-queues.
-				if !state.held {
+				if state.req != nil {
 					// If the lock is not held, exit immediately. Requests will
 					// be ordered when acquiring latches.
 					return nil
@@ -234,6 +234,13 @@ func (w *lockTableWaiterImpl) WaitOn(
 				// any new conflicts. If it find none, it can proceed with
 				// evaluation.
 				return nil
+
+			case txnAborted:
+				// The request's transaction was pushed and found to be aborted.
+				// The request should exit the lockTable and lock wait-queues
+				// immediately because it may be involved in a deadlock.
+				log.Eventf(ctx, "pusher notified that it was aborted")
+				return makeTxnAbortedErr(req)
 
 			default:
 				panic("unexpected waiting state")
@@ -266,7 +273,7 @@ func (w *lockTableWaiterImpl) WaitOn(
 			// conflicting request but not necessarily the entire conflicting
 			// transaction.
 			var err *Error
-			if timerWaitingState.held {
+			if timerWaitingState.req == nil {
 				err = w.pushLockTxn(ctx, req, timerWaitingState)
 			} else {
 				// It would be more natural to launch an async task for the push
@@ -310,7 +317,6 @@ func (w *lockTableWaiterImpl) WaitOnLock(
 		kind:        waitFor,
 		txn:         &intent.Txn,
 		key:         intent.Key,
-		held:        true,
 		guardAccess: sa,
 	})
 }
@@ -400,14 +406,6 @@ func (w *lockTableWaiterImpl) pushLockTxn(
 // caller is expected to terminate the push if it observes any state transitions
 // in the lockTable. As such, the push is only expected to be allowed to run to
 // completion in cases where requests are truly deadlocked.
-//
-// TODO(nvanbenschoten): what if both the pusher and pusher are deadlocked on
-// each other and both are aborted but notice that the other is aborted first?
-// They with both wait for the other to exit its lock wait-queue and they will
-// deadlock. Even if we pushed again, there's no guarantee that the same thing
-// wouldn't happen. This seems exceedingly rare, but it isn't handled properly.
-// The best way to fix this seems to be to confirm that the pusher is not
-// aborted _after_ performing the push using a QueryTxn request.
 func (w *lockTableWaiterImpl) pushRequestTxn(
 	ctx context.Context, req Request, ws waitingState,
 ) *Error {
@@ -420,15 +418,39 @@ func (w *lockTableWaiterImpl) pushRequestTxn(
 	pushType := roachpb.PUSH_ABORT
 	log.VEventf(ctx, 3, "pushing txn %s to detect request deadlock", ws.txn.ID.Short())
 
-	_, err := w.ir.PushTransaction(ctx, ws.txn, h, pushType)
-	// Even if the push succeeded and aborted the other transaction to break a
-	// deadlock, there's nothing for the pusher to clean up. The conflicting
-	// request will quickly exit the lock wait-queue and release its reservation
-	// once it notices that it is aborted and the pusher will be free to proceed
-	// because it was not waiting on any locks. If the pusher's request does end
-	// up hitting a lock which the pushee fails to clean up, it will perform the
-	// cleanup itself using pushLockTxn.
-	return err
+	pusheeTxn, err := w.ir.PushTransaction(ctx, ws.txn, h, pushType)
+	if err != nil {
+		return err
+	}
+
+	// If the push succeeded and aborted the other transaction to break a
+	// deadlock, notify the other transaction's request. This ensures that the
+	// conflicting request will quickly exit the lock wait-queue and release its
+	// reservation. After this, the pusher will be free to proceed because it
+	// was not waiting on any locks. If the pusher's request does end up hitting
+	// a lock which the pushee fails to clean up, it will perform the cleanup
+	// itself using pushLockTxn.
+	//
+	// In the vast majority of cases, we would expect the pushee to notice that
+	// it was aborted while querying its own transaction record during deadlock
+	// detection, so it would appear that no action here is necessary. However,
+	// there are rare cases where this alone would not be sufficient to ensure
+	// that an aborted transaction breaks a deadlock. For instance, consider a
+	// case where two requests deadlock on each other and each manages to abort
+	// each other's transaction at the same time. In such cases, there is no
+	// guarantee that either transaction will notice that it was aborted itself
+	// before completing its push, so both would return here to wait for the
+	// other to exit its lock wait-queue. The two requests would then deadlock.
+	// Even if they pushed again, there is no guarantee that the same thing
+	// wouldn't happen. To combat this and break these local deadlocks in all
+	// cases, we communicate aborted statuses directly to requests waiting in
+	// the lockTable.
+	if pusheeTxn.Status == roachpb.ABORTED {
+		ws.req.notifyAborted()
+	} else {
+		log.Warningf(ctx, "PUSH_ABORT successful but pushee txn not aborted: %v", pusheeTxn)
+	}
+	return nil
 }
 
 func (w *lockTableWaiterImpl) pushHeader(req Request) roachpb.Header {
@@ -463,6 +485,13 @@ func (w *lockTableWaiterImpl) watchForNotifications(
 		cancel()
 	case <-ctx.Done():
 	}
+}
+
+func makeTxnAbortedErr(req Request) *Error {
+	abortedTxn := req.Txn.Clone()
+	abortedTxn.Status = roachpb.ABORTED
+	return roachpb.NewErrorWithTxn(
+		roachpb.NewTransactionAbortedError(roachpb.ABORT_REASON_PUSHER_ABORTED), abortedTxn)
 }
 
 func hasMinPriority(txn *enginepb.TxnMeta) bool {

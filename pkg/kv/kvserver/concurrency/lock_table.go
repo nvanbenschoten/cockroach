@@ -67,20 +67,37 @@ const (
 	// doneWaiting indicates that the request is done waiting on this pass
 	// through the lockTable and should make another call to ScanAndEnqueue.
 	doneWaiting
+
+	// txnAborted indicates that the request's transaction was aborted while
+	// the request was waiting in the lockTable. It should exit the lockTable
+	// immediately with a transaction aborted error.
+	txnAborted
 )
+
+// reqConflict represents a conflicting request being sequenced through the
+// same lockTable.
+type reqConflict interface {
+	notifyAborted()
+}
 
 // The current waiting state of the request.
 //
 // See the detailed comment about "Waiting logic" on lockTableGuardImpl.
 type waitingState struct {
-	kind        waitKind
-	guardAccess spanset.SpanAccess // the access method of the guard
+	kind waitKind
 
-	// Populated for waitFor* and waitElsewhere kinds. Represents who
-	// the request is waiting for.
-	txn  *enginepb.TxnMeta // always non-nil
-	key  roachpb.Key       // the key of the lock that is causing the wait
-	held bool              // is the lock currently held?
+	// Fields below are populated for waitFor* and waitElsewhere kinds.
+
+	// Represents who the request is waiting for. The conflicting
+	// transaction may be a lock holder of a conflicting lock or a
+	// conflicting request being sequenced through the same lockTable.
+	txn *enginepb.TxnMeta // always non-nil
+	key roachpb.Key       // the key of the conflict
+	req reqConflict       // non-nil for conflicting req, nil for conflicting lock
+
+	// Represents the action that the request was trying to perform when
+	// it hit the conflict. E.g. was it trying to read or write?
+	guardAccess spanset.SpanAccess
 }
 
 // Implementation
@@ -243,6 +260,10 @@ var _ lockTable = &lockTableImpl{}
 // - The doneWaiting state is used to indicate that the request should make
 //   another call to ScanAndEnqueue() (that next call is more likely to return a
 //   lockTableGuard that returns false from StartWaiting()).
+//
+// - The txnAborted indicates that the request's transaction was aborted while
+//   the request was waiting in the lockTable. It should exit the lockTable
+//   immediately with a transaction aborted error.
 type lockTableGuardImpl struct {
 	seqNum uint64
 
@@ -396,6 +417,20 @@ func (g *lockTableGuardImpl) notify() {
 	}
 }
 
+func (g *lockTableGuardImpl) notifyAborted() {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	// NOTE: there is no guarantee that g.mu.state won't be overwritten after
+	// this call, losing the transaction aborted message. This is ok, as we do
+	// not require a guarantee that the request will notice that it has been
+	// aborted, just a guarantee that it will not stall while waiting for any
+	// notification while other requests wait for it to notice that it has been
+	// aborted. If g.mu.state is overwritten, the request must still be making
+	// progress and, therefore, must not be immediately involved in a deadlock.
+	g.mu.state = waitingState{kind: txnAborted}
+	g.notify()
+}
+
 // Called when the request is no longer actively waiting at lock l, and should
 // look for the next lock to wait at. hasReservation is true iff the request
 // acquired the reservation at l. Note that it will be false for requests that
@@ -410,8 +445,12 @@ func (g *lockTableGuardImpl) doneWaitingAtLock(hasReservation bool, l *lockState
 	g.mu.Unlock()
 }
 
-func (g *lockTableGuardImpl) isTxn(txn *enginepb.TxnMeta) bool {
+func (g *lockTableGuardImpl) isSameTxn(txn *enginepb.TxnMeta) bool {
 	return g.txn != nil && g.txn.ID == txn.ID
+}
+
+func (g *lockTableGuardImpl) isSameTxnAsReservation(ws waitingState) bool {
+	return ws.req != nil && g.isSameTxn(ws.txn)
 }
 
 // Finds the next lock, after the current one, to actively wait at. If it
@@ -462,7 +501,7 @@ func (g *lockTableGuardImpl) findNextLockAfter(notify bool) {
 	}
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	g.mu.state.kind = doneWaiting
+	g.mu.state = waitingState{kind: doneWaiting}
 	if notify {
 		g.notify()
 	}
@@ -821,24 +860,18 @@ func (l *lockState) tryBreakReservation(seqNum uint64) bool {
 // waitForDistinguished states.
 // REQUIRES: l.mu is locked.
 func (l *lockState) informActiveWaiters() {
-	waitForTxn, _ := l.getLockerInfo()
-	checkForWaitSelf := false
+	waitForState := waitingState{kind: waitFor, key: l.key}
 	findDistinguished := l.distinguishedWaiter == nil
-	if waitForTxn == nil {
-		checkForWaitSelf = true
-		waitForTxn = l.reservation.txn
-		if !findDistinguished && l.distinguishedWaiter.isTxn(waitForTxn) {
+	if lockHolderTxn, _ := l.getLockerInfo(); lockHolderTxn != nil {
+		waitForState.txn = lockHolderTxn
+	} else {
+		waitForState.txn = l.reservation.txn
+		waitForState.req = l.reservation
+		if !findDistinguished && l.distinguishedWaiter.isSameTxnAsReservation(waitForState) {
 			findDistinguished = true
 			l.distinguishedWaiter = nil
 		}
 	}
-	waitForState := waitingState{
-		kind: waitFor,
-		txn:  waitForTxn,
-		key:  l.key,
-		held: l.holder.locked,
-	}
-	waitSelfState := waitingState{kind: waitSelf}
 
 	for e := l.waitingReaders.Front(); e != nil; e = e.Next() {
 		state := waitForState
@@ -866,8 +899,8 @@ func (l *lockState) informActiveWaiters() {
 		}
 		g := qg.guard
 		var state waitingState
-		if checkForWaitSelf && g.isTxn(waitForTxn) {
-			state = waitSelfState
+		if g.isSameTxnAsReservation(waitForState) {
+			state = waitingState{kind: waitSelf}
 		} else {
 			state = waitForState
 			state.guardAccess = spanset.SpanReadWrite
@@ -875,12 +908,12 @@ func (l *lockState) informActiveWaiters() {
 				l.distinguishedWaiter = g
 				findDistinguished = false
 			}
+			if l.distinguishedWaiter == g {
+				state.kind = waitForDistinguished
+			}
 		}
 		g.mu.Lock()
 		g.mu.state = state
-		if l.distinguishedWaiter == g {
-			g.mu.state.kind = waitForDistinguished
-		}
 		g.notify()
 		g.mu.Unlock()
 	}
@@ -895,7 +928,7 @@ func (l *lockState) releaseWritersFromTxn(txn *enginepb.TxnMeta) {
 		curr := e
 		e = e.Next()
 		g := qg.guard
-		if g.isTxn(txn) {
+		if g.isSameTxn(txn) {
 			if qg.active {
 				if g == l.distinguishedWaiter {
 					l.distinguishedWaiter = nil
@@ -922,7 +955,7 @@ func (l *lockState) tryMakeNewDistinguished() {
 	} else if l.queuedWriters.Len() > 0 {
 		for e := l.queuedWriters.Front(); e != nil; e = e.Next() {
 			qg := e.Value.(*queuedGuard)
-			if qg.active && (l.reservation == nil || !qg.guard.isTxn(l.reservation.txn)) {
+			if qg.active && (l.reservation == nil || !qg.guard.isSameTxn(l.reservation.txn)) {
 				g = qg.guard
 				break
 			}
@@ -998,39 +1031,19 @@ func (l *lockState) tryActiveWait(g *lockTableGuardImpl, sa spanset.SpanAccess, 
 	}
 
 	// Lock is not empty.
-	waitForTxn, waitForTs := l.getLockerInfo()
-	if waitForTxn != nil && g.isTxn(waitForTxn) {
+	lockHolderTxn, lockHolderTS := l.getLockerInfo()
+	if lockHolderTxn != nil && g.isSameTxn(lockHolderTxn) {
 		// Already locked by this txn.
 		return false
 	}
 
-	var reservedBySelfTxn bool
-	if waitForTxn == nil {
-		if l.reservation == g {
-			// Already reserved by this request.
-			return false
-		}
-		waitForTxn = l.reservation.txn
-		waitForTs = l.reservation.writeTS
-		reservedBySelfTxn = g.isTxn(waitForTxn)
-		// A non-transactional write request never makes or breaks reservations,
-		// and only waits for a reservation if the reservation has a lower seqNum.
-		// For reads, the non-transactional and transactional behavior is
-		// equivalent and handled later in this function.
-		if g.txn == nil && sa == spanset.SpanReadWrite && l.reservation.seqNum > g.seqNum {
-			// Reservation is held by a request with a higher seqNum and g is a
-			// non-transactional request. Ignore the reservation.
-			return false
-		}
-	}
-
 	if sa == spanset.SpanReadOnly {
-		if !l.holder.locked {
+		if lockHolderTxn == nil {
 			// Reads only care about locker, not a reservation.
 			return false
 		}
 		// Locked by some other txn.
-		if g.readTS.Less(waitForTs) {
+		if g.readTS.Less(lockHolderTS) {
 			return false
 		}
 		g.mu.Lock()
@@ -1052,6 +1065,28 @@ func (l *lockState) tryActiveWait(g *lockTableGuardImpl, sa spanset.SpanAccess, 
 		if alsoHasStrongerAccess {
 			return false
 		}
+	}
+
+	waitForState := waitingState{kind: waitFor, key: l.key}
+	if lockHolderTxn != nil {
+		waitForState.txn = lockHolderTxn
+	} else {
+		if l.reservation == g {
+			// Already reserved by this request.
+			return false
+		}
+		// A non-transactional write request (sa == spanset.SpanRead checked
+		// above) never makes or breaks reservations, and only waits for a
+		// reservation if the reservation has a lower seqNum. For reads, the
+		// non-transactional and transactional behavior is equivalent and
+		// handled later in this function.
+		if g.txn == nil && l.reservation.seqNum > g.seqNum {
+			// Reservation is held by a request with a higher seqNum and g is a
+			// non-transactional request. Ignore the reservation.
+			return false
+		}
+		waitForState.txn = l.reservation.txn
+		waitForState.req = l.reservation
 	}
 
 	// Incompatible with whoever is holding lock or reservation.
@@ -1119,21 +1154,16 @@ func (l *lockState) tryActiveWait(g *lockTableGuardImpl, sa spanset.SpanAccess, 
 	// Make it an active waiter.
 	g.key = l.key
 	g.mu.startWait = true
-	if reservedBySelfTxn {
+	if g.isSameTxnAsReservation(waitForState) {
 		g.mu.state = waitingState{kind: waitSelf}
 	} else {
-		stateType := waitFor
+		state := waitForState
+		state.guardAccess = sa
 		if l.distinguishedWaiter == nil {
 			l.distinguishedWaiter = g
-			stateType = waitForDistinguished
+			state.kind = waitForDistinguished
 		}
-		g.mu.state = waitingState{
-			kind:        stateType,
-			txn:         waitForTxn,
-			key:         l.key,
-			held:        l.holder.locked,
-			guardAccess: sa,
-		}
+		g.mu.state = state
 	}
 	if notify {
 		g.notify()
@@ -1378,14 +1408,13 @@ func (l *lockState) tryClearLock(force bool) bool {
 	l.holder.holder[lock.Unreplicated] = lockHolderInfo{}
 	var waitState waitingState
 	if replicatedHeld && !force {
-		holderTxn, _ := l.getLockerInfo()
+		lockHolderTxn, _ := l.getLockerInfo()
 		// Note that none of the current waiters can be requests
-		// from holderTxn.
+		// from lockHolderTxn.
 		waitState = waitingState{
 			kind:        waitElsewhere,
-			txn:         holderTxn,
+			txn:         lockHolderTxn,
 			key:         l.key,
-			held:        true,
 			guardAccess: spanset.SpanReadOnly,
 		}
 	} else {
@@ -1532,7 +1561,7 @@ func (l *lockState) tryUpdateLock(up *roachpb.LockUpdate) (gc bool, err error) {
 				holder.txn = txn
 			}
 		}
-		// Else txn.Epoch < holderTxn.Epoch, so only the timestamp has been
+		// Else txn.Epoch < lockHolderTxn.Epoch, so only the timestamp has been
 		// potentially updated.
 		isLocked = true
 	}

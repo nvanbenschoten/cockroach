@@ -386,6 +386,8 @@ func TestLockTableBasic(t *testing.T) {
 					return str + "state=waitSelf"
 				case doneWaiting:
 					return str + "state=doneWaiting"
+				case txnAborted:
+					return str + "state=txnAborted"
 				}
 				id := state.txn.ID
 				var txnS string
@@ -399,7 +401,7 @@ func TestLockTableBasic(t *testing.T) {
 					txnS = fmt.Sprintf("unknown txn with ID: %v", state.txn.ID)
 				}
 				return fmt.Sprintf("%sstate=%s txn=%s key=%s held=%t guard-access=%s",
-					str, typeStr, txnS, state.key, state.held, state.guardAccess)
+					str, typeStr, txnS, state.key, state.req == nil, state.guardAccess)
 
 			case "enable":
 				lt.Enable()

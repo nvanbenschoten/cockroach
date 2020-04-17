@@ -3,7 +3,7 @@
 # cleared. This is fine from a correctness perspective because it doesn't matter
 # which lock-table is initiating a synchronous transaction push, but it makes it
 # harder to observe requests responding to lock-table state transitions.
-debug-disable-txn-pushes
+debug-set-txn-pushing enabled=false
 ----
 
 # -------------------------------------------------------------

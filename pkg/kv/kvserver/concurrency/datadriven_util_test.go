@@ -30,6 +30,12 @@ func nextUUID(counter *uint32) uuid.UUID {
 	return uuid.FromUint128(uint128.Uint128{Hi: hi})
 }
 
+func scanBool(t *testing.T, d *datadriven.TestData, key string) bool {
+	var b bool
+	d.ScanArgs(t, key, &b)
+	return b
+}
+
 func scanTimestamp(t *testing.T, d *datadriven.TestData) hlc.Timestamp {
 	return scanTimestampWithName(t, d, "ts")
 }

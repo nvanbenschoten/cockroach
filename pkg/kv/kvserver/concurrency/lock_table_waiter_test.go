@@ -23,6 +23,7 @@ import (
 	"github.com/cockroachdb/cockroach/pkg/util/hlc"
 	"github.com/cockroachdb/cockroach/pkg/util/leaktest"
 	"github.com/cockroachdb/cockroach/pkg/util/stop"
+	"github.com/cockroachdb/cockroach/pkg/util/syncutil"
 	"github.com/stretchr/testify/require"
 )
 
@@ -44,14 +45,23 @@ func (m *mockIntentResolver) ResolveIntent(
 }
 
 type mockLockTableGuard struct {
-	state         waitingState
+	mu            syncutil.Mutex
+	state         waitingState // protected by mu, but only in multi-threaded tests
 	signal        chan struct{}
 	stateObserved chan struct{}
+}
+
+func newMockLockTableGuard() *mockLockTableGuard {
+	return &mockLockTableGuard{
+		signal: make(chan struct{}, 1),
+	}
 }
 
 func (g *mockLockTableGuard) ShouldWait() bool            { return true }
 func (g *mockLockTableGuard) NewStateChan() chan struct{} { return g.signal }
 func (g *mockLockTableGuard) CurState() waitingState {
+	g.mu.Lock()
+	defer g.mu.Unlock()
 	s := g.state
 	if g.stateObserved != nil {
 		g.stateObserved <- struct{}{}
@@ -59,6 +69,14 @@ func (g *mockLockTableGuard) CurState() waitingState {
 	return s
 }
 func (g *mockLockTableGuard) notify() { g.signal <- struct{}{} }
+func (g *mockLockTableGuard) notifyKind(kind waitKind) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.state = waitingState{kind: kind}
+	g.notify()
+}
+func (g *mockLockTableGuard) notifyDoneWaiting() { g.notifyKind(doneWaiting) }
+func (g *mockLockTableGuard) notifyAborted()     { g.notifyKind(txnAborted) }
 
 func setupLockTableWaiterTest() (*lockTableWaiterImpl, *mockIntentResolver, *mockLockTableGuard) {
 	ir := &mockIntentResolver{}
@@ -70,9 +88,7 @@ func setupLockTableWaiterTest() (*lockTableWaiterImpl, *mockIntentResolver, *moc
 		stopper: stop.NewStopper(),
 		ir:      ir,
 	}
-	guard := &mockLockTableGuard{
-		signal: make(chan struct{}, 1),
-	}
+	guard := newMockLockTableGuard()
 	return w, ir, guard
 }
 
@@ -122,6 +138,18 @@ func TestLockTableWaiterWithTxn(t *testing.T) {
 
 			err := w.WaitOn(ctx, makeReq(), g)
 			require.Nil(t, err)
+		})
+
+		t.Run("txnAborted", func(t *testing.T) {
+			w, _, g := setupLockTableWaiterTest()
+			defer w.stopper.Stop(ctx)
+
+			g.state = waitingState{kind: txnAborted}
+			g.notify()
+
+			err := w.WaitOn(ctx, makeReq(), g)
+			require.NotNil(t, err)
+			require.Regexp(t, `TransactionAbortedError\(ABORT_REASON_PUSHER_ABORTED\)`, err)
 		})
 	})
 
@@ -193,6 +221,10 @@ func TestLockTableWaiterWithNonTxn(t *testing.T) {
 			err := w.WaitOn(ctx, makeReq(), g)
 			require.Nil(t, err)
 		})
+
+		t.Run("txnAborted", func(t *testing.T) {
+			t.Log("txnAborted is not possible for non-transactional request")
+		})
 	})
 
 	t.Run("ctx done", func(t *testing.T) {
@@ -235,8 +267,10 @@ func testWaitPush(t *testing.T, k waitKind, makeReq func() Request, expPushTS hl
 				kind:        k,
 				txn:         &pusheeTxn.TxnMeta,
 				key:         keyA,
-				held:        lockHeld,
 				guardAccess: spanset.SpanReadOnly,
+			}
+			if !lockHeld {
+				g.state.req = newMockLockTableGuard()
 			}
 			if waitAsWrite {
 				g.state.guardAccess = spanset.SpanReadWrite
@@ -355,13 +389,14 @@ func TestLockTableWaiterIntentResolverError(t *testing.T) {
 	testutils.RunTrueAndFalse(t, "sync", func(t *testing.T, sync bool) {
 		keyA := roachpb.Key("keyA")
 		pusheeTxn := makeTxnProto("pushee")
-		lockHeld := sync
 		g.state = waitingState{
 			kind:        waitForDistinguished,
 			txn:         &pusheeTxn.TxnMeta,
 			key:         keyA,
-			held:        lockHeld,
 			guardAccess: spanset.SpanReadWrite,
+		}
+		if !sync {
+			g.state.req = newMockLockTableGuard()
 		}
 
 		// Errors are propagated when observed while pushing transactions.
@@ -374,7 +409,7 @@ func TestLockTableWaiterIntentResolverError(t *testing.T) {
 		err := w.WaitOn(ctx, req, g)
 		require.Equal(t, err1, err)
 
-		if lockHeld {
+		if sync {
 			// Errors are propagated when observed while resolving intents.
 			g.notify()
 			ir.pushTxn = func(
@@ -389,4 +424,114 @@ func TestLockTableWaiterIntentResolverError(t *testing.T) {
 			require.Equal(t, err2, err)
 		}
 	})
+}
+
+// TestLockTableWaiterSimultaneousAbort tests that if two conflicting requests
+// simultaneously abort each other's transaction records while pushing, at least
+// one is informed that it is aborted in order to break the local deadlock. The
+// test exercises the reqConflict.notifyAborted mechanism through which aborted
+// statuses are communicated directly between conflicting requests waiting in
+// the lockTable. Without that mechanism, the test would fail.
+func TestLockTableWaiterSimultaneousAbort(t *testing.T) {
+	defer leaktest.AfterTest(t)()
+	ctx := context.Background()
+	w, ir, _ := setupLockTableWaiterTest()
+	defer w.stopper.Stop(ctx)
+
+	keyA := roachpb.Key("keyA")
+	makeReq := func() Request {
+		txn := makeTxnProto("request1")
+		return Request{
+			Txn:       &txn,
+			Timestamp: txn.ReadTimestamp,
+		}
+	}
+
+	type lockTableWaiterReq struct {
+		req   Request
+		g     *mockLockTableGuard
+		pushC chan chan struct{}
+		resC  chan *Error
+	}
+	var reqs [2]lockTableWaiterReq
+	for i := range reqs {
+		reqs[i] = lockTableWaiterReq{
+			req:   makeReq(),
+			g:     newMockLockTableGuard(),
+			pushC: make(chan chan struct{}),
+			resC:  make(chan *Error, 1),
+		}
+	}
+
+	// NOTE: there can only be one pushTxn func attached to mockIntentResolver,
+	// so we can't capture per-request state across multiple closures.
+	ir.pushTxn = func(
+		_ context.Context,
+		pusheeArg *enginepb.TxnMeta,
+		h roachpb.Header,
+		pushType roachpb.PushTxnType,
+	) (roachpb.Transaction, *Error) {
+		// Determine which request this is.
+		var req *lockTableWaiterReq
+		for i := range reqs {
+			if reqs[i].req.Txn.ID == h.Txn.ID {
+				req = &reqs[i]
+			}
+		}
+		require.NotNil(t, req)
+		require.Equal(t, roachpb.PUSH_ABORT, pushType)
+
+		// Barrier.
+		barrierC := make(chan struct{})
+		req.pushC <- barrierC
+		<-barrierC
+
+		// Push successful, abort pushee transaction.
+		resp := roachpb.Transaction{TxnMeta: *pusheeArg, Status: roachpb.ABORTED}
+		return resp, nil
+	}
+	for i := range reqs {
+		req := &reqs[i]
+		otherReq := &reqs[(i+1)%len(reqs)]
+		go func() {
+			req.g.state = waitingState{
+				kind:        waitForDistinguished,
+				txn:         &otherReq.req.Txn.TxnMeta,
+				key:         keyA,
+				req:         otherReq.g,
+				guardAccess: spanset.SpanReadWrite,
+			}
+			req.g.notify()
+			err := w.WaitOn(ctx, req.req, req.g)
+
+			// Once the request exists the lockTable, mark the other
+			// request as doneWaiting. The deadlock has been resolved.
+			otherReq.g.notifyDoneWaiting()
+			req.resC <- err
+		}()
+	}
+
+	// Both requests should push.
+	var barriers [len(reqs)]chan struct{}
+	for i, req := range reqs {
+		barriers[i] = <-req.pushC
+	}
+
+	// Both requests pushing. Let both succeed.
+	for _, b := range barriers {
+		close(b)
+	}
+
+	// Both requests should complete. At least one should return a
+	// TransactionAbortedError, although it's valid if both return one.
+	var txnAbortedErrs int
+	for _, req := range reqs {
+		err := <-req.resC
+		if err != nil {
+			require.Regexp(t, `TransactionAbortedError\(ABORT_REASON_PUSHER_ABORTED\)`, err)
+			txnAbortedErrs++
+		}
+	}
+	require.GreaterOrEqual(t, txnAbortedErrs, 1)
+	t.Logf("%d requests completed, %d returned txn aborted error", len(reqs), txnAbortedErrs)
 }

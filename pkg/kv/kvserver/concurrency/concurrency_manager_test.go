@@ -71,15 +71,17 @@ import (
 //
 // debug-latch-manager
 // debug-lock-table
-// debug-disable-txn-pushes
-// reset
+// debug-set-txn-pushing               enabled=<bool>
+// debug-set-txn-pushing-queries-self  enabled=<bool>
+//
+// reset  [namespace] [settings]
 //
 func TestConcurrencyManagerBasic(t *testing.T) {
 	defer leaktest.AfterTest(t)()
 
 	datadriven.Walk(t, "testdata/concurrency_manager", func(t *testing.T, path string) {
 		c := newCluster()
-		c.enableTxnPushes()
+		c.resetSettings()
 		m := concurrency.NewManager(c.makeConfig())
 		m.OnRangeLeaseUpdated(true /* isLeaseholder */) // enable
 		c.m = m
@@ -426,8 +428,12 @@ func TestConcurrencyManagerBasic(t *testing.T) {
 			case "debug-lock-table":
 				return m.LockTableDebug()
 
-			case "debug-disable-txn-pushes":
-				c.disableTxnPushes()
+			case "debug-set-txn-pushing":
+				c.setTxnPushingEnabled(scanBool(t, d, "enabled"))
+				return ""
+
+			case "debug-set-txn-pushing-queries-self":
+				c.setTxnPushingQueriesSelfEnabled(scanBool(t, d, "enabled"))
 				return ""
 
 			case "reset":
@@ -441,6 +447,10 @@ func TestConcurrencyManagerBasic(t *testing.T) {
 				// Reset request and txn namespace?
 				if d.HasArg("namespace") {
 					c.resetNamespace()
+				}
+				// Reset test settings?
+				if d.HasArg("settings") {
+					c.resetSettings()
 				}
 				return ""
 
@@ -468,10 +478,11 @@ type cluster struct {
 	requestsByName map[string]concurrency.Request
 
 	// Request state. Cleared on reset.
-	mu              syncutil.Mutex
-	guardsByReqName map[string]*concurrency.Guard
-	txnRecords      map[uuid.UUID]*txnRecord
-	txnPushes       map[uuid.UUID]*txnPush
+	mu               syncutil.Mutex
+	guardsByReqName  map[string]*concurrency.Guard
+	txnRecords       map[uuid.UUID]*txnRecord
+	txnPushes        map[uuid.UUID]*txnPush
+	txnPushQuerySelf bool
 }
 
 type txnRecord struct {
@@ -550,7 +561,7 @@ func (c *cluster) PushTransaction(
 		}
 		// Or the pusher aborted?
 		var pusherRecordSig chan struct{}
-		if pusherRecord != nil {
+		if pusherRecord != nil && c.txnPushQuerySelfEnabled() {
 			var pusherTxn roachpb.Transaction
 			pusherTxn, pusherRecordSig = pusherRecord.asTxn()
 			if pusherTxn.Status == roachpb.ABORTED {
@@ -700,14 +711,25 @@ func (c *cluster) detectDeadlocks() {
 	}
 }
 
-func (c *cluster) enableTxnPushes() {
-	concurrency.LockTableLivenessPushDelay.Override(&c.st.SV, 0*time.Millisecond)
-	concurrency.LockTableDeadlockDetectionPushDelay.Override(&c.st.SV, 0*time.Millisecond)
+func (c *cluster) setTxnPushingEnabled(enable bool) {
+	dur := time.Duration(0)
+	if !enable {
+		dur = time.Hour
+	}
+	concurrency.LockTableLivenessPushDelay.Override(&c.st.SV, dur)
+	concurrency.LockTableDeadlockDetectionPushDelay.Override(&c.st.SV, dur)
 }
 
-func (c *cluster) disableTxnPushes() {
-	concurrency.LockTableLivenessPushDelay.Override(&c.st.SV, time.Hour)
-	concurrency.LockTableDeadlockDetectionPushDelay.Override(&c.st.SV, time.Hour)
+func (c *cluster) setTxnPushingQueriesSelfEnabled(enable bool) {
+	c.mu.Lock()
+	c.txnPushQuerySelf = enable
+	c.mu.Unlock()
+}
+
+func (c *cluster) txnPushQuerySelfEnabled() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.txnPushQuerySelf
 }
 
 // reset clears all request state in the cluster. This avoids portions of tests
@@ -749,6 +771,12 @@ func (c *cluster) resetNamespace() {
 	c.txnsByName = make(map[string]*roachpb.Transaction)
 	c.requestsByName = make(map[string]concurrency.Request)
 	c.txnRecords = make(map[uuid.UUID]*txnRecord)
+}
+
+// resetSettings resets the test settings back to their default values.
+func (c *cluster) resetSettings() {
+	c.setTxnPushingEnabled(true)
+	c.setTxnPushingQueriesSelfEnabled(true)
 }
 
 // collectSpans collects the declared spans for a set of requests.
