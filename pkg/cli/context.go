@@ -113,6 +113,7 @@ func initCLIDefaults() {
 	serverCfg.ReadyFn = nil
 	serverCfg.DelayedBootstrapFn = nil
 	serverCfg.SocketFile = ""
+	serverCfg.TenantID = 1
 	serverCfg.JoinList = nil
 	serverCfg.JoinPreferSRVRecords = false
 	serverCfg.DefaultZoneConfig = zonepb.DefaultZoneConfig()

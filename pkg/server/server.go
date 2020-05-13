@@ -540,7 +540,7 @@ func NewServer(cfg Config, stopper *stop.Stopper) (*Server, error) {
 		stopper:                  stopper,
 		clock:                    clock,
 		runtime:                  runtimeSampler,
-		tenantID:                 roachpb.SystemTenantID,
+		tenantID:                 roachpb.MakeTenantID(cfg.TenantID),
 		db:                       db,
 		registry:                 registry,
 		sessionRegistry:          sessionRegistry,

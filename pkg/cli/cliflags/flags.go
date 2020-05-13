@@ -587,6 +587,13 @@ To use, for example: psql -h /path/to -p NNNN ...
 `,
 	}
 
+	TenantID = FlagInfo{
+		Name:   "tenant-id",
+		EnvVar: "COCKROACH_TENANT_ID",
+		Description: `
+`,
+	}
+
 	SocketDir = FlagInfo{
 		Name:        "socket-dir",
 		EnvVar:      "COCKROACH_SOCKET_DIR",

@@ -107,6 +107,12 @@ func IntFlag(f *pflag.FlagSet, valPtr *int, flagInfo cliflags.FlagInfo, defaultV
 	registerEnvVarDefault(f, flagInfo)
 }
 
+func UInt64Flag(f *pflag.FlagSet, valPtr *uint64, flagInfo cliflags.FlagInfo, defaultVal uint64) {
+	f.Uint64VarP(valPtr, flagInfo.Name, flagInfo.Shorthand, defaultVal, flagInfo.Usage())
+
+	registerEnvVarDefault(f, flagInfo)
+}
+
 // BoolFlag creates a bool flag and registers it with the FlagSet.
 func BoolFlag(f *pflag.FlagSet, valPtr *bool, flagInfo cliflags.FlagInfo, defaultVal bool) {
 	f.BoolVarP(valPtr, flagInfo.Name, flagInfo.Shorthand, defaultVal, flagInfo.Usage())
@@ -325,6 +331,7 @@ func init() {
 		// --socket is deprecated as of 20.1.
 		// TODO(knz): remove in 20.2.
 		StringFlag(f, &serverCfg.SocketFile, cliflags.Socket, serverCfg.SocketFile)
+		UInt64Flag(f, &serverCfg.TenantID, cliflags.TenantID, serverCfg.TenantID)
 		_ = f.MarkDeprecated(cliflags.Socket.Name, "use the --socket-dir and --listen-addr flags instead")
 		BoolFlag(f, &startCtx.unencryptedLocalhostHTTP, cliflags.UnencryptedLocalhostHTTP, startCtx.unencryptedLocalhostHTTP)
 

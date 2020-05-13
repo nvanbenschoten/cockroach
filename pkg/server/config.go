@@ -124,6 +124,8 @@ type Config struct {
 	// a unix datagram socket at the specified path.
 	SocketFile string
 
+	TenantID uint64
+
 	// Stores is specified to enable durable key-value storage.
 	Stores base.StoreSpecList
 
