@@ -1178,6 +1178,15 @@ func (r *Replica) sendRaftMessage(ctx context.Context, msg raftpb.Message) {
 	}
 
 	req := newRaftMessageRequest()
+	if len(req.Heartbeats) == 0 && len(req.HeartbeatResps) == 0 && req.RangeID != 0 {
+		panic("only messages with coalesced heartbeats or heartbeat responses may be sent to range ID 0")
+	}
+	if req.Message.Type == raftpb.MsgSnap {
+		panic("snapshots must be sent using SendSnapshot")
+	}
+	if req.Quiesce {
+		panic("snapshots must be sent using SendSnapshot")
+	}
 	*req = RaftMessageRequest{
 		RangeID:       r.RangeID,
 		ToReplica:     toReplica,
@@ -1185,8 +1194,17 @@ func (r *Replica) sendRaftMessage(ctx context.Context, msg raftpb.Message) {
 		Message:       msg,
 		RangeStartKey: startKey, // usually nil
 	}
+	if len(req.Heartbeats) == 0 && len(req.HeartbeatResps) == 0 && req.RangeID == 0 {
+		panic("only messages with coalesced heartbeats or heartbeat responses may be sent to range ID 0")
+	}
+	if req.Message.Type == raftpb.MsgSnap {
+		panic("snapshots must be sent using SendSnapshot")
+	}
+	if req.Quiesce {
+		panic("snapshots must be sent using SendSnapshot")
+	}
 	if !r.sendRaftMessageRequest(ctx, req) {
-		req.release()
+		//req.release()
 		if err := r.withRaftGroup(true, func(raftGroup *raft.RawNode) (bool, error) {
 			r.mu.droppedMessages++
 			raftGroup.ReportUnreachable(msg.To)

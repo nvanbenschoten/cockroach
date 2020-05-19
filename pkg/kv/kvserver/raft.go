@@ -230,7 +230,25 @@ func newRaftMessageRequest() *RaftMessageRequest {
 	return raftMessageRequestPool.Get().(*RaftMessageRequest)
 }
 
+type freePool struct {
+	mu sync.Mutex
+	m map[*RaftMessageRequest]struct{}
+}
+
+var freePoolInst freePool = (func() freePool {
+	var p freePool
+	p.m = make(map[*RaftMessageRequest]struct{})
+	return p
+})()
+
 func (m *RaftMessageRequest) release() {
+/*	freePoolInst.mu.Lock()
+	if _, ok := freePoolInst.m[m]; ok {
+		panic("double-free!")
+	}
+	freePoolInst.m[m] = struct{}{}
+	freePoolInst.mu.Unlock()
+*/
 	*m = RaftMessageRequest{}
 	raftMessageRequestPool.Put(m)
 }

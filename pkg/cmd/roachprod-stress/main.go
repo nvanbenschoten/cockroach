@@ -260,6 +260,8 @@ func run() error {
 			var stderr bytes.Buffer
 			cmd := exec.Command("roachprod",
 				"ssh", fmt.Sprintf("%s:%d", cluster, i), "--",
+				//fmt.Sprintf("cd %s; GOTRACEBACK=all GORACE='log_path=/home/ubuntu/report strip_path_prefix=/home/nathan/go/src/github.com/cockroachdb/cockroach/ verbosity=2 halt_on_error=true' ~/stress %s ./%s %s",
+				//fmt.Sprintf("cd %s; GOTRACEBACK=all GORACE='halt_on_error=true' ~/stress %s ./%s %s",
 				fmt.Sprintf("cd %s; GOTRACEBACK=all ~/stress %s ./%s %s",
 					pkg,
 					strings.Join(stressArgs, " "),
