@@ -13,6 +13,7 @@ package log
 import (
 	"context"
 	"fmt"
+	rttrace "runtime/trace"
 	"strings"
 
 	"github.com/cockroachdb/cockroach/pkg/util/syncutil"
@@ -103,6 +104,7 @@ func getSpanOrEventLog(ctx context.Context) (opentracing.Span, *ctxEventLog, boo
 // eventInternal is the common code for logging an event. If no args are given,
 // the format is treated as a pre-formatted string.
 func eventInternal(ctx context.Context, isErr, withTags bool, format string, args ...interface{}) {
+	rttrace.Logf(ctx, "cat", format, args...)
 	if sp, el, ok := getSpanOrEventLog(ctx); ok {
 		var buf strings.Builder
 		if withTags {

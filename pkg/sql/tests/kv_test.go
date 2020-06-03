@@ -18,6 +18,7 @@ import (
 	"math/rand"
 	"reflect"
 	"runtime"
+	"runtime/trace"
 	"strings"
 	"testing"
 
@@ -108,8 +109,10 @@ func (kv *kvNative) Delete(rows, run int) error {
 }
 
 func (kv *kvNative) Scan(rows, run int) error {
+	ctx, task := trace.NewTask(context.Background(), "kvNative.Scan")
+	defer task.End()
 	var kvs []kv2.KeyValue
-	err := kv.db.Txn(context.Background(), func(ctx context.Context, txn *kv2.Txn) error {
+	err := kv.db.Txn(ctx, func(ctx context.Context, txn *kv2.Txn) error {
 		var err error
 		kvs, err = txn.Scan(ctx, fmt.Sprintf("%s%08d", kv.prefix, 0), fmt.Sprintf("%s%08d", kv.prefix, rows), int64(rows))
 		return err
