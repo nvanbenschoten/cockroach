@@ -588,6 +588,7 @@ func (ef *execFactory) ConstructLookupJoin(
 	lookupCols exec.ColumnOrdinalSet,
 	onCond tree.TypedExpr,
 	reqOrdering exec.OutputOrdering,
+	locking *tree.LockingItem,
 ) (exec.Node, error) {
 	tabDesc := table.(*optTable).desc
 	indexDesc := index.(*optIndex).desc
@@ -600,6 +601,10 @@ func (ef *execFactory) ConstructLookupJoin(
 
 	tableScan.index = indexDesc
 	tableScan.isSecondaryIndex = (indexDesc != &tabDesc.PrimaryIndex)
+	if locking != nil {
+		tableScan.lockingStrength = sqlbase.ToScanLockingStrength(locking.Strength)
+		tableScan.lockingWaitPolicy = sqlbase.ToScanLockingWaitPolicy(locking.WaitPolicy)
+	}
 
 	n := &lookupJoinNode{
 		input:        input.(planNode),

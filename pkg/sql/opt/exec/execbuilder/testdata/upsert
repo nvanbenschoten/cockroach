@@ -138,48 +138,104 @@ SELECT tree, field, description FROM [
 EXPLAIN (VERBOSE) UPSERT INTO indexed VALUES (1)
 ]
 ----
-·                                distributed    false
-·                                vectorized     false
-count                            ·              ·
- └── upsert                      ·              ·
-      │                          into           indexed(a, b, c, d)
-      │                          strategy       opt upserter
-      │                          auto commit    ·
-      └── render                 ·              ·
-           │                     render 0       column1
-           │                     render 1       column6
-           │                     render 2       column7
-           │                     render 3       column8
-           │                     render 4       a
-           │                     render 5       b
-           │                     render 6       c
-           │                     render 7       d
-           │                     render 8       column6
-           │                     render 9       column7
-           │                     render 10      column8
-           │                     render 11      a
-           │                     render 12      check1
-           └── render            ·              ·
-                │                render 0       column7 > 0
-                │                render 1       column1
-                │                render 2       column6
-                │                render 3       column7
-                │                render 4       column8
-                │                render 5       a
-                │                render 6       b
-                │                render 7       c
-                │                render 8       d
-                └── cross-join   ·              ·
-                     │           type           left outer
-                     ├── values  ·              ·
-                     │           size           4 columns, 1 row
-                     │           row 0, expr 0  1
-                     │           row 0, expr 1  CAST(NULL AS INT8)
-                     │           row 0, expr 2  10
-                     │           row 0, expr 3  11
-                     └── scan    ·              ·
-·                                table          indexed@primary
-·                                spans          /1-/1/#
+·                                distributed       false
+·                                vectorized        false
+count                            ·                 ·
+ └── upsert                      ·                 ·
+      │                          into              indexed(a, b, c, d)
+      │                          strategy          opt upserter
+      │                          auto commit       ·
+      └── render                 ·                 ·
+           │                     render 0          column1
+           │                     render 1          column6
+           │                     render 2          column7
+           │                     render 3          column8
+           │                     render 4          a
+           │                     render 5          b
+           │                     render 6          c
+           │                     render 7          d
+           │                     render 8          column6
+           │                     render 9          column7
+           │                     render 10         column8
+           │                     render 11         a
+           │                     render 12         check1
+           └── render            ·                 ·
+                │                render 0          column7 > 0
+                │                render 1          column1
+                │                render 2          column6
+                │                render 3          column7
+                │                render 4          column8
+                │                render 5          a
+                │                render 6          b
+                │                render 7          c
+                │                render 8          d
+                └── cross-join   ·                 ·
+                     │           type              left outer
+                     ├── values  ·                 ·
+                     │           size              4 columns, 1 row
+                     │           row 0, expr 0     1
+                     │           row 0, expr 1     CAST(NULL AS INT8)
+                     │           row 0, expr 2     10
+                     │           row 0, expr 3     11
+                     └── scan    ·                 ·
+·                                table             indexed@primary
+·                                spans             /1-/1/#
+·                                locking strength  for update
+
+query TTT
+SELECT tree, field, description FROM [
+EXPLAIN (VERBOSE) UPSERT INTO indexed VALUES (1), (2), (3), (4)
+]
+----
+·                                     distributed            false
+·                                     vectorized             false
+count                                 ·                      ·
+ └── upsert                           ·                      ·
+      │                               into                   indexed(a, b, c, d)
+      │                               strategy               opt upserter
+      │                               auto commit            ·
+      └── render                      ·                      ·
+           │                          render 0               column1
+           │                          render 1               column6
+           │                          render 2               column7
+           │                          render 3               column8
+           │                          render 4               a
+           │                          render 5               b
+           │                          render 6               c
+           │                          render 7               d
+           │                          render 8               column6
+           │                          render 9               column7
+           │                          render 10              column8
+           │                          render 11              a
+           │                          render 12              check1
+           └── render                 ·                      ·
+                │                     render 0               column7 > 0
+                │                     render 1               column1
+                │                     render 2               column6
+                │                     render 3               column7
+                │                     render 4               column8
+                │                     render 5               a
+                │                     render 6               b
+                │                     render 7               c
+                │                     render 8               d
+                └── lookup-join       ·                      ·
+                     │                table                  indexed@primary
+                     │                type                   left outer
+                     │                equality               (column1) = (a)
+                     │                equality cols are key  ·
+                     │                parallel               ·
+                     │                locking strength       for update
+                     └── render       ·                      ·
+                          │           render 0               column1 + 10
+                          │           render 1               CAST(NULL AS INT8)
+                          │           render 2               10
+                          │           render 3               column1
+                          └── values  ·                      ·
+·                                     size                   1 column, 4 rows
+·                                     row 0, expr 0          1
+·                                     row 1, expr 0          2
+·                                     row 2, expr 0          3
+·                                     row 3, expr 0          4
 
 # Drop index and verify that existing values no longer need to be fetched.
 statement ok

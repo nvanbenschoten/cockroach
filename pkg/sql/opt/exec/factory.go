@@ -241,6 +241,7 @@ type Factory interface {
 		lookupCols ColumnOrdinalSet,
 		onCond tree.TypedExpr,
 		reqOrdering OutputOrdering,
+		locking *tree.LockingItem,
 	) (Node, error)
 
 	// ConstructZigzagJoin returns a node that performs a zigzag join.

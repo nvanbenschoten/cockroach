@@ -286,6 +286,34 @@ func (v *planVisitor) visitInternal(plan planNode, name string) {
 		if n.CanParallelize() {
 			v.observer.attr(name, "parallel", "")
 		}
+		if n.table.lockingStrength != sqlbase.ScanLockingStrength_FOR_NONE {
+			strength := ""
+			switch n.table.lockingStrength {
+			case sqlbase.ScanLockingStrength_FOR_KEY_SHARE:
+				strength = "for key share"
+			case sqlbase.ScanLockingStrength_FOR_SHARE:
+				strength = "for share"
+			case sqlbase.ScanLockingStrength_FOR_NO_KEY_UPDATE:
+				strength = "for no key update"
+			case sqlbase.ScanLockingStrength_FOR_UPDATE:
+				strength = "for update"
+			default:
+				panic(errors.AssertionFailedf("unexpected strength"))
+			}
+			v.observer.attr(name, "locking strength", strength)
+		}
+		if n.table.lockingWaitPolicy != sqlbase.ScanLockingWaitPolicy_BLOCK {
+			wait := ""
+			switch n.table.lockingWaitPolicy {
+			case sqlbase.ScanLockingWaitPolicy_SKIP:
+				wait = "skip locked"
+			case sqlbase.ScanLockingWaitPolicy_ERROR:
+				wait = "nowait"
+			default:
+				panic(errors.AssertionFailedf("unexpected wait policy"))
+			}
+			v.observer.attr(name, "locking wait policy", wait)
+		}
 		if v.observer.expr != nil && n.onCond != nil && n.onCond != tree.DBoolTrue {
 			v.expr(name, "pred", -1, n.onCond)
 		}
