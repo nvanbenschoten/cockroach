@@ -11,9 +11,10 @@
 package invertedexpr
 
 import (
+	"math"
+
 	"github.com/cockroachdb/cockroach/pkg/geo/geoindex"
-	"github.com/cockroachdb/cockroach/pkg/sql/sem/tree"
-	"github.com/cockroachdb/cockroach/pkg/sql/sqlbase"
+	"github.com/cockroachdb/cockroach/pkg/roachpb"
 	"github.com/cockroachdb/cockroach/pkg/util/encoding"
 	"github.com/cockroachdb/errors"
 )
@@ -26,28 +27,31 @@ import (
 //
 // TODO(sumeer): change geoindex to produce SpanExpressions directly.
 
-func geoKeyToEncInvertedVal(k geoindex.Key, end bool, b []byte, d *tree.DInt) (EncInvertedVal, []byte) {
+func geoKeyToEncInvertedVal(k geoindex.Key, end bool, b []byte) (EncInvertedVal, []byte) {
+	// geoindex.KeySpan.End is inclusive, while InvertedSpan.end is exclusive.
+	// For all but k == math.MaxUint64, we can account for this before the key
+	// encoding. For k == math.MaxUint64, we must PrefixEnd after, which incurs
+	// a separate memory allocation.
+	prefixEnd := false
 	if end {
-		*d = tree.DInt(k + 1)
-	} else {
-		*d = tree.DInt(k)
+		if k < math.MaxUint64 {
+			k++
+		} else {
+			prefixEnd = true
+		}
 	}
-	prevLen := len(b)
-	b, err := sqlbase.EncodeTableKey(b, d, encoding.Ascending)
-	if err != nil {
-		panic(errors.NewAssertionErrorWithWrappedErrf(err, "unexpected encoding error: %d", k))
+	prev := len(b)
+	b = encoding.EncodeUvarintAscending(b, uint64(k))
+	enc := b[prev:]
+	if prefixEnd {
+		enc = roachpb.Key(enc).PrefixEnd()
 	}
-	// encoded :=
-	// if end {
-	// 	// geoindex.KeySpan.End is inclusive, while InvertedSpan.end is exclusive.
-	// 	encoded = roachpb.Key(encoded).PrefixEnd()
-	// }
-	return b[prevLen:], b
+	return enc, b
 }
 
-func geoToSpan(span geoindex.KeySpan, b []byte, d *tree.DInt) (InvertedSpan, []byte) {
-	start, b := geoKeyToEncInvertedVal(span.Start, false, b, d)
-	end, b := geoKeyToEncInvertedVal(span.End, true, b, d)
+func geoToSpan(span geoindex.KeySpan, b []byte) (InvertedSpan, []byte) {
+	start, b := geoKeyToEncInvertedVal(span.Start, false, b)
+	end, b := geoKeyToEncInvertedVal(span.End, true, b)
 	return InvertedSpan{Start: start, End: end}, b
 }
 
@@ -58,10 +62,9 @@ func GeoUnionKeySpansToSpanExpr(ukSpans geoindex.UnionKeySpans) *SpanExpression 
 		return nil
 	}
 	spans := make([]InvertedSpan, len(ukSpans))
-	var b []byte    // avoid per-span heap allocations
-	var d tree.DInt // avoid per-span heap allocations
+	var b []byte // avoid per-span heap allocations
 	for i, ukSpan := range ukSpans {
-		spans[i], b = geoToSpan(ukSpan, b, &d)
+		spans[i], b = geoToSpan(ukSpan, b)
 	}
 	return &SpanExpression{
 		SpansToRead:        spans,
@@ -75,13 +78,12 @@ func GeoRPKeyExprToSpanExpr(rpExpr geoindex.RPKeyExpr) (*SpanExpression, error) 
 		return nil, nil
 	}
 	spansToRead := make([]InvertedSpan, 0, len(rpExpr))
-	var b []byte    // avoid per-expr heap allocations
-	var d tree.DInt // avoid per-expr heap allocations
+	var b []byte // avoid per-expr heap allocations
 	for _, elem := range rpExpr {
 		// The keys in the RPKeyExpr are unique.
 		if key, ok := elem.(geoindex.Key); ok {
 			var span InvertedSpan
-			span, b = geoToSpan(geoindex.KeySpan{Start: key, End: key}, b, &d)
+			span, b = geoToSpan(geoindex.KeySpan{Start: key, End: key}, b)
 			spansToRead = append(spansToRead, span)
 		}
 	}
@@ -90,7 +92,7 @@ func GeoRPKeyExprToSpanExpr(rpExpr geoindex.RPKeyExpr) (*SpanExpression, error) 
 		switch e := elem.(type) {
 		case geoindex.Key:
 			var span InvertedSpan
-			span, b = geoToSpan(geoindex.KeySpan{Start: e, End: e}, b, &d)
+			span, b = geoToSpan(geoindex.KeySpan{Start: e, End: e}, b)
 			stack = append(stack, &SpanExpression{
 				FactoredUnionSpans: []InvertedSpan{span},
 			})
