@@ -280,26 +280,34 @@ func (n *newOrder) run(ctx context.Context, wID int) (interface{}, error) {
 	err = crdb.ExecuteInTx(
 		ctx, (*workload.PgxTx)(tx),
 		func() error {
+			// Batch the first three single-row queries/mutations.
+			batch := tx.BeginBatch()
 			// Select the district tax rate and next available order number, bumping it.
+			n.updateDistrict.Queue(batch, d.wID, d.dID)
+			// Select the warehouse tax rate.
+			n.selectWarehouseTax.Queue(batch, wID)
+			// Select the customer's discount, last name, and credit.
+			n.selectCustomerInfo.Queue(batch, d.wID, d.dID, d.cID)
+
+			// Issue the batch.
+			if err := batch.Send(ctx, nil /* options */); err != nil {
+				return err
+			}
+			// Statement 1.
 			var dNextOID int
-			if err := n.updateDistrict.QueryRowTx(
-				ctx, tx, d.wID, d.dID,
-			).Scan(&d.dTax, &dNextOID); err != nil {
+			if err := batch.QueryRowResults().Scan(&d.dTax, &dNextOID); err != nil {
 				return err
 			}
 			d.oID = dNextOID - 1
-
-			// Select the warehouse tax rate.
-			if err := n.selectWarehouseTax.QueryRowTx(
-				ctx, tx, wID,
-			).Scan(&d.wTax); err != nil {
+			// Statement 2.
+			if err := batch.QueryRowResults().Scan(&d.wTax); err != nil {
 				return err
 			}
-
-			// Select the customer's discount, last name, and credit.
-			if err := n.selectCustomerInfo.QueryRowTx(
-				ctx, tx, d.wID, d.dID, d.cID,
-			).Scan(&d.cDiscount, &d.cLast, &d.cCredit); err != nil {
+			// Statement 3.
+			if err := batch.QueryRowResults().Scan(&d.cDiscount, &d.cLast, &d.cCredit); err != nil {
+				return err
+			}
+			if err := batch.Close(); err != nil {
 				return err
 			}
 
@@ -419,29 +427,14 @@ func (n *newOrder) run(ctx context.Context, wID int) (interface{}, error) {
 			}
 			rows.Close()
 
+			// Batch remaining four mutations.
+			batch = tx.BeginBatch()
 			// Update the stock table for each item.
-			if _, err := n.updateStock.ExecTx(
-				ctx, tx, itemIDs, supplyWIDs, newStockQuantities,
-				newStockYtds, newStockOrderCounts, newStockRemoteCounts,
-			); err != nil {
-				return err
-			}
-
+			n.updateStock.Queue(batch, itemIDs, supplyWIDs, newStockQuantities, newStockYtds, newStockOrderCounts, newStockRemoteCounts)
 			// Insert row into the orders table.
-			if _, err := n.insertOrder.ExecTx(
-				ctx, tx,
-				d.oID, d.dID, d.wID, d.cID, d.oEntryD.Format("2006-01-02 15:04:05"), d.oOlCnt, allLocal,
-			); err != nil {
-				return err
-			}
-
+			n.insertOrder.Queue(batch, d.oID, d.dID, d.wID, d.cID, d.oEntryD.Format("2006-01-02 15:04:05"), d.oOlCnt, allLocal)
 			// Insert row into the new orders table.
-			if _, err := n.insertNewOrder.ExecTx(
-				ctx, tx, d.oID, d.dID, d.wID,
-			); err != nil {
-				return err
-			}
-
+			n.insertNewOrder.Queue(batch, d.oID, d.dID, d.wID)
 			// Insert a new order line for each item in the order.
 			olNumbers := make([]int64, d.oOlCnt)
 			olQuantities := make([]int64, d.oOlCnt)
@@ -455,10 +448,14 @@ func (n *newOrder) run(ctx context.Context, wID int) (interface{}, error) {
 				olQuantities[i] = int64(item.olQuantity)
 				olAmounts[i] = item.olAmount
 			}
-			if _, err := n.insertOrderLine.ExecTx(
-				ctx, tx, d.oID, d.dID, d.wID, itemIDs, supplyWIDs,
-				olNumbers, olQuantities, olAmounts, distInfos,
-			); err != nil {
+			n.insertOrderLine.Queue(batch, d.oID, d.dID, d.wID, itemIDs, supplyWIDs, olNumbers, olQuantities, olAmounts, distInfos)
+
+			// Issue the batch.
+			if err := batch.Send(ctx, nil /* options */); err != nil {
+				return err
+			}
+			// Ignore results other than errors.
+			if err := batch.Close(); err != nil {
 				return err
 			}
 

@@ -280,3 +280,26 @@ func (h StmtHandle) QueryRowTx(ctx context.Context, tx *pgx.Tx, args ...interfac
 
 // Appease the linter.
 var _ = StmtHandle.QueryRow
+
+// Queue queues a query to batch b.
+//
+// See pgx.Batch.Queue.
+func (h StmtHandle) Queue(b *pgx.Batch, args ...interface{}) {
+	h.check()
+	switch h.s.sr.method {
+	case prepare:
+		b.Queue(h.s.prepared.Name, args, nil, nil)
+
+	case noprepare:
+		// From Batch.Queue's documentation:
+		// > parameterOIDs are required if there are parameters and query is not
+		// > the name of a prepared statement.
+		panic("noprepare method unsupported with batching")
+
+	case simple:
+		panic("simple method unsupported with batching")
+
+	default:
+		panic("invalid method")
+	}
+}

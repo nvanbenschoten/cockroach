@@ -192,18 +192,27 @@ func (p *payment) run(ctx context.Context, wID int) (interface{}, error) {
 	if err := crdb.ExecuteInTx(
 		ctx, (*workload.PgxTx)(tx),
 		func() error {
-			var wName, dName string
-			// Update warehouse with payment
-			if err := p.updateWarehouse.QueryRowTx(
-				ctx, tx, d.hAmount, wID,
-			).Scan(&wName, &d.wStreet1, &d.wStreet2, &d.wCity, &d.wState, &d.wZip); err != nil {
+			// Batch the first two single-row mutations.
+			batch := tx.BeginBatch()
+			// Update warehouse with payment.
+			p.updateWarehouse.Queue(batch, d.hAmount, wID)
+			// Update district with payment.
+			p.updateDistrict.Queue(batch, d.hAmount, wID, d.dID)
+
+			// Issue the batch.
+			if err := batch.Send(ctx, nil /* options */); err != nil {
 				return err
 			}
-
-			// Update district with payment
-			if err := p.updateDistrict.QueryRowTx(
-				ctx, tx, d.hAmount, wID, d.dID,
-			).Scan(&dName, &d.dStreet1, &d.dStreet2, &d.dCity, &d.dState, &d.dZip); err != nil {
+			// Statement 1.
+			var wName, dName string
+			if err := batch.QueryRowResults().Scan(&wName, &d.wStreet1, &d.wStreet2, &d.wCity, &d.wState, &d.wZip); err != nil {
+				return err
+			}
+			// Statement 2.
+			if err := batch.QueryRowResults().Scan(&dName, &d.dStreet1, &d.dStreet2, &d.dCity, &d.dState, &d.dZip); err != nil {
+				return err
+			}
+			if err := batch.Close(); err != nil {
 				return err
 			}
 
@@ -233,27 +242,28 @@ func (p *payment) run(ctx context.Context, wID int) (interface{}, error) {
 				d.cID = customers[cIdx]
 			}
 
+			// Batch remaining two mutations.
+			batch = tx.BeginBatch()
 			// Update customer with payment.
-			// If the customer has bad credit, update the customer's C_DATA and return
-			// the first 200 characters of it, which is supposed to get displayed by
-			// the terminal. See 2.5.3.3 and 2.5.2.2.
-			if err := p.updateWithPayment.QueryRowTx(
-				ctx, tx, d.hAmount, d.cWID, d.cDID, d.cID, d.dID, wID,
-			).Scan(&d.cFirst, &d.cMiddle, &d.cLast, &d.cStreet1, &d.cStreet2,
+			p.updateWithPayment.Queue(batch, d.hAmount, d.cWID, d.cDID, d.cID, d.dID, wID)
+			// Insert history line.
+			hData := fmt.Sprintf("%s    %s", wName, dName)
+			p.insertHistory.Queue(batch, d.cID, d.cDID, d.cWID, d.dID, wID, d.hAmount, d.hDate.Format("2006-01-02 15:04:05"), hData)
+
+			// Issue the batch.
+			if err := batch.Send(ctx, nil /* options */); err != nil {
+				return err
+			}
+			// Statement 1.
+			if err := batch.QueryRowResults().Scan(
+				&d.cFirst, &d.cMiddle, &d.cLast, &d.cStreet1, &d.cStreet2,
 				&d.cCity, &d.cState, &d.cZip, &d.cPhone, &d.cSince, &d.cCredit,
 				&d.cCreditLim, &d.cDiscount, &d.cBalance, &d.cData,
 			); err != nil {
-				return errors.Wrap(err, "update customer fail")
+				return err
 			}
-
-			hData := fmt.Sprintf("%s    %s", wName, dName)
-
-			// Insert history line.
-			_, err := p.insertHistory.ExecTx(
-				ctx, tx,
-				d.cID, d.cDID, d.cWID, d.dID, wID, d.hAmount, d.hDate.Format("2006-01-02 15:04:05"), hData,
-			)
-			return err
+			// Ignore remaining results other than errors.
+			return batch.Close()
 		}); err != nil {
 		return nil, err
 	}
