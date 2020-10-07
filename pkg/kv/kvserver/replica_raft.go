@@ -73,6 +73,10 @@ func (r *Replica) evalAndPropose(
 	proposal, pErr := r.requestToProposal(ctx, idKey, ba, g.LatchSpans())
 	log.Event(proposal.ctx, "evaluated request")
 
+	if err := r.checkExecutionUninterrupted(ctx, ba); err != nil {
+		return nil, nil, 0, roachpb.NewError(err)
+	}
+
 	// If the request hit a server-side concurrency retry error, immediately
 	// proagate the error. Don't assume ownership of the concurrency guard.
 	if isConcurrencyRetryError(pErr) {

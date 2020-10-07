@@ -67,12 +67,6 @@ func (r *Replica) executeWriteBatch(
 ) (br *roachpb.BatchResponse, _ *concurrency.Guard, pErr *roachpb.Error) {
 	startTime := timeutil.Now()
 
-	// TODO(nvanbenschoten): unlike on the read-path (executeReadOnlyBatch), we
-	// don't synchronize with r.readOnlyCmdMu here. Is that ok? What if the
-	// replica is destroyed concurrently with a write? We won't be able to
-	// successfully propose as the lease will presumably have changed, but what
-	// if we hit an error during evaluation (e.g. a ConditionFailedError)?
-
 	// Verify that the batch can be executed.
 	// NB: we only need to check that the request is in the Range's key bounds
 	// at proposal time, not at application time, because the spanlatch manager

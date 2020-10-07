@@ -7267,9 +7267,10 @@ func TestTerm(t *testing.T) {
 func TestGCIncorrectRange(t *testing.T) {
 	defer leaktest.AfterTest(t)()
 	defer log.Scope(t).Close(t)
+	ctx := context.Background()
 	tc := testContext{}
 	stopper := stop.NewStopper()
-	defer stopper.Stop(context.Background())
+	defer stopper.Stop(ctx)
 	tc.Start(t, stopper)
 
 	// Split range into two ranges.
@@ -7287,10 +7288,10 @@ func TestGCIncorrectRange(t *testing.T) {
 	ts2 := now.Add(2, 0)
 	ts1Header := roachpb.Header{RangeID: repl2.RangeID, Timestamp: ts1}
 	ts2Header := roachpb.Header{RangeID: repl2.RangeID, Timestamp: ts2}
-	if _, pErr := kv.SendWrappedWith(context.Background(), repl2, ts1Header, &putReq); pErr != nil {
+	if _, pErr := kv.SendWrappedWith(ctx, repl2, ts1Header, &putReq); pErr != nil {
 		t.Errorf("unexpected pError on put key request: %s", pErr)
 	}
-	if _, pErr := kv.SendWrappedWith(context.Background(), repl2, ts2Header, &putReq); pErr != nil {
+	if _, pErr := kv.SendWrappedWith(ctx, repl2, ts2Header, &putReq); pErr != nil {
 		t.Errorf("unexpected pError on put key request: %s", pErr)
 	}
 
@@ -7300,7 +7301,7 @@ func TestGCIncorrectRange(t *testing.T) {
 	gKey := gcKey(key, ts1)
 	gcReq := gcArgs(repl1.Desc().StartKey, repl1.Desc().EndKey, gKey)
 	if _, pErr := kv.SendWrappedWith(
-		context.Background(),
+		ctx,
 		repl1,
 		roachpb.Header{RangeID: 1, Timestamp: tc.Clock().Now()},
 		&gcReq,
@@ -7310,28 +7311,31 @@ func TestGCIncorrectRange(t *testing.T) {
 
 	// Make sure the key still exists on range 2.
 	getReq := getArgs(key)
-	if res, pErr := kv.SendWrappedWith(context.Background(), repl2, ts1Header, &getReq); pErr != nil {
+	if res, pErr := kv.SendWrappedWith(ctx, repl2, ts1Header, &getReq); pErr != nil {
 		t.Errorf("unexpected pError on get request to correct range: %s", pErr)
 	} else if resVal := res.(*roachpb.GetResponse).Value; resVal == nil {
 		t.Errorf("expected value %s to exists after GC to incorrect range but before GC to correct range, found %v", val, resVal)
 	}
 
+	// Bump the GC threshold before sending the GC request.
+	gcHeader := roachpb.Header{RangeID: repl2.RangeID, Timestamp: tc.Clock().Now()}
+	gcThreshReq := gcArgs(repl2.Desc().StartKey, repl2.Desc().EndKey)
+	gcThreshReq.Threshold = ts1
+	if _, pErr := kv.SendWrappedWith(ctx, repl2, gcHeader, &gcThreshReq); pErr != nil {
+		t.Errorf("unexpected pError on garbage collection request to correct range: %s", pErr)
+	}
+
 	// Send GC request to range 2 for the same key.
 	gcReq = gcArgs(repl2.Desc().StartKey, repl2.Desc().EndKey, gKey)
-	if _, pErr := kv.SendWrappedWith(
-		context.Background(),
-		repl2,
-		roachpb.Header{RangeID: repl2.RangeID, Timestamp: tc.Clock().Now()},
-		&gcReq,
-	); pErr != nil {
+	if _, pErr := kv.SendWrappedWith(ctx, repl2, gcHeader, &gcReq); pErr != nil {
 		t.Errorf("unexpected pError on garbage collection request to correct range: %s", pErr)
 	}
 
 	// Make sure the key no longer exists on range 2.
-	if res, pErr := kv.SendWrappedWith(context.Background(), repl2, ts1Header, &getReq); pErr != nil {
-		t.Errorf("unexpected pError on get request to correct range: %s", pErr)
-	} else if resVal := res.(*roachpb.GetResponse).Value; resVal != nil {
-		t.Errorf("expected value at key %s to no longer exist after GC to correct range, found value %v", key, resVal)
+	if val, _, err := storage.MVCCGet(ctx, repl2.store.Engine(), key, ts1, storage.MVCCGetOptions{}); err != nil {
+		t.Fatal(err)
+	} else if val != nil {
+		t.Errorf("expected value at key %s to no longer exist after GC to correct range, found value %v", key, val)
 	}
 }
 
@@ -8226,57 +8230,6 @@ func TestReplicaReproposalWithNewLeaseIndexError(t *testing.T) {
 		t.Fatal(err)
 	} else if v != initCount {
 		t.Fatalf("expected value of %d, found %d", initCount, v)
-	}
-}
-
-// TestGCWithoutThreshold validates that GCRequest only declares the threshold
-// key if it is subject to change, and that it does not access this key if it
-// does not declare them.
-func TestGCWithoutThreshold(t *testing.T) {
-	defer leaktest.AfterTest(t)()
-	defer log.Scope(t).Close(t)
-
-	desc := &roachpb.RangeDescriptor{StartKey: roachpb.RKey("a"), EndKey: roachpb.RKey("z")}
-	ctx := context.Background()
-
-	tc := &testContext{}
-	stopper := stop.NewStopper()
-	defer stopper.Stop(ctx)
-	tc.Start(t, stopper)
-
-	for _, keyThresh := range []hlc.Timestamp{{}, {Logical: 1}} {
-		t.Run(fmt.Sprintf("thresh=%s", keyThresh), func(t *testing.T) {
-			var gc roachpb.GCRequest
-			var spans spanset.SpanSet
-
-			gc.Threshold = keyThresh
-			cmd, _ := batcheval.LookupCommand(roachpb.GC)
-			cmd.DeclareKeys(desc, roachpb.Header{RangeID: tc.repl.RangeID}, &gc, &spans, nil)
-
-			expSpans := 1
-			if !keyThresh.IsEmpty() {
-				expSpans++
-			}
-			if numSpans := spans.Len(); numSpans != expSpans {
-				t.Fatalf("expected %d declared keys, found %d", expSpans, numSpans)
-			}
-
-			eng := storage.NewDefaultInMem()
-			defer eng.Close()
-
-			batch := eng.NewBatch()
-			defer batch.Close()
-			rw := spanset.NewBatch(batch, &spans)
-
-			var resp roachpb.GCResponse
-
-			if _, err := batcheval.GC(ctx, rw, batcheval.CommandArgs{
-				Args:    &gc,
-				EvalCtx: NewReplicaEvalContext(tc.repl, &spans),
-			}, &resp); err != nil {
-				t.Fatal(err)
-			}
-		})
 	}
 }
 

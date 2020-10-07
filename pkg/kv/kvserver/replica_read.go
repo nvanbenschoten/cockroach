@@ -34,9 +34,6 @@ import (
 func (r *Replica) executeReadOnlyBatch(
 	ctx context.Context, ba *roachpb.BatchRequest, st kvserverpb.LeaseStatus, g *concurrency.Guard,
 ) (br *roachpb.BatchResponse, _ *concurrency.Guard, pErr *roachpb.Error) {
-	r.readOnlyCmdMu.RLock()
-	defer r.readOnlyCmdMu.RUnlock()
-
 	// Verify that the batch can be executed.
 	if _, err := r.checkExecutionCanProceed(ctx, ba, g, &st); err != nil {
 		return nil, g, roachpb.NewError(err)
@@ -65,6 +62,10 @@ func (r *Replica) executeReadOnlyBatch(
 
 	var result result.Result
 	br, result, pErr = r.executeReadOnlyBatchWithServersideRefreshes(ctx, rw, rec, ba, spans)
+
+	if err := r.checkExecutionUninterrupted(ctx, ba); err != nil {
+		return nil, g, roachpb.NewError(err)
+	}
 
 	// If the request hit a server-side concurrency retry error, immediately
 	// proagate the error. Don't assume ownership of the concurrency guard.

@@ -209,11 +209,6 @@ type Replica struct {
 	// via a raft message.
 	creatingReplica *roachpb.ReplicaDescriptor
 
-	// Held in read mode during read-only commands. Held in exclusive mode to
-	// prevent read-only commands from executing. Acquired before the embedded
-	// RWMutex.
-	readOnlyCmdMu syncutil.RWMutex
-
 	// rangeStr is a string representation of a RangeDescriptor that can be
 	// atomically read and updated without needing to acquire the replica.mu lock.
 	// All updates to state.Desc should be duplicated here.
@@ -1177,6 +1172,18 @@ func (r *Replica) checkExecutionCanProceedForRangeFeed(
 	return nil
 }
 
+// TODO
+func (r *Replica) checkExecutionUninterrupted(ctx context.Context, ba *roachpb.BatchRequest) error {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	if _, err := r.isDestroyedRLocked(); err != nil {
+		return err
+	} else if err := r.checkTSAboveGCThresholdRLockedStrict(ba.EarliestActiveTimestamp()); err != nil {
+		return err
+	}
+	return nil
+}
+
 // checkSpanInRangeRLocked returns an error if a request (identified by its
 // key span) can not be run on the replica.
 func (r *Replica) checkSpanInRangeRLocked(ctx context.Context, rspan roachpb.RSpan) error {
@@ -1195,6 +1202,17 @@ func (r *Replica) checkTSAboveGCThresholdRLocked(
 	ts hlc.Timestamp, st *kvserverpb.LeaseStatus, isAdmin bool,
 ) error {
 	threshold := r.getImpliedGCThresholdRLocked(st, isAdmin)
+	if threshold.Less(ts) {
+		return nil
+	}
+	return &roachpb.BatchTimestampBeforeGCError{
+		Timestamp: ts,
+		Threshold: threshold,
+	}
+}
+
+func (r *Replica) checkTSAboveGCThresholdRLockedStrict(ts hlc.Timestamp) error {
+	threshold := *r.mu.state.GCThreshold
 	if threshold.Less(ts) {
 		return nil
 	}
