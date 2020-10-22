@@ -160,7 +160,7 @@ func (p *planner) renameColumn(
 
 	// Rename the column in computed columns.
 	for i := range tableDesc.Columns {
-		if otherCol := &tableDesc.Columns[i]; otherCol.IsComputed() {
+		if otherCol := tableDesc.Columns[i]; otherCol.IsComputed() {
 			newExpr, err := schemaexpr.RenameColumn(*otherCol.ComputeExpr, *oldName, *newName)
 			if err != nil {
 				return false, err

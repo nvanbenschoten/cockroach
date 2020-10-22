@@ -1024,7 +1024,7 @@ func applyColumnMutation(
 	return nil
 }
 
-func labeledRowValues(cols []descpb.ColumnDescriptor, values tree.Datums) string {
+func labeledRowValues(cols []*descpb.ColumnDescriptor, values tree.Datums) string {
 	var s bytes.Buffer
 	for i := range cols {
 		if i != 0 {

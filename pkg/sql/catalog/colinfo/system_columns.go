@@ -33,7 +33,7 @@ import (
 //   that a particular row came from.
 
 // AllSystemColumnDescs contains all registered system columns.
-var AllSystemColumnDescs = []descpb.ColumnDescriptor{
+var AllSystemColumnDescs = []*descpb.ColumnDescriptor{
 	MVCCTimestampColumnDesc,
 	TableOIDColumnDesc,
 }
@@ -46,7 +46,7 @@ const MVCCTimestampColumnID = math.MaxUint32
 const TableOIDColumnID = MVCCTimestampColumnID - 1
 
 // MVCCTimestampColumnDesc is a column descriptor for the MVCC system column.
-var MVCCTimestampColumnDesc = descpb.ColumnDescriptor{
+var MVCCTimestampColumnDesc = &descpb.ColumnDescriptor{
 	Name:             MVCCTimestampColumnName,
 	Type:             MVCCTimestampColumnType,
 	Hidden:           true,
@@ -62,7 +62,7 @@ const MVCCTimestampColumnName = "crdb_internal_mvcc_timestamp"
 var MVCCTimestampColumnType = types.Decimal
 
 // TableOIDColumnDesc is a column descriptor for the tableoid column.
-var TableOIDColumnDesc = descpb.ColumnDescriptor{
+var TableOIDColumnDesc = &descpb.ColumnDescriptor{
 	Name:             "tableoid",
 	Type:             types.Oid,
 	Hidden:           true,
@@ -79,9 +79,9 @@ func IsColIDSystemColumn(colID descpb.ColumnID) bool {
 // GetSystemColumnDescriptorFromID returns a column descriptor corresponding
 // to the system column referred to by the input column ID.
 func GetSystemColumnDescriptorFromID(colID descpb.ColumnID) (*descpb.ColumnDescriptor, error) {
-	for i := range AllSystemColumnDescs {
-		if AllSystemColumnDescs[i].ID == colID {
-			return &AllSystemColumnDescs[i], nil
+	for _, sysCol := range AllSystemColumnDescs {
+		if sysCol.ID == colID {
+			return sysCol, nil
 		}
 	}
 	return nil, errors.AssertionFailedf("unsupported system column ID %d", colID)

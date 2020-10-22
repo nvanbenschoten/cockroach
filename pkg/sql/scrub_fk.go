@@ -107,7 +107,7 @@ func (o *sqlForeignKeyCheckOperation) Start(params runParams) error {
 	// columns.
 	columnsByID := make(map[descpb.ColumnID]*descpb.ColumnDescriptor, len(o.tableDesc.Columns))
 	for i := range o.tableDesc.Columns {
-		columnsByID[o.tableDesc.Columns[i].ID] = &o.tableDesc.Columns[i]
+		columnsByID[o.tableDesc.Columns[i].ID] = o.tableDesc.Columns[i]
 	}
 
 	// Get primary key columns not included in the FK.

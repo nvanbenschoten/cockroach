@@ -36,30 +36,12 @@ type ResultColumn struct {
 // describe the column types of a table.
 type ResultColumns []ResultColumn
 
-// ResultColumnsFromColDescs converts []descpb.ColumnDescriptor to []ResultColumn.
-func ResultColumnsFromColDescs(
-	tableID descpb.ID, colDescs []descpb.ColumnDescriptor,
-) ResultColumns {
-	return resultColumnsFromColDescs(tableID, len(colDescs), func(i int) *descpb.ColumnDescriptor {
-		return &colDescs[i]
-	})
-}
-
 // ResultColumnsFromColDescPtrs converts []*descpb.ColumnDescriptor to []ResultColumn.
 func ResultColumnsFromColDescPtrs(
 	tableID descpb.ID, colDescs []*descpb.ColumnDescriptor,
 ) ResultColumns {
-	return resultColumnsFromColDescs(tableID, len(colDescs), func(i int) *descpb.ColumnDescriptor {
-		return colDescs[i]
-	})
-}
-
-func resultColumnsFromColDescs(
-	tableID descpb.ID, numCols int, getColDesc func(int) *descpb.ColumnDescriptor,
-) ResultColumns {
-	cols := make(ResultColumns, numCols)
-	for i := range cols {
-		colDesc := getColDesc(i)
+	cols := make(ResultColumns, len(colDescs))
+	for i, colDesc := range colDescs {
 		typ := colDesc.Type
 		if typ == nil {
 			panic(errors.AssertionFailedf("unsupported column type: %s", colDesc.Type.Family()))

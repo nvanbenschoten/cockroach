@@ -28,7 +28,7 @@ import (
 // ColIDtoRowIndexFromCols groups a slice of ColumnDescriptors by their ID
 // field, returning a map from ID to the index of the column in the input slice.
 // It assumes there are no duplicate descriptors in the input.
-func ColIDtoRowIndexFromCols(cols []descpb.ColumnDescriptor) map[descpb.ColumnID]int {
+func ColIDtoRowIndexFromCols(cols []*descpb.ColumnDescriptor) map[descpb.ColumnID]int {
 	colIDtoRowIndex := make(map[descpb.ColumnID]int, len(cols))
 	for i := range cols {
 		colIDtoRowIndex[cols[i].ID] = i
@@ -41,7 +41,7 @@ func ColIDtoRowIndexFromCols(cols []descpb.ColumnDescriptor) map[descpb.ColumnID
 //
 //   result[i] = j such that fromCols[i].ID == toCols[j].ID, or
 //                -1 if the column is not part of toCols.
-func ColMapping(fromCols, toCols []descpb.ColumnDescriptor) []int {
+func ColMapping(fromCols, toCols []*descpb.ColumnDescriptor) []int {
 	// colMap is a map from ColumnID to ordinal into fromCols.
 	var colMap util.FastIntMap
 	for i := range fromCols {
@@ -93,7 +93,7 @@ func prepareInsertOrUpdateBatch(
 	batch putter,
 	helper *rowHelper,
 	primaryIndexKey []byte,
-	fetchedCols []descpb.ColumnDescriptor,
+	fetchedCols []*descpb.ColumnDescriptor,
 	values []tree.Datum,
 	valColIDMapping map[descpb.ColumnID]int,
 	marshaledValues []roachpb.Value,
@@ -179,7 +179,7 @@ func prepareInsertOrUpdateBatch(
 				continue
 			}
 
-			col := &fetchedCols[idx]
+			col := fetchedCols[idx]
 			if lastColID > col.ID {
 				return nil, errors.AssertionFailedf("cannot write column id %d after %d", col.ID, lastColID)
 			}

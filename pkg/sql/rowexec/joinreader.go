@@ -202,7 +202,7 @@ func newJoinReader(
 	jr.readerType = readerType
 
 	// Add all requested system columns to the output.
-	var sysColDescs []descpb.ColumnDescriptor
+	var sysColDescs []*descpb.ColumnDescriptor
 	if spec.HasSystemColumns {
 		sysColDescs = colinfo.AllSystemColumnDescs
 	}

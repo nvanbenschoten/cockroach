@@ -84,8 +84,7 @@ func ShowCreateTable(
 	f.WriteString(" (")
 	primaryKeyIsOnVisibleColumn := false
 	visibleCols := desc.VisibleColumns()
-	for i := range visibleCols {
-		col := &visibleCols[i]
+	for i, col := range visibleCols {
 		if i != 0 {
 			f.WriteString(",")
 		}

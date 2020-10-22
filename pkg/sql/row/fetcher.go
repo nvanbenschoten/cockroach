@@ -73,7 +73,7 @@ type tableInfo struct {
 
 	// The table columns to use for fetching, possibly including ones currently in
 	// schema changes.
-	cols []descpb.ColumnDescriptor
+	cols []*descpb.ColumnDescriptor
 
 	// The set of ColumnIDs that are required.
 	neededCols util.FastIntSet
@@ -153,7 +153,7 @@ type FetcherTableArgs struct {
 	Index            *descpb.IndexDescriptor
 	ColIdxMap        map[descpb.ColumnID]int
 	IsSecondaryIndex bool
-	Cols             []descpb.ColumnDescriptor
+	Cols             []*descpb.ColumnDescriptor
 	// The indexes (0 to # of columns - 1) of the columns to return.
 	ValNeededForCol util.FastIntSet
 }

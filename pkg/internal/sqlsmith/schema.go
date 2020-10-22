@@ -18,6 +18,7 @@ import (
 	"github.com/cockroachdb/cockroach/pkg/sql/catalog/descpb"
 	"github.com/cockroachdb/cockroach/pkg/sql/catalog/typedesc"
 	"github.com/cockroachdb/cockroach/pkg/sql/rowenc"
+
 	// Import builtins so they are reflected in tree.FunDefs.
 	_ "github.com/cockroachdb/cockroach/pkg/sql/sem/builtins"
 	"github.com/cockroachdb/cockroach/pkg/sql/sem/tree"
@@ -248,8 +249,7 @@ ORDER BY
 			return fmt.Errorf("zero columns for %s.%s", lastCatalog, lastName)
 		}
 		// All non virtual tables contain implicit system columns.
-		for i := range colinfo.AllSystemColumnDescs {
-			col := &colinfo.AllSystemColumnDescs[i]
+		for _, col := range colinfo.AllSystemColumnDescs {
 			currentCols = append(currentCols, &tree.ColumnTableDef{
 				Name: tree.Name(col.Name),
 				Type: col.Type,

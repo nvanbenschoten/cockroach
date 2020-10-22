@@ -61,11 +61,11 @@ type backfiller struct {
 type ColumnBackfiller struct {
 	backfiller
 
-	added   []descpb.ColumnDescriptor
-	dropped []descpb.ColumnDescriptor
+	added   []*descpb.ColumnDescriptor
+	dropped []*descpb.ColumnDescriptor
 
 	// updateCols is a slice of all column descriptors that are being modified.
-	updateCols  []descpb.ColumnDescriptor
+	updateCols  []*descpb.ColumnDescriptor
 	updateExprs []tree.TypedExpr
 	evalCtx     *tree.EvalContext
 
@@ -81,7 +81,7 @@ func (cb *ColumnBackfiller) initCols(desc *tabledesc.Immutable) {
 	if len(desc.Mutations) > 0 {
 		for _, m := range desc.Mutations {
 			if ColumnMutationFilter(m) {
-				desc := *m.GetColumn()
+				desc := m.GetColumn()
 				switch m.Direction {
 				case descpb.DescriptorMutation_ADD:
 					cb.added = append(cb.added, desc)
@@ -106,8 +106,7 @@ func (cb *ColumnBackfiller) init(
 	cb.updateCols = append(cb.added, cb.dropped...)
 	// Populate default or computed values.
 	cb.updateExprs = make([]tree.TypedExpr, len(cb.updateCols))
-	for j := range cb.added {
-		col := &cb.added[j]
+	for j, col := range cb.added {
 		if col.IsComputed() {
 			cb.updateExprs[j] = computedExprs[j]
 		} else if defaultExprs == nil || defaultExprs[j] == nil {
@@ -257,7 +256,7 @@ func (cb *ColumnBackfiller) RunColumnBackfillChunk(
 ) (roachpb.Key, error) {
 	// TODO(dan): Tighten up the bound on the requestedCols parameter to
 	// makeRowUpdater.
-	requestedCols := make([]descpb.ColumnDescriptor, 0, len(tableDesc.Columns)+len(cb.added))
+	requestedCols := make([]*descpb.ColumnDescriptor, 0, len(tableDesc.Columns)+len(cb.added))
 	requestedCols = append(requestedCols, tableDesc.Columns...)
 	requestedCols = append(requestedCols, cb.added...)
 	ru, err := row.MakeUpdater(
@@ -388,7 +387,7 @@ type IndexBackfiller struct {
 	types   []*types.T
 	rowVals tree.Datums
 	evalCtx *tree.EvalContext
-	cols    []descpb.ColumnDescriptor
+	cols    []*descpb.ColumnDescriptor
 
 	// predicates is a map of indexes to partial index predicate expressions. It
 	// includes entries for partial indexes only.
@@ -532,13 +531,13 @@ func (ib *IndexBackfiller) initCols(desc *tabledesc.Immutable) {
 	// If there are ongoing mutations, add columns that are being added and in
 	// the DELETE_AND_WRITE_ONLY state.
 	if len(desc.Mutations) > 0 {
-		ib.cols = make([]descpb.ColumnDescriptor, 0, len(desc.Columns)+len(desc.Mutations))
+		ib.cols = make([]*descpb.ColumnDescriptor, 0, len(desc.Columns)+len(desc.Mutations))
 		ib.cols = append(ib.cols, desc.Columns...)
 		for _, m := range desc.Mutations {
 			if column := m.GetColumn(); column != nil &&
 				m.Direction == descpb.DescriptorMutation_ADD &&
 				m.State == descpb.DescriptorMutation_DELETE_AND_WRITE_ONLY {
-				ib.cols = append(ib.cols, *column)
+				ib.cols = append(ib.cols, column)
 			}
 		}
 	}

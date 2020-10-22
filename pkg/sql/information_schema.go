@@ -347,15 +347,14 @@ https://www.postgresql.org/docs/9.5/infoschema-column-privileges.html`,
 				for _, priv := range columndata {
 					if priv.Mask()&u.Privileges != 0 {
 						columns := table.GetPublicColumns()
-						for i := range columns {
-							cd := &columns[i]
+						for _, col := range columns {
 							if err := addRow(
 								tree.DNull,                       // grantor
 								tree.NewDString(u.User),          // grantee
 								dbNameStr,                        // table_catalog
 								scNameStr,                        // table_schema
 								tree.NewDString(table.GetName()), // table_name
-								tree.NewDString(cd.Name),         // column_name
+								tree.NewDString(col.Name),        // column_name
 								tree.NewDString(priv.String()),   // privilege_type
 								tree.DNull,                       // is_grantable
 							); err != nil {

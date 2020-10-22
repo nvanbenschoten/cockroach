@@ -30,7 +30,7 @@ type Immutable struct {
 
 	// publicAndNonPublicCols is a list of public and non-public columns.
 	// It is partitioned by the state of the column: public, write-only, delete-only
-	publicAndNonPublicCols []descpb.ColumnDescriptor
+	publicAndNonPublicCols []*descpb.ColumnDescriptor
 
 	// publicAndNonPublicCols is a list of public and non-public indexes.
 	// It is partitioned by the state of the index: public, write-only, delete-only
@@ -48,7 +48,7 @@ type Immutable struct {
 	// which can be scanned. Columns in the process of a schema change
 	// are all set to nullable while column backfilling is still in
 	// progress, as mutation columns may have NULL values.
-	ReadableColumns []descpb.ColumnDescriptor
+	ReadableColumns []*descpb.ColumnDescriptor
 
 	// columnsWithUDTs is a set of indexes into publicAndNonPublicCols containing
 	// indexes of columns that contain user defined types.
@@ -96,13 +96,13 @@ func (desc *Immutable) IsTemporary() bool {
 }
 
 // GetPublicColumns return the public columns in the descriptor.
-func (desc *Immutable) GetPublicColumns() []descpb.ColumnDescriptor {
+func (desc *Immutable) GetPublicColumns() []*descpb.ColumnDescriptor {
 	return desc.Columns
 }
 
 // GetColumnAtIdx returns the column at the specified index.
 func (desc *Immutable) GetColumnAtIdx(idx int) *descpb.ColumnDescriptor {
-	return &desc.Columns[idx]
+	return desc.Columns[idx]
 }
 
 // ImmutableCopy implements the MutableDescriptor interface.

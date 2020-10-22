@@ -157,11 +157,11 @@ func (n *renameTableNode) startExec(params runParams) error {
 		// Don't allow moving the table to a different database if the table
 		// references any user-defined types, to prevent cross-database type
 		// references.
-		columns := make([]descpb.ColumnDescriptor, 0, len(tableDesc.Columns)+len(tableDesc.Mutations))
+		columns := make([]*descpb.ColumnDescriptor, 0, len(tableDesc.Columns)+len(tableDesc.Mutations))
 		columns = append(columns, tableDesc.Columns...)
 		for _, m := range tableDesc.Mutations {
 			if col := m.GetColumn(); col != nil {
-				columns = append(columns, *col)
+				columns = append(columns, col)
 			}
 		}
 		for _, c := range columns {

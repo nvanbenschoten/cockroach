@@ -30,7 +30,7 @@ import (
 // mutations are added.
 func ProcessTargetColumns(
 	tableDesc catalog.TableDescriptor, nameList tree.NameList, ensureColumns, allowMutations bool,
-) ([]descpb.ColumnDescriptor, error) {
+) ([]*descpb.ColumnDescriptor, error) {
 	if len(nameList) == 0 {
 		if ensureColumns {
 			// VisibleColumns is used here to prevent INSERT INTO <table> VALUES (...)
@@ -42,7 +42,7 @@ func ProcessTargetColumns(
 		return nil, nil
 	}
 
-	cols := make([]descpb.ColumnDescriptor, len(nameList))
+	cols := make([]*descpb.ColumnDescriptor, len(nameList))
 	colIDSet := make(map[descpb.ColumnID]struct{}, len(nameList))
 	for i, colName := range nameList {
 		var col *descpb.ColumnDescriptor
@@ -61,7 +61,7 @@ func ProcessTargetColumns(
 				"multiple assignments to the same column %q", &nameList[i])
 		}
 		colIDSet[col.ID] = struct{}{}
-		cols[i] = *col
+		cols[i] = col
 	}
 
 	return cols, nil

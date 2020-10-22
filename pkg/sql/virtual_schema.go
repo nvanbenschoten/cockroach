@@ -445,8 +445,7 @@ func (e virtualDefEntry) getPlanInfo(
 	idxConstraint *constraint.Constraint,
 ) (colinfo.ResultColumns, virtualTableConstructor) {
 	var columns colinfo.ResultColumns
-	for i := range e.desc.Columns {
-		col := &e.desc.Columns[i]
+	for _, col := range e.desc.Columns {
 		columns = append(columns, colinfo.ResultColumn{
 			Name:           col.Name,
 			Typ:            col.Type,

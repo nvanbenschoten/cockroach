@@ -29,7 +29,7 @@ import (
 // TODO(mgartner): Move this to the schemaexpr package.
 func MakeDefaultExprs(
 	ctx context.Context,
-	cols []descpb.ColumnDescriptor,
+	cols []*descpb.ColumnDescriptor,
 	txCtx *transform.ExprTransformContext,
 	evalCtx *tree.EvalContext,
 	semaCtx *tree.SemaContext,
@@ -51,8 +51,7 @@ func MakeDefaultExprs(
 	// Build the default expressions map from the parsed SELECT statement.
 	defaultExprs := make([]tree.TypedExpr, 0, len(cols))
 	exprStrings := make([]string, 0, len(cols))
-	for i := range cols {
-		col := &cols[i]
+	for _, col := range cols {
 		if col.DefaultExpr != nil {
 			exprStrings = append(exprStrings, *col.DefaultExpr)
 		}
@@ -63,8 +62,7 @@ func MakeDefaultExprs(
 	}
 
 	defExprIdx := 0
-	for i := range cols {
-		col := &cols[i]
+	for _, col := range cols {
 		if col.DefaultExpr == nil {
 			defaultExprs = append(defaultExprs, tree.DNull)
 			continue
@@ -86,24 +84,23 @@ func MakeDefaultExprs(
 // ProcessColumnSet returns columns in cols, and other writable
 // columns in tableDesc that fulfills a given criteria in inSet.
 func ProcessColumnSet(
-	cols []descpb.ColumnDescriptor,
+	cols []*descpb.ColumnDescriptor,
 	tableDesc catalog.TableDescriptor,
 	inSet func(*descpb.ColumnDescriptor) bool,
-) []descpb.ColumnDescriptor {
+) []*descpb.ColumnDescriptor {
 	colIDSet := make(map[descpb.ColumnID]struct{}, len(cols))
-	for i := range cols {
-		colIDSet[cols[i].ID] = struct{}{}
+	for _, col := range cols {
+		colIDSet[col.ID] = struct{}{}
 	}
 
 	// Add all public or columns in DELETE_AND_WRITE_ONLY state
 	// that satisfy the condition.
 	writable := tableDesc.WritableColumns()
-	for i := range writable {
-		col := &writable[i]
+	for _, col := range writable {
 		if inSet(col) {
 			if _, ok := colIDSet[col.ID]; !ok {
 				colIDSet[col.ID] = struct{}{}
-				cols = append(cols, *col)
+				cols = append(cols, col)
 			}
 		}
 	}

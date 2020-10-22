@@ -172,8 +172,7 @@ func (e *jsonEncoder) EncodeValue(_ context.Context, row encodeRow) ([]byte, err
 	if !row.deleted {
 		columns := row.tableDesc.GetPublicColumns()
 		after = make(map[string]interface{}, len(columns))
-		for i := range columns {
-			col := &columns[i]
+		for i, col := range columns {
 			datum := row.datums[i]
 			if err := datum.EnsureDecoded(col.Type, &e.alloc); err != nil {
 				return nil, err
@@ -190,8 +189,7 @@ func (e *jsonEncoder) EncodeValue(_ context.Context, row encodeRow) ([]byte, err
 	if row.prevDatums != nil && !row.prevDeleted {
 		columns := row.prevTableDesc.GetPublicColumns()
 		before = make(map[string]interface{}, len(columns))
-		for i := range columns {
-			col := &columns[i]
+		for i, col := range columns {
 			datum := row.prevDatums[i]
 			if err := datum.EnsureDecoded(col.Type, &e.alloc); err != nil {
 				return nil, err

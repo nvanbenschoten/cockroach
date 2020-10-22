@@ -418,7 +418,7 @@ func createStatsDefaultColumns(
 	// Add all remaining columns in the table, up to maxNonIndexCols.
 	nonIdxCols := 0
 	for i := 0; i < len(desc.Columns) && nonIdxCols < maxNonIndexCols; i++ {
-		col := &desc.Columns[i]
+		col := desc.Columns[i]
 		colList := []descpb.ColumnID{col.ID}
 
 		if !trackStatsIfNotExists(colList) {

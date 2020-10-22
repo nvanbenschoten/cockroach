@@ -25,7 +25,7 @@ type RowIndexedVarContainer struct {
 	// Because the rows we have might not be permuted in the same way as the
 	// original table, we need to store a mapping between them.
 
-	Cols    []descpb.ColumnDescriptor
+	Cols    []*descpb.ColumnDescriptor
 	Mapping map[descpb.ColumnID]int
 }
 

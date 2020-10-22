@@ -1343,11 +1343,10 @@ func NewTableDesc(
 	// Now that we've constructed our columns, we pop into any of our computed
 	// columns so that we can dequalify any column references.
 	sourceInfo := colinfo.NewSourceInfoForSingleTable(
-		n.Table, colinfo.ResultColumnsFromColDescs(desc.GetID(), desc.Columns),
+		n.Table, colinfo.ResultColumnsFromColDescPtrs(desc.GetID(), desc.Columns),
 	)
 
-	for i := range desc.Columns {
-		col := &desc.Columns[i]
+	for _, col := range desc.Columns {
 		if col.IsComputed() {
 			expr, err := parser.ParseExpr(*col.ComputeExpr)
 			if err != nil {
@@ -1632,7 +1631,7 @@ func NewTableDesc(
 	for i := range n.Defs {
 		if _, ok := n.Defs[i].(*tree.ColumnTableDef); ok {
 			if expr := columnDefaultExprs[i]; expr != nil {
-				changedSeqDescs, err := maybeAddSequenceDependencies(ctx, vt, &desc, &desc.Columns[colIdx], expr, affected)
+				changedSeqDescs, err := maybeAddSequenceDependencies(ctx, vt, &desc, desc.Columns[colIdx], expr, affected)
 				if err != nil {
 					return nil, err
 				}
@@ -1863,8 +1862,7 @@ func replaceLikeTableOpts(n *tree.CreateTable, params runParams) (tree.TableDefs
 
 		defs := make(tree.TableDefs, 0)
 		// Add all columns. Columns are always added.
-		for i := range td.Columns {
-			c := &td.Columns[i]
+		for _, c := range td.Columns {
 			if c.Hidden {
 				// Hidden columns automatically get added by the system; we don't need
 				// to add them ourselves here.

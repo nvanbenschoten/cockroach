@@ -288,8 +288,7 @@ func initColsForScan(
 	}
 
 	if colCfg.addUnwantedAsHidden {
-		for i := range desc.Columns {
-			c := &desc.Columns[i]
+		for _, c := range desc.Columns {
 			found := false
 			for _, wc := range colCfg.wantedColumns {
 				if descpb.ColumnID(wc) == c.ID {

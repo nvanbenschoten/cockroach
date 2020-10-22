@@ -109,7 +109,7 @@ func (o *sqlCheckConstraintCheckOperation) Start(params runParams) error {
 
 	// Collect all the columns.
 	for i := range o.tableDesc.Columns {
-		o.columns = append(o.columns, &o.tableDesc.Columns[i])
+		o.columns = append(o.columns, o.tableDesc.Columns[i])
 	}
 	// Find the row indexes for all of the primary index columns.
 	o.primaryColIdxs, err = getPrimaryColIdxs(o.tableDesc, o.columns)

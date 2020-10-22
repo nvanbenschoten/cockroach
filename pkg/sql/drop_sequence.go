@@ -136,7 +136,7 @@ func (p *planner) canRemoveAllTableOwnedSequences(
 	ctx context.Context, desc *tabledesc.Mutable, behavior tree.DropBehavior,
 ) error {
 	for _, col := range desc.Columns {
-		err := p.canRemoveOwnedSequencesImpl(ctx, desc, &col, behavior, false /* isColumnDrop */)
+		err := p.canRemoveOwnedSequencesImpl(ctx, desc, col, behavior, false /* isColumnDrop */)
 		if err != nil {
 			return err
 		}

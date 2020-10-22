@@ -304,14 +304,14 @@ func (p *planner) dropTableImpl(
 
 	// Remove sequence dependencies.
 	for i := range tableDesc.Columns {
-		if err := p.removeSequenceDependencies(ctx, tableDesc, &tableDesc.Columns[i]); err != nil {
+		if err := p.removeSequenceDependencies(ctx, tableDesc, tableDesc.Columns[i]); err != nil {
 			return droppedViews, err
 		}
 	}
 
 	// Drop sequences that the columns of the table own.
 	for _, col := range tableDesc.Columns {
-		if err := p.dropSequencesOwnedByCol(ctx, &col, !droppingParent); err != nil {
+		if err := p.dropSequencesOwnedByCol(ctx, col, !droppingParent); err != nil {
 			return droppedViews, err
 		}
 	}

@@ -341,7 +341,7 @@ func (n *insertFastPathNode) enableAutoCommit() {
 // for AlterColumnTypeInProgress, otherwise every column in insertCols will
 // be checked.
 func interceptAlterColumnTypeParseError(
-	insertCols []descpb.ColumnDescriptor, colNum int, err error,
+	insertCols []*descpb.ColumnDescriptor, colNum int, err error,
 ) error {
 	// Only intercept the error if the column being inserted into
 	// is an actual column. This is to avoid checking on values that don't
@@ -349,13 +349,13 @@ func interceptAlterColumnTypeParseError(
 	if colNum >= len(insertCols) {
 		return err
 	}
-	var insertCol descpb.ColumnDescriptor
+	var insertCol *descpb.ColumnDescriptor
 
 	// wrapParseError is a helper function that checks if an insertCol has the
 	// AlterColumnTypeInProgress flag and wraps the parse error msg stating
 	// that the error may be because the column is being altered.
 	// Returns if the error msg has been wrapped and the wrapped error msg.
-	wrapParseError := func(insertCol descpb.ColumnDescriptor, colNum int, err error) (bool, error) {
+	wrapParseError := func(insertCol *descpb.ColumnDescriptor, colNum int, err error) (bool, error) {
 		if insertCol.AlterColumnTypeInProgress {
 			code := pgerror.GetPGCode(err)
 			if code == pgcode.InvalidTextRepresentation {

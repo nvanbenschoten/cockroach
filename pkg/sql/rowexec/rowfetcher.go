@@ -72,7 +72,7 @@ func initRowFetcher(
 	scanVisibility execinfrapb.ScanVisibility,
 	lockStrength descpb.ScanLockingStrength,
 	lockWaitPolicy descpb.ScanLockingWaitPolicy,
-	systemColumns []descpb.ColumnDescriptor,
+	systemColumns []*descpb.ColumnDescriptor,
 ) (index *descpb.IndexDescriptor, isSecondaryIndex bool, err error) {
 	index, isSecondaryIndex, err = desc.FindIndexByIndexIdx(indexIdx)
 	if err != nil {

@@ -398,7 +398,7 @@ var (
 		ParentID:                keys.SystemDatabaseID,
 		UnexposedParentSchemaID: keys.PublicSchemaID,
 		Version:                 1,
-		Columns: []descpb.ColumnDescriptor{
+		Columns: []*descpb.ColumnDescriptor{
 			{Name: "parentID", ID: 1, Type: types.Int},
 			{Name: "name", ID: 2, Type: types.String},
 			{Name: "id", ID: 3, Type: types.Int, Nullable: true},
@@ -443,7 +443,7 @@ var (
 		ParentID:                keys.SystemDatabaseID,
 		UnexposedParentSchemaID: keys.PublicSchemaID,
 		Version:                 1,
-		Columns: []descpb.ColumnDescriptor{
+		Columns: []*descpb.ColumnDescriptor{
 			{Name: "parentID", ID: 1, Type: types.Int},
 			{Name: "parentSchemaID", ID: 2, Type: types.Int},
 			{Name: "name", ID: 3, Type: types.String},
@@ -481,7 +481,7 @@ var (
 		ParentID:                keys.SystemDatabaseID,
 		UnexposedParentSchemaID: keys.PublicSchemaID,
 		Version:                 1,
-		Columns: []descpb.ColumnDescriptor{
+		Columns: []*descpb.ColumnDescriptor{
 			{Name: "id", ID: 1, Type: types.Int},
 			{Name: "descriptor", ID: keys.DescriptorTableDescriptorColID, Type: types.Bytes, Nullable: true},
 		},
@@ -513,7 +513,7 @@ var (
 		ParentID:                keys.SystemDatabaseID,
 		UnexposedParentSchemaID: keys.PublicSchemaID,
 		Version:                 1,
-		Columns: []descpb.ColumnDescriptor{
+		Columns: []*descpb.ColumnDescriptor{
 			{Name: "username", ID: 1, Type: types.String},
 			{Name: "hashedPassword", ID: 2, Type: types.Bytes, Nullable: true},
 			{Name: "isRole", ID: 3, Type: types.Bool, DefaultExpr: &falseBoolString},
@@ -540,7 +540,7 @@ var (
 		ParentID:                keys.SystemDatabaseID,
 		UnexposedParentSchemaID: keys.PublicSchemaID,
 		Version:                 1,
-		Columns: []descpb.ColumnDescriptor{
+		Columns: []*descpb.ColumnDescriptor{
 			{Name: "id", ID: 1, Type: types.Int},
 			{Name: "config", ID: keys.ZonesTableConfigColumnID, Type: types.Bytes, Nullable: true},
 		},
@@ -575,7 +575,7 @@ var (
 		ParentID:                keys.SystemDatabaseID,
 		UnexposedParentSchemaID: keys.PublicSchemaID,
 		Version:                 1,
-		Columns: []descpb.ColumnDescriptor{
+		Columns: []*descpb.ColumnDescriptor{
 			{Name: "name", ID: 1, Type: types.String},
 			{Name: "value", ID: 2, Type: types.String},
 			{Name: "lastUpdated", ID: 3, Type: types.Timestamp, DefaultExpr: &nowString},
@@ -606,7 +606,7 @@ var (
 		ParentID:                keys.SystemDatabaseID,
 		UnexposedParentSchemaID: keys.PublicSchemaID,
 		Version:                 1,
-		Columns: []descpb.ColumnDescriptor{
+		Columns: []*descpb.ColumnDescriptor{
 			{Name: tabledesc.SequenceColumnName, ID: tabledesc.SequenceColumnID, Type: types.Int},
 		},
 		Families: []descpb.ColumnFamilyDescriptor{{
@@ -640,7 +640,7 @@ var (
 		ParentID:                keys.SystemDatabaseID,
 		UnexposedParentSchemaID: keys.PublicSchemaID,
 		Version:                 1,
-		Columns: []descpb.ColumnDescriptor{
+		Columns: []*descpb.ColumnDescriptor{
 			{Name: "id", ID: 1, Type: types.Int},
 			{Name: "active", ID: 2, Type: types.Bool, DefaultExpr: &trueBoolString},
 			// NOTE: info is currently a placeholder and may be kept, replaced,
@@ -680,7 +680,7 @@ var (
 		ParentID:                keys.SystemDatabaseID,
 		UnexposedParentSchemaID: keys.PublicSchemaID,
 		Version:                 1,
-		Columns: []descpb.ColumnDescriptor{
+		Columns: []*descpb.ColumnDescriptor{
 			{Name: "descID", ID: 1, Type: types.Int},
 			{Name: "version", ID: 2, Type: types.Int},
 			{Name: "nodeID", ID: 3, Type: types.Int},
@@ -716,7 +716,7 @@ var (
 		ParentID:                keys.SystemDatabaseID,
 		UnexposedParentSchemaID: keys.PublicSchemaID,
 		Version:                 1,
-		Columns: []descpb.ColumnDescriptor{
+		Columns: []*descpb.ColumnDescriptor{
 			{Name: "timestamp", ID: 1, Type: types.Timestamp},
 			{Name: "eventType", ID: 2, Type: types.String},
 			{Name: "targetID", ID: 3, Type: types.Int},
@@ -758,7 +758,7 @@ var (
 		ParentID:                keys.SystemDatabaseID,
 		UnexposedParentSchemaID: keys.PublicSchemaID,
 		Version:                 1,
-		Columns: []descpb.ColumnDescriptor{
+		Columns: []*descpb.ColumnDescriptor{
 			{Name: "timestamp", ID: 1, Type: types.Timestamp},
 			{Name: "rangeID", ID: 2, Type: types.Int},
 			{Name: "storeID", ID: 3, Type: types.Int},
@@ -800,7 +800,7 @@ var (
 		ParentID:                keys.SystemDatabaseID,
 		UnexposedParentSchemaID: keys.PublicSchemaID,
 		Version:                 1,
-		Columns: []descpb.ColumnDescriptor{
+		Columns: []*descpb.ColumnDescriptor{
 			{Name: "key", ID: 1, Type: types.String},
 			{Name: "value", ID: 2, Type: types.Bytes, Nullable: true},
 			{Name: "lastUpdated", ID: 3, Type: types.Timestamp},
@@ -830,7 +830,7 @@ var (
 		ParentID:                keys.SystemDatabaseID,
 		UnexposedParentSchemaID: keys.PublicSchemaID,
 		Version:                 1,
-		Columns: []descpb.ColumnDescriptor{
+		Columns: []*descpb.ColumnDescriptor{
 			{Name: "id", ID: 1, Type: types.Int, DefaultExpr: &uniqueRowIDString},
 			{Name: "status", ID: 2, Type: types.String},
 			{Name: "created", ID: 3, Type: types.Timestamp, DefaultExpr: &nowString},
@@ -906,7 +906,7 @@ var (
 		ParentID:                keys.SystemDatabaseID,
 		UnexposedParentSchemaID: keys.PublicSchemaID,
 		Version:                 1,
-		Columns: []descpb.ColumnDescriptor{
+		Columns: []*descpb.ColumnDescriptor{
 			{Name: "id", ID: 1, Type: types.Int, DefaultExpr: &uniqueRowIDString},
 			{Name: "hashedSecret", ID: 2, Type: types.Bytes},
 			{Name: "username", ID: 3, Type: types.String},
@@ -972,7 +972,7 @@ var (
 		ParentID:                keys.SystemDatabaseID,
 		UnexposedParentSchemaID: keys.PublicSchemaID,
 		Version:                 1,
-		Columns: []descpb.ColumnDescriptor{
+		Columns: []*descpb.ColumnDescriptor{
 			{Name: "tableID", ID: 1, Type: types.Int},
 			{Name: "statisticID", ID: 2, Type: types.Int, DefaultExpr: &uniqueRowIDString},
 			{Name: "name", ID: 3, Type: types.String, Nullable: true},
@@ -1028,7 +1028,7 @@ var (
 		ParentID:                keys.SystemDatabaseID,
 		UnexposedParentSchemaID: keys.PublicSchemaID,
 		Version:                 1,
-		Columns: []descpb.ColumnDescriptor{
+		Columns: []*descpb.ColumnDescriptor{
 			{Name: "localityKey", ID: 1, Type: types.String},
 			{Name: "localityValue", ID: 2, Type: types.String},
 			{Name: "latitude", ID: 3, Type: latLonDecimal},
@@ -1067,7 +1067,7 @@ var (
 		ParentID:                keys.SystemDatabaseID,
 		UnexposedParentSchemaID: keys.PublicSchemaID,
 		Version:                 1,
-		Columns: []descpb.ColumnDescriptor{
+		Columns: []*descpb.ColumnDescriptor{
 			{Name: "role", ID: 1, Type: types.String},
 			{Name: "member", ID: 2, Type: types.String},
 			{Name: "isAdmin", ID: 3, Type: types.Bool},
@@ -1134,7 +1134,7 @@ var (
 		ParentID:                keys.SystemDatabaseID,
 		UnexposedParentSchemaID: keys.PublicSchemaID,
 		Version:                 1,
-		Columns: []descpb.ColumnDescriptor{
+		Columns: []*descpb.ColumnDescriptor{
 			{Name: "type", ID: 1, Type: types.Int},
 			{Name: "object_id", ID: 2, Type: types.Int},
 			{Name: "sub_id", ID: 3, Type: types.Int},
@@ -1168,7 +1168,7 @@ var (
 		ParentID:                keys.SystemDatabaseID,
 		UnexposedParentSchemaID: keys.PublicSchemaID,
 		Version:                 1,
-		Columns: []descpb.ColumnDescriptor{
+		Columns: []*descpb.ColumnDescriptor{
 			{Name: "id", ID: 1, Type: types.Int},
 			{Name: "generated", ID: 2, Type: types.TimestampTZ},
 		},
@@ -1210,7 +1210,7 @@ var (
 		ParentID:                keys.SystemDatabaseID,
 		UnexposedParentSchemaID: keys.PublicSchemaID,
 		Version:                 1,
-		Columns: []descpb.ColumnDescriptor{
+		Columns: []*descpb.ColumnDescriptor{
 			{Name: "zone_id", ID: 1, Type: types.Int},
 			{Name: "subzone_id", ID: 2, Type: types.Int},
 			{Name: "type", ID: 3, Type: types.String},
@@ -1264,7 +1264,7 @@ var (
 		ParentID:                keys.SystemDatabaseID,
 		UnexposedParentSchemaID: keys.PublicSchemaID,
 		Version:                 1,
-		Columns: []descpb.ColumnDescriptor{
+		Columns: []*descpb.ColumnDescriptor{
 			{Name: "zone_id", ID: 1, Type: types.Int},
 			{Name: "subzone_id", ID: 2, Type: types.Int},
 			{Name: "locality", ID: 3, Type: types.String},
@@ -1315,7 +1315,7 @@ var (
 		ParentID:                keys.SystemDatabaseID,
 		UnexposedParentSchemaID: keys.PublicSchemaID,
 		Version:                 1,
-		Columns: []descpb.ColumnDescriptor{
+		Columns: []*descpb.ColumnDescriptor{
 			{Name: "zone_id", ID: 1, Type: types.Int},
 			{Name: "subzone_id", ID: 2, Type: types.Int},
 			{Name: "report_id", ID: 3, Type: types.Int},
@@ -1364,7 +1364,7 @@ var (
 		ParentID:                keys.SystemDatabaseID,
 		UnexposedParentSchemaID: keys.PublicSchemaID,
 		Version:                 1,
-		Columns: []descpb.ColumnDescriptor{
+		Columns: []*descpb.ColumnDescriptor{
 			{
 				Name:        "singleton",
 				ID:          1,
@@ -1416,7 +1416,7 @@ var (
 		ParentID:                keys.SystemDatabaseID,
 		UnexposedParentSchemaID: keys.PublicSchemaID,
 		Version:                 1,
-		Columns: []descpb.ColumnDescriptor{
+		Columns: []*descpb.ColumnDescriptor{
 			{Name: "id", ID: 1, Type: types.Uuid},
 			{Name: "ts", ID: 2, Type: types.Decimal},
 			{Name: "meta_type", ID: 3, Type: types.String},
@@ -1459,7 +1459,7 @@ var (
 		ParentID:                keys.SystemDatabaseID,
 		UnexposedParentSchemaID: keys.PublicSchemaID,
 		Version:                 1,
-		Columns: []descpb.ColumnDescriptor{
+		Columns: []*descpb.ColumnDescriptor{
 			{Name: "username", ID: 1, Type: types.String},
 			{Name: "option", ID: 2, Type: types.String},
 			{Name: "value", ID: 3, Type: types.String, Nullable: true},
@@ -1496,7 +1496,7 @@ var (
 		ParentID:                keys.SystemDatabaseID,
 		UnexposedParentSchemaID: keys.PublicSchemaID,
 		Version:                 1,
-		Columns: []descpb.ColumnDescriptor{
+		Columns: []*descpb.ColumnDescriptor{
 			{Name: "id", ID: 1, Type: types.Int, DefaultExpr: &uniqueRowIDString},
 			{Name: "description", ID: 2, Type: types.String, Nullable: true},
 			{Name: "data", ID: 3, Type: types.Bytes},
@@ -1526,7 +1526,7 @@ var (
 		ParentID:                keys.SystemDatabaseID,
 		UnexposedParentSchemaID: keys.PublicSchemaID,
 		Version:                 1,
-		Columns: []descpb.ColumnDescriptor{
+		Columns: []*descpb.ColumnDescriptor{
 			{Name: "id", ID: 1, Type: types.Int, DefaultExpr: &uniqueRowIDString, Nullable: false},
 			{Name: "completed", ID: 2, Type: types.Bool, Nullable: false, DefaultExpr: &falseBoolString},
 			{Name: "statement_fingerprint", ID: 3, Type: types.String, Nullable: false},
@@ -1570,7 +1570,7 @@ var (
 		ParentID:                keys.SystemDatabaseID,
 		UnexposedParentSchemaID: keys.PublicSchemaID,
 		Version:                 1,
-		Columns: []descpb.ColumnDescriptor{
+		Columns: []*descpb.ColumnDescriptor{
 			{Name: "id", ID: 1, Type: types.Int, DefaultExpr: &uniqueRowIDString, Nullable: false},
 			{Name: "statement_fingerprint", ID: 2, Type: types.String, Nullable: false},
 			{Name: "statement", ID: 3, Type: types.String, Nullable: false},
@@ -1604,7 +1604,7 @@ var (
 		ParentID:                keys.SystemDatabaseID,
 		UnexposedParentSchemaID: keys.PublicSchemaID,
 		Version:                 1,
-		Columns: []descpb.ColumnDescriptor{
+		Columns: []*descpb.ColumnDescriptor{
 			{Name: "schedule_id", ID: 1, Type: types.Int, DefaultExpr: &uniqueRowIDString, Nullable: false},
 			{Name: "schedule_name", ID: 2, Type: types.String, Nullable: false},
 			{Name: "created", ID: 3, Type: types.TimestampTZ, DefaultExpr: &nowTZString, Nullable: false},
@@ -1662,7 +1662,7 @@ var (
 		ParentID:                keys.SystemDatabaseID,
 		UnexposedParentSchemaID: keys.PublicSchemaID,
 		Version:                 1,
-		Columns: []descpb.ColumnDescriptor{
+		Columns: []*descpb.ColumnDescriptor{
 			{Name: "session_id", ID: 1, Type: types.Bytes, Nullable: false},
 			{Name: "expiration", ID: 2, Type: types.Decimal, Nullable: false},
 		},

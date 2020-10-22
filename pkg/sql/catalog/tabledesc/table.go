@@ -223,8 +223,7 @@ func (desc *Immutable) collectConstraintInfo(
 					"duplicate constraint name: %q", index.Name)
 			}
 			colHiddenMap := make(map[descpb.ColumnID]bool, len(desc.Columns))
-			for i := range desc.Columns {
-				col := &desc.Columns[i]
+			for _, col := range desc.Columns {
 				colHiddenMap[col.ID] = col.Hidden
 			}
 			// Don't include constraints against only hidden columns.

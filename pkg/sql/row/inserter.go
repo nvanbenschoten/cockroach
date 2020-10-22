@@ -28,7 +28,7 @@ import (
 // Inserter abstracts the key/value operations for inserting table rows.
 type Inserter struct {
 	Helper                rowHelper
-	InsertCols            []descpb.ColumnDescriptor
+	InsertCols            []*descpb.ColumnDescriptor
 	InsertColIDtoRowIndex map[descpb.ColumnID]int
 
 	// For allocation avoidance.
@@ -46,7 +46,7 @@ func MakeInserter(
 	txn *kv.Txn,
 	codec keys.SQLCodec,
 	tableDesc *tabledesc.Immutable,
-	insertCols []descpb.ColumnDescriptor,
+	insertCols []*descpb.ColumnDescriptor,
 	alloc *rowenc.DatumAlloc,
 ) (Inserter, error) {
 	ri := Inserter{
@@ -138,7 +138,7 @@ func (ri *Inserter) InsertRow(
 	for i, val := range values {
 		// Make sure the value can be written to the column before proceeding.
 		var err error
-		if ri.marshaled[i], err = rowenc.MarshalColumnValue(&ri.InsertCols[i], val); err != nil {
+		if ri.marshaled[i], err = rowenc.MarshalColumnValue(ri.InsertCols[i], val); err != nil {
 			return err
 		}
 	}

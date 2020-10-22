@@ -210,8 +210,7 @@ func allocateDescriptorRewrites(
 		}
 
 		// Check that referenced sequences exist.
-		for i := range table.Columns {
-			col := &table.Columns[i]
+		for _, col := range table.Columns {
 			// Ensure that all referenced types are present.
 			if col.Type.UserDefined() {
 				// TODO (rohany): This can be turned into an option later.
@@ -1051,8 +1050,8 @@ func RewriteTableDescs(
 		}
 
 		// Rewrite sequence and type references in column descriptors.
-		for idx := range table.Columns {
-			if err := rewriteCol(&table.Columns[idx]); err != nil {
+		for _, col := range table.Columns {
+			if err := rewriteCol(col); err != nil {
 				return err
 			}
 		}

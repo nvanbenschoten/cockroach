@@ -798,7 +798,7 @@ message TableDescriptor {
 
   reserved 6;
 
-  repeated ColumnDescriptor columns = 8 [(gogoproto.nullable) = false];
+  repeated ColumnDescriptor columns = 8;
   // next_column_id is used to ensure that deleted column ids are not reused.
   optional uint32 next_column_id = 9 [(gogoproto.nullable) = false,
       (gogoproto.customname) = "NextColumnID", (gogoproto.casttype) = "ColumnID"];

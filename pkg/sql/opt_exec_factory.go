@@ -549,7 +549,7 @@ func (ef *execFactory) ConstructIndexJoin(
 		input:         input.(planNode),
 		table:         tableScan,
 		cols:          colDescs,
-		resultColumns: colinfo.ResultColumnsFromColDescs(tabDesc.GetID(), colDescs),
+		resultColumns: colinfo.ResultColumnsFromColDescPtrs(tabDesc.GetID(), colDescs),
 		reqOrdering:   ReqOrdering(reqOrdering),
 	}
 
@@ -652,7 +652,7 @@ func (ef *execFactory) constructVirtualTableLookupJoin(
 		return nil, err
 	}
 	tableScan.index = indexDesc
-	vtableCols := colinfo.ResultColumnsFromColDescs(tableDesc.ID, tableDesc.Columns)
+	vtableCols := colinfo.ResultColumnsFromColDescPtrs(tableDesc.ID, tableDesc.Columns)
 	projectedVtableCols := planColumns(&tableScan)
 	outputCols := make(colinfo.ResultColumns, 0, len(inputCols)+len(projectedVtableCols))
 	outputCols = append(outputCols, inputCols...)
@@ -1183,7 +1183,7 @@ func (ef *execFactory) ConstructInsert(
 	// If rows are not needed, no columns are returned.
 	if rowsNeeded {
 		returnColDescs := makeColDescList(table, returnColOrdSet)
-		ins.columns = colinfo.ResultColumnsFromColDescs(tabDesc.GetID(), returnColDescs)
+		ins.columns = colinfo.ResultColumnsFromColDescPtrs(tabDesc.GetID(), returnColDescs)
 
 		// Set the tabColIdxToRetIdx for the mutation. Insert always returns
 		// non-mutation columns in the same order they are defined in the table.
@@ -1258,7 +1258,7 @@ func (ef *execFactory) ConstructInsertFastPath(
 	// If rows are not needed, no columns are returned.
 	if rowsNeeded {
 		returnColDescs := makeColDescList(table, returnColOrdSet)
-		ins.columns = colinfo.ResultColumnsFromColDescs(tabDesc.GetID(), returnColDescs)
+		ins.columns = colinfo.ResultColumnsFromColDescPtrs(tabDesc.GetID(), returnColDescs)
 
 		// Set the tabColIdxToRetIdx for the mutation. Insert always returns
 		// non-mutation columns in the same order they are defined in the table.
@@ -1365,7 +1365,7 @@ func (ef *execFactory) ConstructUpdate(
 	if rowsNeeded {
 		returnColDescs := makeColDescList(table, returnColOrdSet)
 
-		upd.columns = colinfo.ResultColumnsFromColDescs(tabDesc.GetID(), returnColDescs)
+		upd.columns = colinfo.ResultColumnsFromColDescPtrs(tabDesc.GetID(), returnColDescs)
 		// Add the passthrough columns to the returning columns.
 		upd.columns = append(upd.columns, passthrough...)
 
@@ -1481,7 +1481,7 @@ func (ef *execFactory) ConstructUpsert(
 	// If rows are not needed, no columns are returned.
 	if rowsNeeded {
 		returnColDescs := makeColDescList(table, returnColOrdSet)
-		ups.columns = colinfo.ResultColumnsFromColDescs(tabDesc.GetID(), returnColDescs)
+		ups.columns = colinfo.ResultColumnsFromColDescPtrs(tabDesc.GetID(), returnColDescs)
 
 		// Update the tabColIdxToRetIdx for the mutation. Upsert returns
 		// non-mutation columns specified, in the same order they are defined
@@ -1548,7 +1548,7 @@ func (ef *execFactory) ConstructDelete(
 		returnColDescs := makeColDescList(table, returnColOrdSet)
 		// Delete returns the non-mutation columns specified, in the same
 		// order they are defined in the table.
-		del.columns = colinfo.ResultColumnsFromColDescs(tabDesc.GetID(), returnColDescs)
+		del.columns = colinfo.ResultColumnsFromColDescPtrs(tabDesc.GetID(), returnColDescs)
 
 		del.run.rowIdxToRetIdx = row.ColMapping(rd.FetchCols, returnColDescs)
 		del.run.rowsNeeded = true
@@ -1867,14 +1867,14 @@ func (rb *renderBuilder) setOutput(exprs tree.TypedExprs, columns colinfo.Result
 
 // makeColDescList returns a list of table column descriptors. Columns are
 // included if their ordinal position in the table schema is in the cols set.
-func makeColDescList(table cat.Table, cols exec.TableColumnOrdinalSet) []descpb.ColumnDescriptor {
+func makeColDescList(table cat.Table, cols exec.TableColumnOrdinalSet) []*descpb.ColumnDescriptor {
 	tab := table.(optCatalogTableInterface)
-	colDescs := make([]descpb.ColumnDescriptor, 0, cols.Len())
+	colDescs := make([]*descpb.ColumnDescriptor, 0, cols.Len())
 	for i, n := 0, table.ColumnCount(); i < n; i++ {
 		if !cols.Contains(i) {
 			continue
 		}
-		colDescs = append(colDescs, *tab.getColDesc(i))
+		colDescs = append(colDescs, tab.getColDesc(i))
 	}
 	return colDescs
 }

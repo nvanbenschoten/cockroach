@@ -83,7 +83,7 @@ func (o *indexCheckOperation) Start(params runParams) error {
 	var pkColumns, otherColumns []*descpb.ColumnDescriptor
 
 	for _, colID := range o.tableDesc.PrimaryIndex.ColumnIDs {
-		col := &o.tableDesc.Columns[colToIdx[colID]]
+		col := o.tableDesc.Columns[colToIdx[colID]]
 		pkColumns = append(pkColumns, col)
 		colToIdx[colID] = -1
 	}
@@ -94,7 +94,7 @@ func (o *indexCheckOperation) Start(params runParams) error {
 			// Skip PK column.
 			return
 		}
-		col := &o.tableDesc.Columns[pos]
+		col := o.tableDesc.Columns[pos]
 		otherColumns = append(otherColumns, col)
 	}
 

@@ -91,7 +91,7 @@ func (o *physicalCheckOperation) Start(params runParams) error {
 
 	for i := range columnIDs {
 		idx := colIDToIdx[descpb.ColumnID(columnIDs[i])]
-		columns = append(columns, &o.tableDesc.Columns[idx])
+		columns = append(columns, o.tableDesc.Columns[idx])
 	}
 
 	// Find the row indexes for all of the primary index columns.

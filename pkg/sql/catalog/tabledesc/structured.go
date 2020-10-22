@@ -116,9 +116,9 @@ func MakeImmutable(tbl descpb.TableDescriptor) Immutable {
 	desc := Immutable{TableDescriptor: tbl}
 
 	if len(tbl.Mutations) > 0 {
-		publicAndNonPublicCols = make([]descpb.ColumnDescriptor, 0, len(tbl.Columns)+len(tbl.Mutations))
+		publicAndNonPublicCols = make([]*descpb.ColumnDescriptor, 0, len(tbl.Columns)+len(tbl.Mutations))
 		publicAndNonPublicIndexes = make([]descpb.IndexDescriptor, 0, len(tbl.Indexes)+len(tbl.Mutations))
-		readableCols = make([]descpb.ColumnDescriptor, 0, len(tbl.Columns)+len(tbl.Mutations))
+		readableCols = make([]*descpb.ColumnDescriptor, 0, len(tbl.Columns)+len(tbl.Mutations))
 
 		publicAndNonPublicCols = append(publicAndNonPublicCols, tbl.Columns...)
 		publicAndNonPublicIndexes = append(publicAndNonPublicIndexes, tbl.Indexes...)
@@ -133,7 +133,7 @@ func MakeImmutable(tbl descpb.TableDescriptor) Immutable {
 					publicAndNonPublicIndexes = append(publicAndNonPublicIndexes, *idx)
 					desc.writeOnlyIndexCount++
 				} else if col := m.GetColumn(); col != nil {
-					publicAndNonPublicCols = append(publicAndNonPublicCols, *col)
+					publicAndNonPublicCols = append(publicAndNonPublicCols, col)
 					desc.writeOnlyColCount++
 				}
 			}
@@ -145,7 +145,7 @@ func MakeImmutable(tbl descpb.TableDescriptor) Immutable {
 				if idx := m.GetIndex(); idx != nil {
 					publicAndNonPublicIndexes = append(publicAndNonPublicIndexes, *idx)
 				} else if col := m.GetColumn(); col != nil {
-					publicAndNonPublicCols = append(publicAndNonPublicCols, *col)
+					publicAndNonPublicCols = append(publicAndNonPublicCols, col)
 				}
 			}
 		}
@@ -342,13 +342,13 @@ func (desc *Immutable) KeysPerRow(indexID descpb.IndexID) (int, error) {
 
 // AllNonDropColumns returns all the columns, including those being added
 // in the mutations.
-func (desc *Immutable) AllNonDropColumns() []descpb.ColumnDescriptor {
-	cols := make([]descpb.ColumnDescriptor, 0, len(desc.Columns)+len(desc.Mutations))
+func (desc *Immutable) AllNonDropColumns() []*descpb.ColumnDescriptor {
+	cols := make([]*descpb.ColumnDescriptor, 0, len(desc.Columns)+len(desc.Mutations))
 	cols = append(cols, desc.Columns...)
 	for _, m := range desc.Mutations {
 		if col := m.GetColumn(); col != nil {
 			if m.Direction == descpb.DescriptorMutation_ADD {
-				cols = append(cols, *col)
+				cols = append(cols, col)
 			}
 		}
 	}
@@ -474,7 +474,7 @@ func (desc *Immutable) AllActiveAndInactiveForeignKeys() []*descpb.ForeignKeyCon
 // ForeachPublicColumn runs a function on all public columns.
 func (desc *Immutable) ForeachPublicColumn(f func(column *descpb.ColumnDescriptor) error) error {
 	for i := range desc.Columns {
-		if err := f(&desc.Columns[i]); err != nil {
+		if err := f(desc.Columns[i]); err != nil {
 			return err
 		}
 	}
@@ -881,8 +881,8 @@ func maybeUpgradeToFamilyFormatVersion(desc *descpb.TableDescriptor) bool {
 		}
 	}
 
-	for i := range desc.Columns {
-		addFamilyForCol(&desc.Columns[i])
+	for _, c := range desc.Columns {
+		addFamilyForCol(c)
 	}
 	for i := range desc.Mutations {
 		m := &desc.Mutations[i]
@@ -933,8 +933,8 @@ func ForEachExprStringInTableDesc(descI catalog.TableDescriptor, f func(expr *st
 	}
 
 	// Process columns.
-	for i := range desc.Columns {
-		if err := doCol(&desc.Columns[i]); err != nil {
+	for _, c := range desc.Columns {
+		if err := doCol(c); err != nil {
 			return err
 		}
 	}
@@ -1022,8 +1022,8 @@ func (desc *Immutable) GetAllReferencedTypeIDs(
 			ids[id] = struct{}{}
 		}
 	}
-	for i := range desc.Columns {
-		addIDsInColumn(&desc.Columns[i])
+	for _, c := range desc.Columns {
+		addIDsInColumn(c)
 	}
 	for _, mut := range desc.Mutations {
 		if c := mut.GetColumn(); c != nil {
@@ -1081,8 +1081,8 @@ func (desc *Mutable) AllocateIDs(ctx context.Context) error {
 
 	desc.initIDs()
 	columnNames := map[string]descpb.ColumnID{}
-	for i := range desc.Columns {
-		desc.MaybeFillColumnID(&desc.Columns[i], columnNames)
+	for _, c := range desc.Columns {
+		desc.MaybeFillColumnID(c, columnNames)
 	}
 	for _, m := range desc.Mutations {
 		if c := m.GetColumn(); c != nil {
@@ -1172,10 +1172,9 @@ func (desc *Mutable) allocateIndexIDs(columnNames map[string]descpb.ColumnID) er
 	}
 
 	isCompositeColumn := make(map[descpb.ColumnID]struct{})
-	for i := range desc.Columns {
-		col := &desc.Columns[i]
-		if colinfo.HasCompositeKeyEncoding(col.Type) {
-			isCompositeColumn[col.ID] = struct{}{}
+	for _, c := range desc.Columns {
+		if colinfo.HasCompositeKeyEncoding(c.Type) {
+			isCompositeColumn[c.ID] = struct{}{}
 		}
 	}
 
@@ -1328,8 +1327,8 @@ func (desc *Mutable) allocateColumnFamilyIDs(columnNames map[string]descpb.Colum
 			desc.NextFamilyID = familyID + 1
 		}
 	}
-	for i := range desc.Columns {
-		ensureColumnInFamily(&desc.Columns[i])
+	for _, c := range desc.Columns {
+		ensureColumnInFamily(c)
 	}
 	for _, m := range desc.Mutations {
 		if c := m.GetColumn(); c != nil {
@@ -2235,14 +2234,14 @@ func (desc *Immutable) validatePartitioning() error {
 // current heuristic will assign to a family.
 const FamilyHeuristicTargetBytes = 256
 
-func notIndexableError(cols []descpb.ColumnDescriptor, inverted bool) error {
+func notIndexableError(cols []*descpb.ColumnDescriptor, inverted bool) error {
 	if len(cols) == 0 {
 		return nil
 	}
 	var msg string
 	var typInfo string
 	if len(cols) == 1 {
-		col := &cols[0]
+		col := cols[0]
 		msg = "column %s is of type %s and thus is not indexable"
 		if inverted {
 			msg += " with an inverted index"
@@ -2251,8 +2250,7 @@ func notIndexableError(cols []descpb.ColumnDescriptor, inverted bool) error {
 		msg = fmt.Sprintf(msg, col.Name, col.Type.Name())
 	} else {
 		msg = "the following columns are not indexable due to their type: "
-		for i := range cols {
-			col := &cols[i]
+		for i, col := range cols {
 			msg += fmt.Sprintf("%s (type %s)", col.Name, col.Type.Name())
 			typInfo += col.Type.DebugString()
 			if i != len(cols)-1 {
@@ -2265,7 +2263,7 @@ func notIndexableError(cols []descpb.ColumnDescriptor, inverted bool) error {
 }
 
 func checkColumnsValidForIndex(tableDesc *Mutable, indexColNames []string) error {
-	invalidColumns := make([]descpb.ColumnDescriptor, 0, len(indexColNames))
+	invalidColumns := make([]*descpb.ColumnDescriptor, 0, len(indexColNames))
 	for _, indexCol := range indexColNames {
 		for _, col := range tableDesc.AllNonDropColumns() {
 			if col.Name == indexCol {
@@ -2286,7 +2284,7 @@ func checkColumnsValidForInvertedIndex(tableDesc *Mutable, indexColNames []strin
 		return unimplemented.NewWithIssue(48100,
 			"indexing more than one column with an inverted index is not supported")
 	}
-	invalidColumns := make([]descpb.ColumnDescriptor, 0, len(indexColNames))
+	invalidColumns := make([]*descpb.ColumnDescriptor, 0, len(indexColNames))
 	for _, indexCol := range indexColNames {
 		for _, col := range tableDesc.AllNonDropColumns() {
 			if col.Name == indexCol {
@@ -2304,7 +2302,7 @@ func checkColumnsValidForInvertedIndex(tableDesc *Mutable, indexColNames []strin
 
 // AddColumn adds a column to the table.
 func (desc *Mutable) AddColumn(col *descpb.ColumnDescriptor) {
-	desc.Columns = append(desc.Columns, *col)
+	desc.Columns = append(desc.Columns, col)
 }
 
 // AddFamily adds a family to the table.
@@ -2458,8 +2456,7 @@ func (desc *Immutable) FindActiveColumnsByNames(
 // an active column or a column from the mutation list. It returns true
 // if the column is being dropped.
 func (desc *Immutable) FindColumnByName(name tree.Name) (*descpb.ColumnDescriptor, bool, error) {
-	for i := range desc.Columns {
-		c := &desc.Columns[i]
+	for _, c := range desc.Columns {
 		if c.Name == string(name) {
 			return c, false, nil
 		}
@@ -2479,8 +2476,7 @@ func (desc *Immutable) FindColumnByName(name tree.Name) (*descpb.ColumnDescripto
 // It returns either an active column or a column that was added in the
 // same transaction that is currently running.
 func (desc *Mutable) FindActiveOrNewColumnByName(name tree.Name) (*descpb.ColumnDescriptor, error) {
-	for i := range desc.Columns {
-		c := &desc.Columns[i]
+	for _, c := range desc.Columns {
 		if c.Name == string(name) {
 			return c, nil
 		}
@@ -2521,9 +2517,8 @@ func (desc *Immutable) ColumnIdxMap() map[descpb.ColumnID]int {
 // bool is true.
 func (desc *Immutable) ColumnIdxMapWithMutations(mutations bool) map[descpb.ColumnID]int {
 	colIdxMap := make(map[descpb.ColumnID]int, len(desc.Columns))
-	for i := range desc.Columns {
-		id := desc.Columns[i].ID
-		colIdxMap[id] = i
+	for i, c := range desc.Columns {
+		colIdxMap[c.ID] = i
 	}
 	if mutations {
 		idx := len(desc.Columns)
@@ -2540,8 +2535,7 @@ func (desc *Immutable) ColumnIdxMapWithMutations(mutations bool) map[descpb.Colu
 
 // FindActiveColumnByName finds an active column with the specified name.
 func (desc *Immutable) FindActiveColumnByName(name string) (*descpb.ColumnDescriptor, error) {
-	for i := range desc.Columns {
-		c := &desc.Columns[i]
+	for _, c := range desc.Columns {
 		if c.Name == name {
 			return c, nil
 		}
@@ -2551,8 +2545,7 @@ func (desc *Immutable) FindActiveColumnByName(name string) (*descpb.ColumnDescri
 
 // FindColumnByID finds the column with specified ID.
 func (desc *Immutable) FindColumnByID(id descpb.ColumnID) (*descpb.ColumnDescriptor, error) {
-	for i := range desc.Columns {
-		c := &desc.Columns[i]
+	for _, c := range desc.Columns {
 		if c.ID == id {
 			return c, nil
 		}
@@ -2569,8 +2562,7 @@ func (desc *Immutable) FindColumnByID(id descpb.ColumnID) (*descpb.ColumnDescrip
 
 // FindActiveColumnByID finds the active column with specified ID.
 func (desc *Immutable) FindActiveColumnByID(id descpb.ColumnID) (*descpb.ColumnDescriptor, error) {
-	for i := range desc.Columns {
-		c := &desc.Columns[i]
+	for _, c := range desc.Columns {
 		if c.ID == id {
 			return c, nil
 		}
@@ -2611,8 +2603,7 @@ func (desc *Immutable) UserDefinedTypeColsHaveSameVersion(otherDesc *Immutable) 
 func (desc *Immutable) FindReadableColumnByID(
 	id descpb.ColumnID,
 ) (*descpb.ColumnDescriptor, bool, error) {
-	for i := range desc.ReadableColumns {
-		c := &desc.ReadableColumns[i]
+	for i, c := range desc.ReadableColumns {
 		if c.ID == id {
 			return c, i >= len(desc.Columns), nil
 		}
@@ -3183,7 +3174,7 @@ func (desc *Mutable) performComputedColumnSwap(swap *descpb.ComputedColumnSwap) 
 	// Replace the old column with the new column.
 	for i := range desc.Columns {
 		if desc.Columns[i].ID == oldCol.ID {
-			desc.Columns[i] = *newColCopy
+			desc.Columns[i] = newColCopy
 		}
 	}
 
@@ -3448,12 +3439,11 @@ func (desc *Mutable) IsNew() bool {
 }
 
 // VisibleColumns returns all non hidden columns.
-func (desc *Immutable) VisibleColumns() []descpb.ColumnDescriptor {
-	var cols []descpb.ColumnDescriptor
-	for i := range desc.Columns {
-		col := &desc.Columns[i]
+func (desc *Immutable) VisibleColumns() []*descpb.ColumnDescriptor {
+	var cols []*descpb.ColumnDescriptor
+	for _, col := range desc.Columns {
 		if !col.Hidden {
-			cols = append(cols, *col)
+			cols = append(cols, col)
 		}
 	}
 	return cols
@@ -3466,13 +3456,13 @@ func (desc *Immutable) ColumnTypes() []*types.T {
 
 // ColumnsWithMutations returns all column descriptors, optionally including
 // mutation columns.
-func (desc *Immutable) ColumnsWithMutations(includeMutations bool) []descpb.ColumnDescriptor {
+func (desc *Immutable) ColumnsWithMutations(includeMutations bool) []*descpb.ColumnDescriptor {
 	n := len(desc.Columns)
 	columns := desc.Columns[:n:n] // immutable on append
 	if includeMutations {
 		for i := range desc.Mutations {
 			if col := desc.Mutations[i].GetColumn(); col != nil {
-				columns = append(columns, *col)
+				columns = append(columns, col)
 			}
 		}
 	}
@@ -3491,7 +3481,7 @@ func (desc *Immutable) ColumnTypesWithMutations(mutations bool) []*types.T {
 }
 
 // ColumnsSelectors generates Select expressions for cols.
-func ColumnsSelectors(cols []descpb.ColumnDescriptor) tree.SelectExprs {
+func ColumnsSelectors(cols []*descpb.ColumnDescriptor) tree.SelectExprs {
 	exprs := make(tree.SelectExprs, len(cols))
 	colItems := make([]tree.ColumnItem, len(cols))
 	for i, col := range cols {
@@ -3701,17 +3691,17 @@ func (desc *Immutable) ActiveChecks() []descpb.TableDescriptor_CheckConstraint {
 }
 
 // WritableColumns returns a list of public and write-only mutation columns.
-func (desc *Immutable) WritableColumns() []descpb.ColumnDescriptor {
+func (desc *Immutable) WritableColumns() []*descpb.ColumnDescriptor {
 	return desc.publicAndNonPublicCols[:len(desc.Columns)+desc.writeOnlyColCount]
 }
 
 // DeletableColumns returns a list of public and non-public columns.
-func (desc *Immutable) DeletableColumns() []descpb.ColumnDescriptor {
+func (desc *Immutable) DeletableColumns() []*descpb.ColumnDescriptor {
 	return desc.publicAndNonPublicCols
 }
 
 // MutationColumns returns a list of mutation columns.
-func (desc *Immutable) MutationColumns() []descpb.ColumnDescriptor {
+func (desc *Immutable) MutationColumns() []*descpb.ColumnDescriptor {
 	return desc.publicAndNonPublicCols[len(desc.Columns):]
 }
 

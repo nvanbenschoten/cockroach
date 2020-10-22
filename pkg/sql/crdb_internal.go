@@ -1950,8 +1950,7 @@ CREATE TABLE crdb_internal.table_columns (
 					tableID := tree.NewDInt(tree.DInt(table.GetID()))
 					tableName := tree.NewDString(table.GetName())
 					columns := table.GetPublicColumns()
-					for i := range columns {
-						col := &columns[i]
+					for _, col := range columns {
 						defStr := tree.DNull
 						if col.DefaultExpr != nil {
 							defExpr, err := schemaexpr.FormatExprForDisplay(ctx, table, *col.DefaultExpr, &p.semaCtx, tree.FmtParsable)

@@ -26,7 +26,7 @@ import (
 // Deleter abstracts the key/value operations for deleting table rows.
 type Deleter struct {
 	Helper               rowHelper
-	FetchCols            []descpb.ColumnDescriptor
+	FetchCols            []*descpb.ColumnDescriptor
 	FetchColIDtoRowIndex map[descpb.ColumnID]int
 	// For allocation avoidance.
 	key roachpb.Key
@@ -38,7 +38,7 @@ type Deleter struct {
 // expectation of which values are passed as values to DeleteRow. Any column
 // passed in requestedCols will be included in FetchCols.
 func MakeDeleter(
-	codec keys.SQLCodec, tableDesc *tabledesc.Immutable, requestedCols []descpb.ColumnDescriptor,
+	codec keys.SQLCodec, tableDesc *tabledesc.Immutable, requestedCols []*descpb.ColumnDescriptor,
 ) Deleter {
 	indexes := tableDesc.DeletableIndexes()
 
@@ -52,7 +52,7 @@ func MakeDeleter(
 				return err
 			}
 			fetchColIDtoRowIndex[col.ID] = len(fetchCols)
-			fetchCols = append(fetchCols, *col)
+			fetchCols = append(fetchCols, col)
 		}
 		return nil
 	}

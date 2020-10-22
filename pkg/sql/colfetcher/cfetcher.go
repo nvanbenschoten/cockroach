@@ -60,7 +60,7 @@ type cTableInfo struct {
 
 	// The table columns to use for fetching, possibly including ones currently in
 	// schema changes.
-	cols []descpb.ColumnDescriptor
+	cols []*descpb.ColumnDescriptor
 
 	// The ordered list of ColumnIDs that are required.
 	neededColsList []int

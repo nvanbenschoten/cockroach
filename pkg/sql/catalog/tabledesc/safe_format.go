@@ -69,8 +69,8 @@ func formatSafeTableColumns(w *redact.StringBuilder, desc catalog.TableDescripto
 	td := desc.TableDesc()
 	w.Printf(", NextColumnID: %d", td.NextColumnID)
 	w.Printf(", Columns: [")
-	for i := range td.Columns {
-		formatColumn(&td.Columns[i], nil)
+	for _, c := range td.Columns {
+		formatColumn(c, nil)
 	}
 	w.Printf("]")
 }

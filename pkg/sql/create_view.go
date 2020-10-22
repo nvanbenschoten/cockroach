@@ -331,7 +331,7 @@ func (p *planner) replaceViewDesc(
 	// Set the query to the new query.
 	toReplace.ViewQuery = n.viewQuery
 	// Reset the columns to add the new result columns onto.
-	toReplace.Columns = make([]descpb.ColumnDescriptor, 0, len(n.columns))
+	toReplace.Columns = make([]*descpb.ColumnDescriptor, 0, len(n.columns))
 	toReplace.NextColumnID = 0
 	if err := addResultColumns(ctx, &p.semaCtx, p.EvalContext(), toReplace, n.columns); err != nil {
 		return nil, err
@@ -420,12 +420,12 @@ func addResultColumns(
 // verifyReplacingViewColumns ensures that the new set of view columns must
 // have at least the same prefix of columns as the old view. We attempt to
 // match the postgres error message in each of the error cases below.
-func verifyReplacingViewColumns(oldColumns, newColumns []descpb.ColumnDescriptor) error {
+func verifyReplacingViewColumns(oldColumns, newColumns []*descpb.ColumnDescriptor) error {
 	if len(newColumns) < len(oldColumns) {
 		return pgerror.Newf(pgcode.InvalidTableDefinition, "cannot drop columns from view")
 	}
 	for i := range oldColumns {
-		oldCol, newCol := &oldColumns[i], &newColumns[i]
+		oldCol, newCol := oldColumns[i], newColumns[i]
 		if oldCol.Name != newCol.Name {
 			return pgerror.Newf(
 				pgcode.InvalidTableDefinition,

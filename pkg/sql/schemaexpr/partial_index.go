@@ -236,7 +236,7 @@ func FormatIndexForDisplay(
 func MakePartialIndexExprs(
 	ctx context.Context,
 	indexes []*descpb.IndexDescriptor,
-	cols []descpb.ColumnDescriptor,
+	cols []*descpb.ColumnDescriptor,
 	tableDesc catalog.TableDescriptor,
 	evalCtx *tree.EvalContext,
 	semaCtx *tree.SemaContext,
@@ -255,7 +255,7 @@ func MakePartialIndexExprs(
 	exprs := make(map[descpb.IndexID]tree.TypedExpr, partialIndexCount)
 
 	tn := tree.NewUnqualifiedTableName(tree.Name(tableDesc.GetName()))
-	nr := newNameResolver(evalCtx, tableDesc.GetID(), tn, columnDescriptorsToPtrs(cols))
+	nr := newNameResolver(evalCtx, tableDesc.GetID(), tn, cols)
 	nr.addIVarContainerToSemaCtx(semaCtx)
 
 	var txCtx transform.ExprTransformContext

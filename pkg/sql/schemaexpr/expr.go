@@ -46,7 +46,7 @@ func DequalifyAndValidateExpr(
 ) (string, TableColSet, error) {
 	var colIDs TableColSet
 	sourceInfo := colinfo.NewSourceInfoForSingleTable(
-		*tn, colinfo.ResultColumnsFromColDescs(
+		*tn, colinfo.ResultColumnsFromColDescPtrs(
 			desc.GetID(),
 			desc.AllNonDropColumns(),
 		),
@@ -194,7 +194,7 @@ func (nr *nameResolver) resolveNames(expr tree.Expr) (tree.Expr, error) {
 func (nr *nameResolver) addColumn(col *descpb.ColumnDescriptor) {
 	nr.ivarHelper.AppendSlot()
 	nr.nrc.cols = append(nr.nrc.cols, col)
-	newCols := colinfo.ResultColumnsFromColDescs(nr.tableID, []descpb.ColumnDescriptor{*col})
+	newCols := colinfo.ResultColumnsFromColDescPtrs(nr.tableID, []*descpb.ColumnDescriptor{col})
 	nr.source.SourceColumns = append(nr.source.SourceColumns, newCols...)
 }
 

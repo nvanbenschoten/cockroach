@@ -42,7 +42,7 @@ func ColTypeInfoFromColTypes(colTypes []*types.T) ColTypeInfo {
 }
 
 // ColTypeInfoFromColDescs creates a ColTypeInfo from []ColumnDescriptor.
-func ColTypeInfoFromColDescs(colDescs []descpb.ColumnDescriptor) ColTypeInfo {
+func ColTypeInfoFromColDescs(colDescs []*descpb.ColumnDescriptor) ColTypeInfo {
 	colTypes := make([]*types.T, len(colDescs))
 	for i, colDesc := range colDescs {
 		colTypes[i] = colDesc.Type

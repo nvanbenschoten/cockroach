@@ -123,7 +123,7 @@ type TableDescriptor interface {
 	HasPrimaryKey() bool
 	PrimaryKeyString() string
 
-	GetPublicColumns() []descpb.ColumnDescriptor
+	GetPublicColumns() []*descpb.ColumnDescriptor
 	ForeachPublicColumn(f func(col *descpb.ColumnDescriptor) error) error
 	ForeachNonDropColumn(f func(col *descpb.ColumnDescriptor) error) error
 	NamesForColumnIDs(ids descpb.ColumnIDs) ([]string, error)
@@ -132,11 +132,11 @@ type TableDescriptor interface {
 	FindColumnByID(id descpb.ColumnID) (*descpb.ColumnDescriptor, error)
 	ColumnIdxMap() map[descpb.ColumnID]int
 	GetColumnAtIdx(idx int) *descpb.ColumnDescriptor
-	AllNonDropColumns() []descpb.ColumnDescriptor
-	VisibleColumns() []descpb.ColumnDescriptor
-	ColumnsWithMutations(includeMutations bool) []descpb.ColumnDescriptor
+	AllNonDropColumns() []*descpb.ColumnDescriptor
+	VisibleColumns() []*descpb.ColumnDescriptor
+	ColumnsWithMutations(includeMutations bool) []*descpb.ColumnDescriptor
 	ColumnIdxMapWithMutations(includeMutations bool) map[descpb.ColumnID]int
-	DeletableColumns() []descpb.ColumnDescriptor
+	DeletableColumns() []*descpb.ColumnDescriptor
 
 	GetFamilies() []descpb.ColumnFamilyDescriptor
 	NumFamilies() int
@@ -170,7 +170,7 @@ type TableDescriptor interface {
 	ActiveChecks() []descpb.TableDescriptor_CheckConstraint
 	ForeachInboundFK(f func(fk *descpb.ForeignKeyConstraint) error) error
 	FindActiveColumnByName(s string) (*descpb.ColumnDescriptor, error)
-	WritableColumns() []descpb.ColumnDescriptor
+	WritableColumns() []*descpb.ColumnDescriptor
 }
 
 // TypeDescriptor will eventually be called typedesc.Descriptor.

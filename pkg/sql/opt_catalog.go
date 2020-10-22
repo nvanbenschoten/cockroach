@@ -674,8 +674,7 @@ func newOptTable(
 	// Note that the column does not exist when err != nil. This check is done
 	// for migration purposes. We need to avoid adding the system column if the
 	// table has a column with this name for some reason.
-	for i := range colinfo.AllSystemColumnDescs {
-		sysCol := &colinfo.AllSystemColumnDescs[i]
+	for _, sysCol := range colinfo.AllSystemColumnDescs {
 		if _, _, err := desc.FindColumnByName(tree.Name(sysCol.Name)); err != nil {
 			col, ord := newColumn()
 			col.InitNonVirtual(
@@ -950,11 +949,10 @@ func (ot *optTable) Column(i int) *cat.Column {
 // getColDesc is part of optCatalogTableInterface.
 func (ot *optTable) getColDesc(i int) *descpb.ColumnDescriptor {
 	if i < len(ot.desc.DeletableColumns()) {
-		return &ot.desc.DeletableColumns()[i]
+		return ot.desc.DeletableColumns()[i]
 	}
 	// Check if the column matches any registered system columns.
-	for j := range colinfo.AllSystemColumnDescs {
-		colDesc := &colinfo.AllSystemColumnDescs[j]
+	for _, colDesc := range colinfo.AllSystemColumnDescs {
 		if descpb.ColumnID(ot.columns[i].ColID()) == colDesc.ID {
 			return colDesc
 		}
@@ -1705,7 +1703,7 @@ func (ot *optVirtualTable) Column(i int) *cat.Column {
 // getColDesc is part of optCatalogTableInterface.
 func (ot *optVirtualTable) getColDesc(i int) *descpb.ColumnDescriptor {
 	if i > 0 && i <= len(ot.desc.Columns) {
-		return &ot.desc.Columns[i-1]
+		return ot.desc.Columns[i-1]
 	}
 	return nil
 }

@@ -64,13 +64,13 @@ type optTableUpserter struct {
 	// fetchCols indicate which columns need to be fetched from the target table,
 	// in order to detect whether a conflict has occurred, as well as to provide
 	// existing values for updates.
-	fetchCols []descpb.ColumnDescriptor
+	fetchCols []*descpb.ColumnDescriptor
 
 	// updateCols indicate which columns need an update during a conflict.
-	updateCols []descpb.ColumnDescriptor
+	updateCols []*descpb.ColumnDescriptor
 
 	// returnCols indicate which columns need to be returned by the Upsert.
-	returnCols []descpb.ColumnDescriptor
+	returnCols []*descpb.ColumnDescriptor
 
 	// canaryOrdinal is the ordinal position of the column within the input row
 	// that is used to decide whether to execute an insert or update operation.

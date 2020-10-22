@@ -564,7 +564,7 @@ func HydrateTypesInTableDescriptor(
 		return nil
 	}
 	for i := range desc.Columns {
-		if err := hydrateCol(&desc.Columns[i]); err != nil {
+		if err := hydrateCol(desc.Columns[i]); err != nil {
 			return err
 		}
 	}

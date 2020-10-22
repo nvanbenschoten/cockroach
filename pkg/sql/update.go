@@ -391,7 +391,7 @@ type sourceSlot interface {
 }
 
 type scalarSlot struct {
-	column      descpb.ColumnDescriptor
+	column      *descpb.ColumnDescriptor
 	sourceIndex int
 }
 
@@ -402,7 +402,7 @@ func (ss scalarSlot) extractValues(row tree.Datums) tree.Datums {
 func (ss scalarSlot) checkColumnTypes(row []tree.TypedExpr) error {
 	renderedResult := row[ss.sourceIndex]
 	typ := renderedResult.ResolvedType()
-	return colinfo.CheckDatumTypeFitsColumnType(&ss.column, typ)
+	return colinfo.CheckDatumTypeFitsColumnType(ss.column, typ)
 }
 
 // enforceLocalColumnConstraints asserts the column constraints that
@@ -417,9 +417,8 @@ func (ss scalarSlot) checkColumnTypes(row []tree.TypedExpr) error {
 //
 // The row buffer is modified in-place with the result of the
 // checks.
-func enforceLocalColumnConstraints(row tree.Datums, cols []descpb.ColumnDescriptor) error {
-	for i := range cols {
-		col := &cols[i]
+func enforceLocalColumnConstraints(row tree.Datums, cols []*descpb.ColumnDescriptor) error {
+	for i, col := range cols {
 		if !col.Nullable && row[i] == tree.DNull {
 			return sqlerrors.NewNonNullViolationError(col.Name)
 		}

@@ -53,7 +53,7 @@ type insertRun struct {
 	checkOrds checkSet
 
 	// insertCols are the columns being inserted into.
-	insertCols []descpb.ColumnDescriptor
+	insertCols []*descpb.ColumnDescriptor
 
 	// done informs a new call to BatchedNext() that the previous call to
 	// BatchedNext() has completed the work already.

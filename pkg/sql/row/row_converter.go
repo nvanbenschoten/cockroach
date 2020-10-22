@@ -87,8 +87,8 @@ func (i KVInserter) InitPut(key, value interface{}, failOnTombstones bool) {
 func GenerateInsertRow(
 	defaultExprs []tree.TypedExpr,
 	computeExprs []tree.TypedExpr,
-	insertCols []descpb.ColumnDescriptor,
-	computedColsLookup []descpb.ColumnDescriptor,
+	insertCols []*descpb.ColumnDescriptor,
+	computedColsLookup []*descpb.ColumnDescriptor,
 	evalCtx *tree.EvalContext,
 	tableDesc *tabledesc.Immutable,
 	rowVals tree.Datums,
@@ -212,8 +212,8 @@ type DatumRowConverter struct {
 	// The rest of these are derived from tableDesc, just cached here.
 	ri                    Inserter
 	EvalCtx               *tree.EvalContext
-	cols                  []descpb.ColumnDescriptor
-	VisibleCols           []descpb.ColumnDescriptor
+	cols                  []*descpb.ColumnDescriptor
+	VisibleCols           []*descpb.ColumnDescriptor
 	VisibleColTypes       []*types.T
 	computedExprs         []tree.TypedExpr
 	defaultCache          []tree.TypedExpr
@@ -252,7 +252,7 @@ func NewDatumRowConverter(
 		EvalCtx:   evalCtx.Copy(),
 	}
 
-	var targetColDescriptors []descpb.ColumnDescriptor
+	var targetColDescriptors []*descpb.ColumnDescriptor
 	var err error
 	// IMPORT INTO allows specifying target columns which could be a subset of
 	// immutDesc.VisibleColumns. If no target columns are specified we assume all
@@ -326,8 +326,7 @@ func NewDatumRowConverter(
 	annot := make(tree.Annotations, 1)
 	annot.Set(cellInfoAddr, &cellInfoAnnotation{uniqueRowIDInstance: 0})
 	c.EvalCtx.Annotations = &annot
-	for i := range cols {
-		col := &cols[i]
+	for i, col := range cols {
 		if col.DefaultExpr != nil {
 			// Placeholder for columns with default values that will be evaluated when
 			// each import row is being created.
@@ -368,7 +367,7 @@ func NewDatumRowConverter(
 	c.BatchCap = kvDatumRowConverterBatchSize + padding
 	c.KvBatch.KVs = make([]roachpb.KeyValue, 0, c.BatchCap)
 
-	colsOrdered := make([]descpb.ColumnDescriptor, len(c.tableDesc.Columns))
+	colsOrdered := make([]*descpb.ColumnDescriptor, len(c.tableDesc.Columns))
 	for _, col := range c.tableDesc.Columns {
 		// We prefer to have the order of columns that will be sent into
 		// MakeComputedExprs to map that of Datums.
@@ -405,8 +404,7 @@ func (c *DatumRowConverter) Row(ctx context.Context, sourceID int32, rowIndex in
 		return ok
 	}
 	getCellInfoAnnotation(c.EvalCtx.Annotations).Reset(sourceID, rowIndex)
-	for i := range c.cols {
-		col := &c.cols[i]
+	for i, col := range c.cols {
 		if col.DefaultExpr != nil {
 			// If this column is targeted, then the evaluation is a no-op except to
 			// make one evaluation just in case we have random() default expression
@@ -425,7 +423,7 @@ func (c *DatumRowConverter) Row(ctx context.Context, sourceID int32, rowIndex in
 		}
 	}
 
-	var computedColsLookup []descpb.ColumnDescriptor
+	var computedColsLookup []*descpb.ColumnDescriptor
 	if len(c.computedExprs) > 0 {
 		computedColsLookup = c.tableDesc.Columns
 	}

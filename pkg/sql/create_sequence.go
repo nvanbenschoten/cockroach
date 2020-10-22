@@ -191,7 +191,7 @@ func NewSequenceTableDesc(
 	)
 
 	// Mimic a table with one column, "value".
-	desc.Columns = []descpb.ColumnDescriptor{
+	desc.Columns = []*descpb.ColumnDescriptor{
 		{
 			ID:   tabledesc.SequenceColumnID,
 			Name: tabledesc.SequenceColumnName,

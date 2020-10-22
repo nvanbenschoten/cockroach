@@ -104,13 +104,12 @@ func (n *showFingerprintsNode) Next(params runParams) (bool, error) {
 	}
 
 	if index.ID == n.tableDesc.PrimaryIndex.ID {
-		for i := range n.tableDesc.Columns {
-			addColumn(&n.tableDesc.Columns[i])
+		for _, col := range n.tableDesc.Columns {
+			addColumn(col)
 		}
 	} else {
 		colsByID := make(map[descpb.ColumnID]*descpb.ColumnDescriptor)
-		for i := range n.tableDesc.Columns {
-			col := &n.tableDesc.Columns[i]
+		for _, col := range n.tableDesc.Columns {
 			colsByID[col.ID] = col
 		}
 		colIDs := append(append(index.ColumnIDs, index.ExtraColumnIDs...), index.StoreColumnIDs...)

@@ -187,7 +187,7 @@ func (v *ComputedColumnValidator) ValidateNoDependents(col *descpb.ColumnDescrip
 // columns that come after them in cols.
 func MakeComputedExprs(
 	ctx context.Context,
-	cols []descpb.ColumnDescriptor,
+	cols []*descpb.ColumnDescriptor,
 	tableDesc catalog.TableDescriptor,
 	tn *tree.TableName,
 	evalCtx *tree.EvalContext,
@@ -210,8 +210,7 @@ func MakeComputedExprs(
 	// Build the computed expressions map from the parsed statement.
 	computedExprs := make([]tree.TypedExpr, 0, len(cols))
 	exprStrings := make([]string, 0, len(cols))
-	for i := range cols {
-		col := &cols[i]
+	for _, col := range cols {
 		if col.IsComputed() {
 			exprStrings = append(exprStrings, *col.ComputeExpr)
 		}
@@ -222,13 +221,12 @@ func MakeComputedExprs(
 		return nil, err
 	}
 
-	nr := newNameResolver(evalCtx, tableDesc.GetID(), tn, columnDescriptorsToPtrs(tableDesc.GetPublicColumns()))
+	nr := newNameResolver(evalCtx, tableDesc.GetID(), tn, tableDesc.GetPublicColumns())
 	nr.addIVarContainerToSemaCtx(semaCtx)
 
 	var txCtx transform.ExprTransformContext
 	compExprIdx := 0
-	for i := range cols {
-		col := &cols[i]
+	for _, col := range cols {
 		if !col.IsComputed() {
 			computedExprs = append(computedExprs, tree.DNull)
 			nr.addColumn(col)

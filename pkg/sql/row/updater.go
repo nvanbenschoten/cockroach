@@ -31,9 +31,9 @@ import (
 type Updater struct {
 	Helper                rowHelper
 	DeleteHelper          *rowHelper
-	FetchCols             []descpb.ColumnDescriptor
+	FetchCols             []*descpb.ColumnDescriptor
 	FetchColIDtoRowIndex  map[descpb.ColumnID]int
-	UpdateCols            []descpb.ColumnDescriptor
+	UpdateCols            []*descpb.ColumnDescriptor
 	UpdateColIDtoRowIndex map[descpb.ColumnID]int
 	primaryKeyColChange   bool
 
@@ -83,8 +83,8 @@ func MakeUpdater(
 	txn *kv.Txn,
 	codec keys.SQLCodec,
 	tableDesc *tabledesc.Immutable,
-	updateCols []descpb.ColumnDescriptor,
-	requestedCols []descpb.ColumnDescriptor,
+	updateCols []*descpb.ColumnDescriptor,
+	requestedCols []*descpb.ColumnDescriptor,
 	updateType rowUpdaterType,
 	alloc *rowenc.DatumAlloc,
 ) (Updater, error) {
@@ -199,7 +199,7 @@ func MakeUpdater(
 					return err
 				}
 				ru.FetchColIDtoRowIndex[col.ID] = len(ru.FetchCols)
-				ru.FetchCols = append(ru.FetchCols, *col)
+				ru.FetchCols = append(ru.FetchCols, col)
 			}
 			return nil
 		}
@@ -302,7 +302,7 @@ func (ru *Updater) UpdateRow(
 	// happen before index encoding because certain datum types (i.e. tuple)
 	// cannot be used as index values.
 	for i, val := range updateValues {
-		if ru.marshaled[i], err = rowenc.MarshalColumnValue(&ru.UpdateCols[i], val); err != nil {
+		if ru.marshaled[i], err = rowenc.MarshalColumnValue(ru.UpdateCols[i], val); err != nil {
 			return nil, err
 		}
 	}

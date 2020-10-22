@@ -151,7 +151,7 @@ func NewColBatchScan(
 	columnIdxMap := table.ColumnIdxMapWithMutations(returnMutations)
 
 	// Add all requested system columns to the output.
-	var sysColDescs []descpb.ColumnDescriptor
+	var sysColDescs []*descpb.ColumnDescriptor
 	if spec.HasSystemColumns {
 		sysColDescs = colinfo.AllSystemColumnDescs
 	}
@@ -228,7 +228,7 @@ func initCRowFetcher(
 	scanVisibility execinfrapb.ScanVisibility,
 	lockStrength descpb.ScanLockingStrength,
 	lockWaitPolicy descpb.ScanLockingWaitPolicy,
-	systemColumnDescs []descpb.ColumnDescriptor,
+	systemColumnDescs []*descpb.ColumnDescriptor,
 ) (index *descpb.IndexDescriptor, isSecondaryIndex bool, err error) {
 	index, isSecondaryIndex, err = desc.FindIndexByIndexIdx(indexIdx)
 	if err != nil {
