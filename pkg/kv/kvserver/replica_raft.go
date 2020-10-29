@@ -139,6 +139,8 @@ func (r *Replica) evalAndPropose(
 	// Attach information about the proposer to the command.
 	proposal.command.ProposerLeaseSequence = lease.Sequence
 
+	proposal.command.ReplicatedEvalResult.ClosedTimestamp = r.ctTracker.Closed()
+
 	// Once a command is written to the raft log, it must be loaded into memory
 	// and replayed on all replicas. If a command is too big, stop it here. If
 	// the command is not too big, acquire an appropriate amount of quota from

@@ -197,6 +197,8 @@ message RangeAppliedState {
   // range_stats is the set of mvcc stats that accounts for the current value
   // of the Raft state machine.
   MVCCPersistentStats range_stats = 3 [(gogoproto.nullable) = false];
+  // closed_timestamp is the currently applied closed timestamp. TODO
+  util.hlc.Timestamp closed_timestamp = 4 [(gogoproto.nullable) = false];
 }
 
 // MVCCWriteValueOp corresponds to a value being written outside of a

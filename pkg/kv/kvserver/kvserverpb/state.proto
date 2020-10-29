@@ -68,6 +68,8 @@ message ReplicaState {
   // is idempotent by Replica state machines, meaning that it is ok for multiple
   // Raft commands to set it to true.
   bool using_applied_state_key = 11;
+  // The current closed timestamp applied to the state machine.
+  util.hlc.Timestamp closed_timestamp = 12 [(gogoproto.nullable) = false];
 
   reserved 8, 9, 10;
 }

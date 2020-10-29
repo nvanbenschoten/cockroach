@@ -162,6 +162,9 @@ message ReplicatedEvalResult {
   // but before we tried to apply it.
   util.hlc.Timestamp prev_lease_proposal = 20;
 
+  // The closed timestamp to set on the range if this log entry was to apply. TODO.
+  util.hlc.Timestamp closed_timestamp = 22 [(gogoproto.nullable) = false];
+
   reserved 1, 5, 7, 9, 14, 15, 16, 19, 10001 to 10013;
 }
 

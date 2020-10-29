@@ -819,6 +819,15 @@ func (b *replicaAppBatch) stageTrivialReplicatedEvalResult(
 	// upgrades. Thanks to commutativity, the spanlatch manager does not have to
 	// serialize on the stats key.
 	b.state.Stats.Add(deltaStats)
+
+	// Forward the closed timestamp for the range based on the closed timestamp
+	// of the entry.
+	if res.ClosedTimestamp.Less(b.state.ClosedTimestamp) {
+		log.Fatalf(ctx, "closed timestamp regression in log; applied closed timestamp = %v, entry's closed timestamp = %v",
+			b.state.ClosedTimestamp, res.ClosedTimestamp)
+	}
+	b.state.ClosedTimestamp = res.ClosedTimestamp
+
 	// Exploit the fact that a split will result in a full stats
 	// recomputation to reset the ContainsEstimates flag.
 	// If we were running the new VersionContainsEstimatesCounter cluster version,
@@ -886,6 +895,7 @@ func (b *replicaAppBatch) ApplyToStateMachine(ctx context.Context) error {
 	r.mu.state.LeaseAppliedIndex = b.state.LeaseAppliedIndex
 	prevStats := *r.mu.state.Stats
 	*r.mu.state.Stats = *b.state.Stats
+	r.mu.state.ClosedTimestamp = b.state.ClosedTimestamp
 
 	// If the range is now less than its RangeMaxBytes, clear the history of its
 	// largest previous max bytes.
@@ -946,7 +956,12 @@ func (b *replicaAppBatch) addAppliedStateKeyToBatch(ctx context.Context) error {
 		// Set the range applied state, which includes the last applied raft and
 		// lease index along with the mvcc stats, all in one key.
 		if err := loader.SetRangeAppliedState(
-			ctx, b.batch, b.state.RaftAppliedIndex, b.state.LeaseAppliedIndex, b.state.Stats,
+			ctx,
+			b.batch,
+			b.state.RaftAppliedIndex,
+			b.state.LeaseAppliedIndex,
+			b.state.Stats,
+			b.state.ClosedTimestamp,
 		); err != nil {
 			return wrapWithNonDeterministicFailure(err, "unable to set range applied state")
 		}

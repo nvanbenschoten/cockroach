@@ -17,7 +17,6 @@ import (
 	"github.com/cockroachdb/cockroach/pkg/base"
 	"github.com/cockroachdb/cockroach/pkg/kv/kvserver/batcheval"
 	"github.com/cockroachdb/cockroach/pkg/kv/kvserver/batcheval/result"
-	"github.com/cockroachdb/cockroach/pkg/kv/kvserver/closedts/ctpb"
 	"github.com/cockroachdb/cockroach/pkg/kv/kvserver/concurrency"
 	"github.com/cockroachdb/cockroach/pkg/kv/kvserver/kvserverbase"
 	"github.com/cockroachdb/cockroach/pkg/kv/kvserver/kvserverpb"
@@ -83,8 +82,8 @@ func (r *Replica) executeWriteBatch(
 		return nil, g, roachpb.NewError(err)
 	}
 
-	minTS, untrack := r.store.cfg.ClosedTimestamp.Tracker.Track(ctx)
-	defer untrack(ctx, 0, 0, 0) // covers all error returns below
+	minTS, untrack := r.ctTracker.Track(ctx)
+	defer untrack(ctx) // covers all error returns below
 
 	// Examine the timestamp cache for preceding commands which require this
 	// command to move its timestamp forward. Or, in the case of a transactional
@@ -161,7 +160,7 @@ func (r *Replica) executeWriteBatch(
 			log.Fatalf(ctx,
 				"lease applied index bumped by %v while the range was subsumed", ba)
 		}
-		untrack(ctx, ctpb.Epoch(st.Lease.Epoch), r.RangeID, ctpb.LAI(maxLeaseIndex))
+		untrack(ctx)
 	}
 
 	// If the command was accepted by raft, wait for the range to apply it.

@@ -24,6 +24,7 @@ import (
 	"github.com/cockroachdb/cockroach/pkg/kv/kvserver/abortspan"
 	"github.com/cockroachdb/cockroach/pkg/kv/kvserver/batcheval"
 	"github.com/cockroachdb/cockroach/pkg/kv/kvserver/closedts/ctpb"
+	"github.com/cockroachdb/cockroach/pkg/kv/kvserver/closedts/minprop"
 	"github.com/cockroachdb/cockroach/pkg/kv/kvserver/concurrency"
 	"github.com/cockroachdb/cockroach/pkg/kv/kvserver/gc"
 	"github.com/cockroachdb/cockroach/pkg/kv/kvserver/kvserverbase"
@@ -251,6 +252,12 @@ type Replica struct {
 	// tenantLimiter rate limits requests on a per-tenant basis and accumulates
 	// metrics about it.
 	tenantLimiter tenantrate.Limiter
+
+	// ctTracker provides each request with a timestamp in which it must
+	// evaluate above and tracks in-flight requests as they evaluate to
+	// hand them a closed timestamp before being proposed to Raft.
+	// TODO: fix this comment.
+	ctTracker *minprop.SingleRangeTracker
 
 	mu struct {
 		// Protects all fields in the mu struct.

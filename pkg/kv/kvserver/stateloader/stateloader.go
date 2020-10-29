@@ -83,6 +83,8 @@ func (rsl StateLoader) Load(
 
 		ms := as.RangeStats.ToStats()
 		s.Stats = &ms
+
+		s.ClosedTimestamp = as.ClosedTimestamp
 	} else {
 		if s.RaftAppliedIndex, s.LeaseAppliedIndex, err = rsl.LoadAppliedIndex(ctx, reader); err != nil {
 			return kvserverpb.ReplicaState{}, err
@@ -151,8 +153,10 @@ func (rsl StateLoader) Save(
 		}
 	}
 	if state.UsingAppliedStateKey {
-		rai, lai := state.RaftAppliedIndex, state.LeaseAppliedIndex
-		if err := rsl.SetRangeAppliedState(ctx, readWriter, rai, lai, ms); err != nil {
+		rai := state.RaftAppliedIndex
+		lai := state.LeaseAppliedIndex
+		ct := state.ClosedTimestamp
+		if err := rsl.SetRangeAppliedState(ctx, readWriter, rai, lai, ms, ct); err != nil {
 			return enginepb.MVCCStats{}, err
 		}
 	} else {
@@ -283,11 +287,13 @@ func (rsl StateLoader) SetRangeAppliedState(
 	readWriter storage.ReadWriter,
 	appliedIndex, leaseAppliedIndex uint64,
 	newMS *enginepb.MVCCStats,
+	closedTimestamp hlc.Timestamp,
 ) error {
 	as := enginepb.RangeAppliedState{
 		RaftAppliedIndex:  appliedIndex,
 		LeaseAppliedIndex: leaseAppliedIndex,
 		RangeStats:        newMS.ToPersistentStats(),
+		ClosedTimestamp:   closedTimestamp,
 	}
 	// The RangeAppliedStateKey is not included in stats. This is also reflected
 	// in C.MVCCComputeStats and ComputeStatsGo.
@@ -461,7 +467,14 @@ func (rsl StateLoader) SetMVCCStats(
 	if as, err := rsl.LoadRangeAppliedState(ctx, readWriter); err != nil {
 		return err
 	} else if as != nil {
-		return rsl.SetRangeAppliedState(ctx, readWriter, as.RaftAppliedIndex, as.LeaseAppliedIndex, newMS)
+		return rsl.SetRangeAppliedState(
+			ctx,
+			readWriter,
+			as.RaftAppliedIndex,
+			as.LeaseAppliedIndex,
+			newMS,
+			as.ClosedTimestamp,
+		)
 	}
 
 	return rsl.writeLegacyMVCCStatsInternal(ctx, readWriter, newMS)
