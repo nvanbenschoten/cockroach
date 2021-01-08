@@ -131,10 +131,8 @@ type Config struct {
 	// InFlightBackpressureLimit is the number of batches in flight above which
 	// sending clients should experience backpressure. If the batcher has more
 	// requests than this in flight it will not accept new requests until the
-	// number of in flight batches is again below this threshold. This value does
-	// not limit the number of batches which may ultimately be in flight as
-	// batches which are queued to send but not yet in flight will still send.
-	// Note that values	less than or equal to zero will result in the use of
+	// number of in flight batches is again below this threshold. Note that
+	// values less than or equal to zero will result in the use of
 	// DefaultInFlightBackpressureLimit.
 	InFlightBackpressureLimit int
 
@@ -148,7 +146,7 @@ const (
 	// TODO(ajwerner): Justify this number.
 	DefaultInFlightBackpressureLimit = 1000
 
-	// BackpressureRecoveryFraction is the fraction of InFlightBackpressureLimit
+	// backpressureRecoveryFraction is the fraction of InFlightBackpressureLimit
 	// used to detect when enough in flight requests have completed such that more
 	// requests should now be accepted. A value less than 1 is chosen in order to
 	// avoid thrashing on backpressure which might ultimately defeat the purpose
@@ -217,6 +215,17 @@ func validateConfig(cfg *Config) {
 	}
 }
 
+func (b *RequestBatcher) sendRequest(ctx context.Context, req *request) error {
+	select {
+	case b.requestChan <- req:
+		return nil
+	case <-b.cfg.Stopper.ShouldQuiesce():
+		return stop.ErrUnavailable
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
 // SendWithChan sends a request with a client provided response channel. The
 // client is responsible for ensuring that the passed respChan has a buffer at
 // least as large as the number of responses it expects to receive. Using an
@@ -226,7 +235,7 @@ func (b *RequestBatcher) SendWithChan(
 	ctx context.Context, respChan chan<- Response, rangeID roachpb.RangeID, req roachpb.Request,
 ) error {
 	select {
-	case b.requestChan <- b.pool.newRequest(ctx, rangeID, req, respChan):
+	case b.requestChan <- b.pool.newRequest(ctx, rangeID, req, respChan, nil /* respFunc */):
 		return nil
 	case <-b.cfg.Stopper.ShouldQuiesce():
 		return stop.ErrUnavailable
@@ -255,6 +264,20 @@ func (b *RequestBatcher) Send(
 		return nil, stop.ErrUnavailable
 	case <-ctx.Done():
 		return nil, ctx.Err()
+	}
+}
+
+// SendWithCallback ...
+func (b *RequestBatcher) SendWithCallback(
+	ctx context.Context, respFunc func(Response), rangeID roachpb.RangeID, req roachpb.Request,
+) error {
+	select {
+	case b.requestChan <- b.pool.newRequest(ctx, rangeID, req, nil /* respChan */, respFunc):
+		return nil
+	case <-b.cfg.Stopper.ShouldQuiesce():
+		return stop.ErrUnavailable
+	case <-ctx.Done():
+		return ctx.Err()
 	}
 }
 
@@ -344,8 +367,15 @@ func (b *RequestBatcher) sendBatch(ctx context.Context, ba *batch) {
 }
 
 func (b *RequestBatcher) sendResponse(req *request, resp Response) {
-	// This send should never block because responseChan is buffered.
-	req.responseChan <- resp
+	if req.responseChan != nil {
+		// This send should never block because responseChan is buffered.
+		req.responseChan <- resp
+	} else {
+		// This call can block, which can serve as a form of backpressure. This
+		// backpressure can propagate up to clients of the RequestBatcher once
+		// InFlightBackpressureLimit is reached.
+		req.responseFunc(resp)
+	}
 	b.pool.putRequest(req)
 }
 
@@ -399,7 +429,7 @@ func (b *RequestBatcher) run(ctx context.Context) {
 		// true.
 		inFlight = 0
 		// inBackPressure indicates whether the reqChan is enabled.
-		// It becomes true when inFlight exceeds b.cfg.InFlightBackpressureLimit.
+		// It becomes true when inFlight equals b.cfg.InFlightBackpressureLimit.
 		inBackPressure = false
 		// recoveryThreshold is the number of in flight requests below which the
 		// the inBackPressure state should exit.
@@ -414,14 +444,11 @@ func (b *RequestBatcher) run(ctx context.Context) {
 		}
 		sendBatch = func(ba *batch) {
 			inFlight++
-			if inFlight >= b.cfg.InFlightBackpressureLimit {
-				inBackPressure = true
-			}
 			b.sendBatch(sendCtx, ba)
 		}
 		handleSendDone = func() {
 			inFlight--
-			if inFlight < recoveryThreshold {
+			if inFlight <= recoveryThreshold {
 				inBackPressure = false
 			}
 		}
@@ -438,6 +465,13 @@ func (b *RequestBatcher) run(ctx context.Context) {
 				sendBatch(ba)
 			} else {
 				b.batches.upsert(ba)
+			}
+			// Consider applying backpressure.
+			queuedOrInFlight := b.batches.Len() + inFlight
+			if queuedOrInFlight == b.cfg.InFlightBackpressureLimit {
+				inBackPressure = true
+			} else if queuedOrInFlight > b.cfg.InFlightBackpressureLimit {
+				panic("queuedOrInFlight unexpectedly above backpressure limit")
 			}
 		}
 		deadline      time.Time
@@ -482,10 +516,13 @@ func (b *RequestBatcher) run(ctx context.Context) {
 }
 
 type request struct {
-	ctx          context.Context
-	req          roachpb.Request
-	rangeID      roachpb.RangeID
+	ctx     context.Context
+	req     roachpb.Request
+	rangeID roachpb.RangeID
+
+	// One of the following is set.
 	responseChan chan<- Response
+	responseFunc func(Response)
 }
 
 type batch struct {
@@ -560,14 +597,22 @@ func (p *pool) putResponseChan(r chan Response) {
 }
 
 func (p *pool) newRequest(
-	ctx context.Context, rangeID roachpb.RangeID, req roachpb.Request, responseChan chan<- Response,
+	ctx context.Context,
+	rangeID roachpb.RangeID,
+	req roachpb.Request,
+	respChan chan<- Response,
+	respFunc func(Response),
 ) *request {
+	if (respChan != nil) == (respFunc != nil) {
+		panic("either respChan or respFunc should be provided, not both")
+	}
 	r := p.requestPool.Get().(*request)
 	*r = request{
 		ctx:          ctx,
 		rangeID:      rangeID,
 		req:          req,
-		responseChan: responseChan,
+		responseChan: respChan,
+		responseFunc: respFunc,
 	}
 	return r
 }

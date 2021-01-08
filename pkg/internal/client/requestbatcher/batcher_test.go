@@ -155,43 +155,53 @@ func TestBatchesAtTheSameTime(t *testing.T) {
 
 func TestBackpressure(t *testing.T) {
 	defer leaktest.AfterTest(t)()
+	ctx := context.Background()
 	stopper := stop.NewStopper()
-	defer stopper.Stop(context.Background())
+	defer stopper.Stop(ctx)
 	sc := make(chanSender)
 	b := New(Config{
-		MaxIdle:                   50 * time.Millisecond,
-		MaxWait:                   50 * time.Millisecond,
-		MaxMsgsPerBatch:           1,
+		MaxIdle:                   10 * time.Millisecond,
+		MaxWait:                   10 * time.Millisecond,
+		MaxMsgsPerBatch:           2, // don't send immediately
 		Sender:                    sc,
 		Stopper:                   stopper,
-		InFlightBackpressureLimit: 3,
+		InFlightBackpressureLimit: 6,
 	})
 
-	// These 3 should all send without blocking but should put the batcher into
-	// back pressure.
-	sendChan := make(chan Response, 6)
-	assert.Nil(t, b.SendWithChan(context.Background(), sendChan, 1, &roachpb.GetRequest{}))
-	assert.Nil(t, b.SendWithChan(context.Background(), sendChan, 2, &roachpb.GetRequest{}))
-	assert.Nil(t, b.SendWithChan(context.Background(), sendChan, 3, &roachpb.GetRequest{}))
+	// These 6 should all send without blocking but should put the batcher into
+	// back pressure, even before any of them have actually finished waiting.
+	sendChan := make(chan Response, 8)
+	assert.Nil(t, b.SendWithChan(ctx, sendChan, 1, &roachpb.GetRequest{}))
+	assert.Nil(t, b.SendWithChan(ctx, sendChan, 2, &roachpb.GetRequest{}))
+	assert.Nil(t, b.SendWithChan(ctx, sendChan, 3, &roachpb.GetRequest{}))
+	assert.Nil(t, b.SendWithChan(ctx, sendChan, 4, &roachpb.GetRequest{}))
+	assert.Nil(t, b.SendWithChan(ctx, sendChan, 5, &roachpb.GetRequest{}))
+	assert.Nil(t, b.SendWithChan(ctx, sendChan, 6, &roachpb.GetRequest{}))
 	var sent int64
-	send := func() {
-		assert.Nil(t, b.SendWithChan(context.Background(), sendChan, 4, &roachpb.GetRequest{}))
+	send := func(id roachpb.RangeID) {
+		assert.Nil(t, b.SendWithChan(ctx, sendChan, id, &roachpb.GetRequest{}))
 		atomic.AddInt64(&sent, 1)
 	}
-	go send()
-	go send()
+	// Perform another call before the first three have finished waiting.
+	go send(7)
 	canReply := make(chan struct{})
 	reply := func(bs batchSend) {
 		<-canReply
 		bs.respChan <- batchResp{}
 	}
-	for i := 0; i < 3; i++ {
+	for i := 0; i < 6; i++ {
 		bs := <-sc
 		go reply(bs)
-		// We don't expect either of the calls to send to have finished yet.
+		// We don't expect the calls to send to have finished yet.
 		assert.Equal(t, int64(0), atomic.LoadInt64(&sent))
 	}
-	// Allow one reply to fly which should not unblock the requests.
+	// Perform another call now that the three have sent their batches but
+	// before they have received responses.
+	go send(8)
+	// We don't expect either of the calls to send to have finished yet.
+	assert.Equal(t, int64(0), atomic.LoadInt64(&sent))
+	// Allow one reply to fly which should not unblock the requests because the
+	// backpressure is held until equal to or below the recovery threshold of 4.
 	canReply <- struct{}{}
 	runtime.Gosched() // tickle the runtime in case there might be a timing bug
 	assert.Equal(t, int64(0), atomic.LoadInt64(&sent))
@@ -210,6 +220,138 @@ func TestBackpressure(t *testing.T) {
 	close(canReply)
 	reply(<-sc)
 	reply(<-sc)
+}
+
+func TestChainedBackpressure(t *testing.T) {
+	defer leaktest.AfterTest(t)()
+	ctx := context.Background()
+	stopper := stop.NewStopper()
+	defer stopper.Stop(ctx)
+
+	// Compose two batchers, with sends on the first batcher using a callback
+	// that sends on the second batcher. The first batcher is given a limit of 3
+	// in-flight requests and the second batcher is given a limit or 2 in-flight
+	// requests.
+	sc1, sc2 := make(chanSender), make(chanSender)
+	cfgTmpl := Config{
+		MaxIdle:         10 * time.Millisecond,
+		MaxWait:         10 * time.Millisecond,
+		MaxMsgsPerBatch: 2, // don't send immediately
+		Stopper:         stopper,
+	}
+	cfg1, cfg2 := cfgTmpl, cfgTmpl
+	cfg1.Sender, cfg2.Sender = sc1, sc2
+	cfg1.InFlightBackpressureLimit, cfg2.InFlightBackpressureLimit = 3, 2
+	b1, b2 := New(cfg1), New(cfg2)
+
+	// Walk a series of operations through the batcher and verify that
+	// backpressure is propagated all the way back through the composition of
+	// batcher objects, as expected.
+	var calls1, calls2 int64
+	call1Reply, call2Reply := make(chan struct{}), make(chan struct{})
+	callback2 := func(r Response) {
+		assert.NoError(t, r.Err)
+		atomic.AddInt64(&calls2, 1)
+		<-call2Reply
+	}
+	callback1 := func(r Response) {
+		assert.NoError(t, r.Err)
+		uniqueID := atomic.AddInt64(&calls1, 1)
+		assert.NoError(t, b2.SendWithCallback(ctx, callback2, roachpb.RangeID(uniqueID), &roachpb.PutRequest{}))
+		<-call1Reply
+	}
+	assert.NoError(t, b1.SendWithCallback(ctx, callback1, 1, &roachpb.GetRequest{}))
+	assert.NoError(t, b1.SendWithCallback(ctx, callback1, 2, &roachpb.GetRequest{}))
+	assert.NoError(t, b1.SendWithCallback(ctx, callback1, 3, &roachpb.GetRequest{}))
+	sent := int64(3)
+	send := func(id roachpb.RangeID) {
+		assert.NoError(t, b1.SendWithCallback(ctx, callback1, id, &roachpb.GetRequest{}))
+		atomic.AddInt64(&sent, 1)
+	}
+	go send(4)
+	go send(5)
+
+	// Asserts the number of requests sent to the sender and provides them with
+	// a response to allow them to return.
+	checkSentOn := func(sc chanSender, count int) {
+		for i := 0; i < count; i++ {
+			(<-sc).respChan <- batchResp{}
+		}
+		select {
+		case <-sc:
+			t.Error("channel unexpectedly sent on")
+		case <-time.After(5 * time.Millisecond):
+		}
+	}
+	// Asserts the number of requests that have reached various places in the
+	// pipeline.
+	// - expSent:   has been accepted by the first batcher
+	// - expCalls1: has reached the first batcher's callback
+	// - expCalls2: has reached the second batcher's callback
+	waitForCounts := func(expSent, expCalls1, expCalls2 int64) {
+		testutils.SucceedsSoon(t, func() error {
+			if numSent := atomic.LoadInt64(&sent); numSent != expSent {
+				return fmt.Errorf("expected %d to have been sent, so far %d", expSent, numSent)
+			}
+			if calls := atomic.LoadInt64(&calls1); calls != expCalls1 {
+				return fmt.Errorf("expected %d to be called by the first batcher, so far %d", expCalls1, calls)
+			}
+			if calls := atomic.LoadInt64(&calls2); calls != expCalls2 {
+				return fmt.Errorf("expected %d to be called by the second batcher, so far %d", expCalls2, calls)
+			}
+			return nil
+		})
+	}
+	waitForCounts(3, 0, 0)
+
+	// Let the first three requests through the first batcher.
+	checkSentOn(sc1, 3)
+	waitForCounts(3, 3, 0)
+
+	// Let two of those requests through the second batcher.
+	checkSentOn(sc1, 0)
+	checkSentOn(sc2, 2)
+	waitForCounts(3, 3, 2)
+
+	// Complete the second batcher's callback for one of those requests.
+	// Should allow the third request to proceed to the second batcher.
+	call2Reply <- struct{}{}
+	checkSentOn(sc1, 0)
+	checkSentOn(sc2, 1)
+	waitForCounts(3, 3, 3)
+
+	// Complete the first batcher's callback for one of those requests.
+	// Should allow the fourth request to proceed to the first batcher.
+	call1Reply <- struct{}{}
+	waitForCounts(4, 3, 3)
+
+	// Let the fourth request through the first batcher.
+	checkSentOn(sc1, 1)
+	checkSentOn(sc2, 0)
+	waitForCounts(4, 4, 3)
+
+	// Complete the second and third request's second batcher callback.
+	call2Reply <- struct{}{}
+	call2Reply <- struct{}{}
+	checkSentOn(sc1, 0)
+	checkSentOn(sc2, 1)
+	waitForCounts(4, 4, 4)
+
+	// Complete the second and third request's first batcher callback.
+	call1Reply <- struct{}{}
+	call1Reply <- struct{}{}
+	waitForCounts(5, 4, 4)
+
+	// Let the fifth request through the first and second batcher.
+	checkSentOn(sc1, 1)
+	checkSentOn(sc2, 1)
+	waitForCounts(5, 5, 5)
+
+	// Complete the remaining callbacks.
+	call2Reply <- struct{}{}
+	call2Reply <- struct{}{}
+	call1Reply <- struct{}{}
+	call1Reply <- struct{}{}
 }
 
 func TestBatcherSend(t *testing.T) {
@@ -246,6 +388,51 @@ func TestBatcherSend(t *testing.T) {
 	if err := g.Wait(); err != nil {
 		t.Fatalf("expected no errors, got %v", err)
 	}
+}
+
+func TestBatcherSendWithCallback(t *testing.T) {
+	defer leaktest.AfterTest(t)()
+	ctx := context.Background()
+	stopper := stop.NewStopper()
+	defer stopper.Stop(ctx)
+	sc := make(chanSender)
+	b := New(Config{
+		MaxIdle:         50 * time.Millisecond,
+		MaxWait:         50 * time.Millisecond,
+		MaxMsgsPerBatch: 3,
+		Sender:          sc,
+		Stopper:         stopper,
+	})
+	// Send 3 requests to range 2 and 2 to range 1.
+	// The 3rd range 2 request will trigger immediate sending due to the
+	// MaxMsgsPerBatch configuration. The range 1 batch will be sent after the
+	// MaxWait timeout expires.
+	var wg sync.WaitGroup
+	var calls int64
+	newCallback := func() func(Response) {
+		wg.Add(1)
+		return func(r Response) {
+			assert.NoError(t, r.Err)
+			atomic.AddInt64(&calls, 1)
+			wg.Done()
+		}
+	}
+	assert.NoError(t, b.SendWithCallback(ctx, newCallback(), 1, &roachpb.GetRequest{}))
+	assert.NoError(t, b.SendWithCallback(ctx, newCallback(), 2, &roachpb.GetRequest{}))
+	assert.NoError(t, b.SendWithCallback(ctx, newCallback(), 1, &roachpb.GetRequest{}))
+	assert.NoError(t, b.SendWithCallback(ctx, newCallback(), 2, &roachpb.GetRequest{}))
+	assert.NoError(t, b.SendWithCallback(ctx, newCallback(), 2, &roachpb.GetRequest{}))
+	// Wait for the range 2 request and ensure it contains 3 requests.
+	s := <-sc
+	assert.Len(t, s.ba.Requests, 3)
+	s.respChan <- batchResp{}
+	// Wait for the range 1 request and ensure it contains 2 requests.
+	s = <-sc
+	assert.Len(t, s.ba.Requests, 2)
+	s.respChan <- batchResp{}
+	// Make sure everything gets a response on its callback.
+	wg.Wait()
+	assert.Equal(t, int64(5), atomic.LoadInt64(&calls))
 }
 
 func TestSendAfterStopped(t *testing.T) {

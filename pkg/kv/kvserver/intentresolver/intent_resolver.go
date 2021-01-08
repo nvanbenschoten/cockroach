@@ -538,15 +538,22 @@ func (ir *IntentResolver) CleanupTxnIntentsAsync(
 ) error {
 	for i := range endTxns {
 		et := &endTxns[i] // copy for goroutine
+		locked, release := ir.lockInFlightTxnCleanup(ctx, et.Txn.ID)
+		if !locked {
+			continue
+		}
+		// defer release()
+
+		// Resolve intents.
+		opts := ResolveOptions{Poison: poison, MinTimestamp: txn.MinTimestamp}
+
 		if err := ir.runAsyncTask(ctx, allowSyncProcessing, func(ctx context.Context) {
 			locked, release := ir.lockInFlightTxnCleanup(ctx, et.Txn.ID)
 			if !locked {
 				return
 			}
 			defer release()
-			if err := ir.cleanupFinishedTxnIntents(
-				ctx, rangeID, et.Txn, et.Poison, nil, /* onComplete */
-			); err != nil {
+			if err := ir.cleanupFinishedTxnIntents(ctx, rangeID, et.Txn, et.Poison); err != nil {
 				if ir.every.ShouldLog() {
 					log.Warningf(ctx, "failed to cleanup transaction intents: %v", err)
 				}
@@ -610,9 +617,7 @@ func (ir *IntentResolver) CleanupTxnIntentsOnGCAsync(
 		func(ctx context.Context) {
 			var pushed, succeeded bool
 			defer func() {
-				if onComplete != nil {
-					onComplete(pushed, succeeded)
-				}
+				onComplete(pushed, succeeded)
 			}()
 			locked, release := ir.lockInFlightTxnCleanup(ctx, txn.ID)
 			if !locked {
@@ -647,21 +652,12 @@ func (ir *IntentResolver) CleanupTxnIntentsOnGCAsync(
 				txn = txn.Clone()
 				txn.Update(finalizedTxn)
 			}
-			var onCleanupComplete func(error)
-			if onComplete != nil {
-				onCompleteCopy := onComplete // copy onComplete for use in onCleanupComplete
-				onCleanupComplete = func(err error) {
-					onCompleteCopy(pushed, err == nil)
-				}
-			}
-			// Set onComplete to nil to disable the deferred call as the call has now
-			// been delegated to the callback passed to cleanupFinishedTxnIntents.
-			onComplete = nil
-			err := ir.cleanupFinishedTxnIntents(ctx, rangeID, txn, false /* poison */, onCleanupComplete)
-			if err != nil {
+			if err := ir.cleanupFinishedTxnIntents(ctx, rangeID, txn, false /* poison */); err != nil {
 				if ir.every.ShouldLog() {
 					log.Warningf(ctx, "failed to cleanup transaction intents: %+v", err)
 				}
+			} else {
+				succeeded = true
 			}
 		},
 	)
@@ -716,43 +712,20 @@ func (ir *IntentResolver) gcTxnRecord(
 }
 
 // cleanupFinishedTxnIntents cleans up a txn's extant intents and, when all
-// intents have been successfully resolved, the transaction record is GC'ed
-// asynchronously. onComplete will be called when all processing has completed
-// which is likely to be after this call returns in the case of success.
+// intents have been successfully resolved, the transaction record is GC'ed.
 func (ir *IntentResolver) cleanupFinishedTxnIntents(
-	ctx context.Context,
-	rangeID roachpb.RangeID,
-	txn *roachpb.Transaction,
-	poison bool,
-	onComplete func(error),
+	ctx context.Context, rangeID roachpb.RangeID, txn *roachpb.Transaction, poison bool,
 ) (err error) {
-	defer func() {
-		// When err is non-nil we are guaranteed that the async task is not started
-		// so there is no race on calling onComplete.
-		if err != nil && onComplete != nil {
-			onComplete(err)
-		}
-	}()
 	// Resolve intents.
 	opts := ResolveOptions{Poison: poison, MinTimestamp: txn.MinTimestamp}
 	if pErr := ir.ResolveIntents(ctx, txn.LocksAsLockUpdates(), opts); pErr != nil {
-		return errors.Wrapf(pErr.GoError(), "failed to resolve intents")
+		return errors.Wrap(pErr.GoError(), "failed to resolve intents")
 	}
-	// Run transaction record GC outside of ir.sem.
-	return ir.stopper.RunAsyncTask(
-		ctx,
-		"storage.IntentResolver: cleanup txn records",
-		func(ctx context.Context) {
-			err := ir.gcTxnRecord(ctx, rangeID, txn)
-			if onComplete != nil {
-				onComplete(err)
-			}
-			if err != nil {
-				if ir.every.ShouldLog() {
-					log.Warningf(ctx, "failed to gc transaction record: %v", err)
-				}
-			}
-		})
+	// Garbage collect the transaction record.
+	if err := ir.gcTxnRecord(ctx, rangeID, txn); err != nil {
+		return errors.Wrapf(err, "failed to gc transaction record")
+	}
+	return nil
 }
 
 // ResolveOptions is used during intent resolution.
