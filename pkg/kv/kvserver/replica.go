@@ -289,6 +289,7 @@ type Replica struct {
 		// requests should be held until the completion of the merge is signaled by
 		// the closing of the channel.
 		mergeComplete chan struct{}
+		mergeTxnID    uuid.UUID
 		// freezeStart indicates the subsumption time of this range when it is the
 		// right-hand range in an ongoing merge. This range will allow read-only
 		// traffic below this timestamp, while blocking everything else, until the
@@ -1343,6 +1344,11 @@ func (r *Replica) shouldWaitForPendingMergeRLocked(
 	if ba.IsSingleSubsumeRequest() {
 		return nil
 	}
+	if ba.Txn != nil && ba.Txn.ID == r.mu.mergeTxnID {
+		if ba.IsSingleRefreshRequest() {
+			return nil
+		}
+	}
 
 	// TODO(nvanbenschoten): this isn't quite right. We shouldn't allow non-txn
 	// requests through here for the same reason why lease transfers can only
@@ -1498,7 +1504,9 @@ func (r *Replica) maybeWatchForMerge(ctx context.Context, freezeStart hlc.Timest
 func (r *Replica) maybeWatchForMergeLocked(ctx context.Context, freezeStart hlc.Timestamp) error {
 	desc := r.descRLocked()
 	descKey := keys.RangeDescriptorKey(desc.StartKey)
-	_, intent, err := storage.MVCCGet(ctx, r.Engine(), descKey, r.Clock().Now(),
+	// NOTE: Read inconsistently at the maximum timestamp to ensure that we see
+	// an intent if one exists, regardless of what timestamp it is written at.
+	_, intent, err := storage.MVCCGet(ctx, r.Engine(), descKey, hlc.MaxTimestamp,
 		storage.MVCCGetOptions{Inconsistent: true})
 	if err != nil {
 		return err
@@ -1532,6 +1540,7 @@ func (r *Replica) maybeWatchForMergeLocked(ctx context.Context, freezeStart hlc.
 	// This is fine.
 	r.mu.freezeStart = freezeStart
 	r.mu.mergeComplete = mergeCompleteCh
+	r.mu.mergeTxnID = intent.Txn.ID
 	// The RHS of a merge is not permitted to quiesce while a mergeComplete
 	// channel is installed. (If the RHS is quiescent when the merge commits, any
 	// orphaned followers would fail to queue themselves for GC.) Unquiesce the
@@ -1649,6 +1658,7 @@ func (r *Replica) maybeWatchForMergeLocked(ctx context.Context, freezeStart hlc.
 		// error. If the merge aborted, the requests will be handled normally.
 		r.mu.freezeStart = hlc.Timestamp{}
 		r.mu.mergeComplete = nil
+		r.mu.mergeTxnID = uuid.UUID{}
 		close(mergeCompleteCh)
 		r.mu.Unlock()
 		r.raftMu.Unlock()

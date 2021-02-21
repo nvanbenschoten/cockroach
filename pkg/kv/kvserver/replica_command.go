@@ -702,18 +702,6 @@ func (r *Replica) AdminMerge(
 			return err
 		}
 
-		// Refresh the transaction so that the transaction won't try to refresh
-		// its reads on the RHS after it is frozen.
-		if err := txn.ManualRefresh(ctx); err != nil {
-			return err
-		}
-
-		// Freeze the commit timestamp of the transaction to prevent future pushes
-		// due to high-priority reads from other transactions. Any attempt to
-		// refresh reads on the RHS would result in a stalled merge because the
-		// RHS will be frozen after the Subsume is sent.
-		_ = txn.CommitTimestamp()
-
 		// Intents have been placed, so the merge is now in its critical phase. Get
 		// a consistent view of the data from the right-hand range. If the merge
 		// commits, we'll write this data to the left-hand range in the merge

@@ -221,6 +221,16 @@ func (ba *BatchRequest) IsSingleAbortTxnRequest() bool {
 	return false
 }
 
+// IsSingleRefreshRequest returns true iff the batch contains a single request,
+// and that request is a RefreshRequest or a RefreshRangeRequest.
+func (ba *BatchRequest) IsSingleRefreshRequest() bool {
+	if ba.IsSingleRequest() {
+		m := ba.Requests[0].GetInner().Method()
+		return m == Refresh || m == RefreshRange
+	}
+	return false
+}
+
 // IsSingleSubsumeRequest returns true iff the batch contains a single request,
 // and that request is an SubsumeRequest.
 func (ba *BatchRequest) IsSingleSubsumeRequest() bool {
