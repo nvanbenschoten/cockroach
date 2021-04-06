@@ -947,13 +947,21 @@ func (r *Replica) applySnapshot(
 	stats.subsumedReplicas = timeutil.Now()
 
 	// Ingest all SSTs atomically.
+	ssts := inSnap.SSTStorageScratch.SSTs()
 	if fn := r.store.cfg.TestingKnobs.BeforeSnapshotSSTIngestion; fn != nil {
-		if err := fn(inSnap, inSnap.snapType, inSnap.SSTStorageScratch.SSTs()); err != nil {
+		if err := fn(inSnap, inSnap.snapType, ssts); err != nil {
 			return err
 		}
 	}
-	if err := r.store.engine.IngestExternalFiles(ctx, inSnap.SSTStorageScratch.SSTs()); err != nil {
-		return errors.Wrapf(err, "while ingesting %s", inSnap.SSTStorageScratch.SSTs())
+	writeBatchLimit := snapshotSSTIngestAsWriteBatchThreshold.Get(&r.store.cfg.Settings.SV)
+	if inSnap.SSTStorageScratch.Bytes() < writeBatchLimit {
+		if err := r.ingestExternalFilesUsingWriteBatch(ctx, ssts); err != nil {
+			return errors.Wrapf(err, "while ingesting %s using a WriteBatch", ssts)
+		}
+	} else {
+		if err := r.store.engine.IngestExternalFiles(ctx, ssts); err != nil {
+			return errors.Wrapf(err, "while ingesting %s", ssts)
+		}
 	}
 	stats.ingestion = timeutil.Now()
 
@@ -1208,6 +1216,23 @@ func (r *Replica) clearSubsumedReplicaInMemoryData(
 		}
 	}
 	return nil
+}
+
+// ingestExternalFilesUsingWriteBatch ...
+func (r *Replica) ingestExternalFilesUsingWriteBatch(ctx context.Context, ssts []string) error {
+	b := r.store.engine.NewUnindexedBatch(true /* writeOnly */)
+	defer b.Close()
+	for _, sst := range ssts {
+		f, err := r.store.engine.Open(sst)
+		if err != nil {
+			return errors.Wrapf(err, "opening %q to ingest", sst)
+		}
+		defer f.Close()
+		if err := storage.CopySST(b, f); err != nil {
+			return errors.Wrapf(err, "copying %q to ingest", sst)
+		}
+	}
+	return b.Commit(true /* sync */)
 }
 
 // extractRangeFromEntries returns a string representation of the range of

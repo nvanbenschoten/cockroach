@@ -893,6 +893,13 @@ var snapshotSSTWriteSyncRate = settings.RegisterByteSizeSetting(
 	validatePositive,
 )
 
+var snapshotSSTIngestAsWriteBatchThreshold = settings.RegisterByteSizeSetting(
+	"kv.snapshot_sst.ingest_as_write_batch_threshold",
+	"threshold below which snapshot SSTs will be ingested using a WriteBatch",
+	4<<20, /* 4 MB */
+	validatePositive,
+)
+
 func snapshotRateLimit(
 	st *cluster.Settings, priority SnapshotRequest_Priority,
 ) (rate.Limit, error) {

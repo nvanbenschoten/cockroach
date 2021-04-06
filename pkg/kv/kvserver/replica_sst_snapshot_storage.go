@@ -67,6 +67,7 @@ type SSTSnapshotStorageScratch struct {
 	ssts       []string
 	snapDir    string
 	dirCreated bool
+	bytes      int64
 }
 
 func (s *SSTSnapshotStorageScratch) filename(id int) string {
@@ -129,6 +130,11 @@ func (s *SSTSnapshotStorageScratch) SSTs() []string {
 	return s.ssts
 }
 
+// Bytes returns the total data size of all sst files.
+func (s *SSTSnapshotStorageScratch) Bytes() int64 {
+	return s.bytes
+}
+
 // Clear removes the directory and SSTs created for a particular snapshot.
 func (s *SSTSnapshotStorageScratch) Clear() error {
 	return s.storage.engine.RemoveAll(s.snapDir)
@@ -181,6 +187,7 @@ func (f *SSTSnapshotStorageFile) Write(contents []byte) (int, error) {
 		return 0, err
 	}
 	limitBulkIOWrite(f.ctx, f.scratch.storage.limiter, len(contents))
+	f.scratch.bytes += int64(len(contents))
 	return f.file.Write(contents)
 }
 
