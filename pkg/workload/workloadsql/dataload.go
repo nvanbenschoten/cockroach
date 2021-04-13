@@ -50,24 +50,17 @@ func (l InsertsDataLoader) InitialDataLoad(
 	}
 
 	tables := gen.Tables()
+	for _, table := range tables {
+		createStmt := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS "%s" %s`, table.Name, table.Schema)
+		if _, err := db.ExecContext(ctx, createStmt); err != nil {
+			return 0, errors.Wrapf(err, "could not create table %s when running\n%s", table.Name, createStmt)
+		}
+	}
+
 	var hooks workload.Hooks
 	if h, ok := gen.(workload.Hookser); ok {
 		hooks = h.Hooks()
 	}
-
-	if hooks.PreCreate != nil {
-		if err := hooks.PreCreate(db); err != nil {
-			return 0, errors.Wrapf(err, "Could not precreate")
-		}
-	}
-
-	for _, table := range tables {
-		createStmt := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS "%s" %s`, table.Name, table.Schema)
-		if _, err := db.ExecContext(ctx, createStmt); err != nil {
-			return 0, errors.Wrapf(err, "could not create table: %s", table.Name)
-		}
-	}
-
 	if hooks.PreLoad != nil {
 		if err := hooks.PreLoad(db); err != nil {
 			return 0, errors.Wrapf(err, "Could not preload")

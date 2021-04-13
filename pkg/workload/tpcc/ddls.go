@@ -13,6 +13,7 @@ package tpcc
 import (
 	gosql "database/sql"
 	"fmt"
+	"strings"
 
 	"github.com/cockroachdb/errors"
 	"golang.org/x/sync/errgroup"
@@ -116,8 +117,7 @@ const (
 		o_ol_cnt     integer,
 		o_all_local  integer,
 		primary key  (o_w_id, o_d_id, o_id DESC),
-		unique index order_idx (o_w_id, o_d_id, o_c_id, o_id DESC) storing (o_entry_d, o_carrier_id)
-	)`
+		unique index order_idx (o_w_id, o_d_id, o_c_id, o_id DESC) storing (o_entry_d, o_carrier_id)`
 	tpccOrderSchemaInterleaveSuffix = `
 		interleave in parent district (o_w_id, o_d_id)`
 
@@ -126,8 +126,7 @@ const (
 		no_o_id  integer   not null,
 		no_d_id  integer   not null,
 		no_w_id  integer   not null,
-		primary key (no_w_id, no_d_id, no_o_id)
-	)`
+		primary key (no_w_id, no_d_id, no_o_id)`
 	// This natural-seeming interleave makes performance worse, because this
 	// table has a ton of churn and produces a lot of MVCC tombstones, which
 	// then will gum up the works of scans over the parent table.
@@ -187,8 +186,17 @@ const (
 	tpccOrderLineSchemaInterleaveSuffix = `
 		interleave in parent "order" (ol_w_id, ol_d_id, ol_o_id)`
 
+	localityRegionalByRowSuffix = `
+		locality regional by row`
+	localityGlobalSuffix = `
+		locality global`
+
 	endSchema = "\n\t)"
 )
+
+func addEndSchema(base string) string {
+	return base + endSchema
+}
 
 func maybeAddFkSuffix(fks bool, base, suffix string) string {
 	if !fks {
@@ -209,6 +217,39 @@ func maybeAddInterleaveSuffix(interleave bool, base, suffix string) string {
 		return base
 	}
 	return base + suffix
+}
+
+func maybeAddCrdbRegionCol(regions []string, base, partColName string) string {
+	if len(regions) == 0 {
+		return base
+	}
+	var b strings.Builder
+	b.WriteString(base)
+	fmt.Fprintf(&b, `,
+               crdb_region crdb_internal_region NOT VISIBLE NOT NULL AS (
+                       CASE %s %% %d`, partColName, len(regions))
+	for i, region := range regions {
+		fmt.Fprintf(&b, `
+                       WHEN %d THEN '%s'`, i, region)
+	}
+	b.WriteString(`
+                       END
+               ) STORED`)
+	return b.String()
+}
+
+func maybeAddLocalitySuffix(regions []string, locality tableLocality, base string) string {
+	if len(regions) == 0 {
+		return base
+	}
+	switch locality {
+	case regionalByRow:
+		return base + localityRegionalByRowSuffix
+	case global:
+		return base + localityGlobalSuffix
+	default:
+		panic("unexpected")
+	}
 }
 
 func scatterRanges(db *gosql.DB) error {
