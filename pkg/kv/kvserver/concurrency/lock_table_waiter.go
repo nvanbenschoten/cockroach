@@ -157,6 +157,7 @@ func (w *lockTableWaiterImpl) WaitOn(
 		case <-newStateC:
 			timerC = nil
 			state := guard.CurState()
+			log.Eventf(ctx, "lock wait-queue event: %s", state)
 			switch state.kind {
 			case waitFor, waitForDistinguished:
 				if req.WaitPolicy == lock.WaitPolicy_Error {
