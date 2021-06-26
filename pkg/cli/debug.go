@@ -266,7 +266,7 @@ func runDebugRangeData(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	desc, err := loadRangeDescriptor(db, rangeID)
+	desc, _, err := loadRangeDescriptor(db, rangeID)
 	if err != nil {
 		return err
 	}
@@ -299,8 +299,9 @@ Prints all range descriptors in a store with a history of changes.
 
 func loadRangeDescriptor(
 	db engine.Engine, rangeID roachpb.RangeID,
-) (roachpb.RangeDescriptor, error) {
+) (roachpb.RangeDescriptor, hlc.Timestamp, error) {
 	var desc roachpb.RangeDescriptor
+	var ts hlc.Timestamp
 	handleKV := func(kv engine.MVCCKeyValue) (bool, error) {
 		if kv.Key.Timestamp == (hlc.Timestamp{}) {
 			// We only want values, not MVCCMetadata.
@@ -319,6 +320,7 @@ func loadRangeDescriptor(
 			log.Warningf(context.Background(), "ignoring range descriptor due to error %s: %+v", err, kv)
 			return false, nil
 		}
+		ts = kv.Key.Timestamp
 		return desc.RangeID == rangeID, nil
 	}
 
@@ -328,12 +330,12 @@ func loadRangeDescriptor(
 	end := engine.MakeMVCCMetadataKey(keys.LocalRangeMax)
 
 	if err := db.Iterate(start, end, handleKV); err != nil {
-		return roachpb.RangeDescriptor{}, err
+		return roachpb.RangeDescriptor{}, hlc.Timestamp{}, err
 	}
 	if desc.RangeID == rangeID {
-		return desc, nil
+		return desc, ts, nil
 	}
-	return roachpb.RangeDescriptor{}, fmt.Errorf("range descriptor %d not found", rangeID)
+	return roachpb.RangeDescriptor{}, hlc.Timestamp{}, fmt.Errorf("range descriptor %d not found", rangeID)
 }
 
 func runDebugRangeDescriptors(cmd *cobra.Command, args []string) error {
@@ -1237,6 +1239,81 @@ func removeDeadReplicas(
 	return batch, nil
 }
 
+var removeConflictingReplicaCmd = &cobra.Command{
+	Use:   "remove-conflicting-replicas [path] [repl1 (not deleted)] [repl2 (deleted)] [doit]",
+	Short: "Remove a replica that has a conflict",
+	Long:  `Add stuff here`,
+	Args:  cobra.MinimumNArgs(2),
+	RunE:  MaybeDecorateGRPCError(runRemoveConflictingReplicaCmd),
+}
+
+func removeReplica(
+	ctx context.Context,
+	db *engine.RocksDB,
+	desc roachpb.RangeDescriptor,
+	ts hlc.Timestamp,
+	doIt bool,
+) error {
+	batch := db.NewBatch()
+	defer batch.Close()
+	localDescKey := keys.RangeDescriptorKey(desc.StartKey)
+	fmt.Printf("deleting local range descriptor: %v\n", localDescKey)
+	if err := engine.MVCCDelete(ctx, batch, nil, localDescKey, ts, nil); err != nil {
+		return err
+	}
+
+	tombstoneKey := keys.RaftTombstoneKey(desc.RangeID)
+	tombstone := &roachpb.RaftTombstone{NextReplicaID: desc.NextReplicaID}
+	fmt.Printf("writing tombstone key: %v\n", tombstoneKey)
+	if err := engine.MVCCPutProto(
+		ctx, batch, nil, tombstoneKey, hlc.Timestamp{}, nil, tombstone,
+	); err != nil {
+		return err
+	}
+	if doIt {
+		fmt.Println("doing it!")
+		return batch.Commit(true)
+	}
+	fmt.Println("dry run, not committing")
+	return nil
+}
+
+func runRemoveConflictingReplicaCmd(cmd *cobra.Command, args []string) error {
+	stopper := stop.NewStopper()
+	defer stopper.Stop(context.Background())
+
+	db, err := OpenExistingStore(args[0], stopper, false /* readOnly */)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	ctx := context.Background()
+	id1, _ := strconv.Atoi(args[1])
+	desc1, ts1, err1 := loadRangeDescriptor(db, roachpb.RangeID(id1))
+	if err1 != nil {
+		return err1
+	}
+	fmt.Printf("Found descriptor 1: %v with ts %v\n", desc1, ts1)
+	id2, _ := strconv.Atoi(args[2])
+	desc2, ts2, err2 := loadRangeDescriptor(db, roachpb.RangeID(id2))
+	if err2 != nil {
+		return err2
+	}
+	fmt.Printf("Found descriptor 2: %v with ts %v\n", desc2, ts2)
+
+	// Don't do anything unless we're sure.
+	doIt := len(args) > 3 && args[3] == "doit"
+
+	if desc1.ContainsKey(desc2.StartKey) || desc2.ContainsKey(desc1.StartKey) {
+		fmt.Printf("Removing %s from the store\n", desc2.RangeID.String())
+	} else {
+		fmt.Printf("Not doing anything with %s and %s\n", desc2.RangeID.String(), desc1.RangeID.String())
+		return nil
+	}
+	return removeReplica(ctx, db, desc2, ts1, doIt)
+}
+
 var debugMergeLogsCommand = &cobra.Command{
 	Use:   "merge-logs <log file globs>",
 	Short: "merge multiple log files from different machines into a single stream",
@@ -1300,6 +1377,7 @@ var debugCmds = append(DebugCmdsForRocksDB,
 	debugSyncBenchCmd,
 	debugSyncTestCmd,
 	debugUnsafeRemoveDeadReplicasCmd,
+	removeConflictingReplicaCmd,
 	debugEnvCmd,
 	debugZipCmd,
 	debugMergeLogsCommand,
