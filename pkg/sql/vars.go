@@ -1992,6 +1992,14 @@ func (p *planner) GetSessionVar(
 	_ context.Context, varName string, missingOk bool,
 ) (bool, string, error) {
 	name := strings.ToLower(varName)
+	if isCustomOption(name) {
+		v, ok := p.SessionData().CustomOptions[name]
+		if !ok && !missingOk {
+			return false, "", pgerror.Newf(pgcode.UndefinedObject,
+				"unrecognized configuration parameter %q", name)
+		}
+		return true, v, nil
+	}
 	ok, v, err := getSessionVar(name, missingOk)
 	if err != nil || !ok {
 		return ok, "", err
@@ -2002,6 +2010,18 @@ func (p *planner) GetSessionVar(
 // SetSessionVar implements the EvalSessionAccessor interface.
 func (p *planner) SetSessionVar(ctx context.Context, varName, newVal string, isLocal bool) error {
 	name := strings.ToLower(varName)
+	if isCustomOption(name) {
+		// Ignore isLocal.
+		_ = isLocal
+		return p.applyOnSessionDataMutators(
+			ctx,
+			isLocal,
+			func(m sessionDataMutator) error {
+				m.SetCustomOption(name, newVal)
+				return nil
+			},
+		)
+	}
 	_, v, err := getSessionVar(name, false /* missingOk */)
 	if err != nil {
 		return err
@@ -2030,4 +2050,8 @@ func (p *planner) SetSessionVar(ctx context.Context, varName, newVal string, isL
 			return v.Set(ctx, m, newVal)
 		},
 	)
+}
+
+func isCustomOption(varName string) bool {
+	return strings.Contains(varName, ".")
 }

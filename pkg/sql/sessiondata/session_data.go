@@ -48,6 +48,9 @@ type SessionData struct {
 	// SequenceState gives access to the SQL sequences that have been
 	// manipulated by the session.
 	SequenceState *SequenceState
+	// WIP: Support custom session options.
+	// Tracked in https://github.com/cockroachdb/cockroach/issues/70033.
+	CustomOptions map[string]string
 }
 
 // Clone returns a clone of SessionData.

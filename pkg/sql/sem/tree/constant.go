@@ -495,6 +495,9 @@ var (
 		types.AnyEnumArray,
 		types.INetArray,
 		types.VarBitArray,
+		// WIP: support string literal -> tuple[] parsing.
+		// Tracked in https://github.com/cockroachdb/cockroach/issues/70030.
+		types.AnyTupleArray,
 	}
 	// StrValAvailBytes is the set of types convertible to byte array.
 	StrValAvailBytes = []*types.T{types.Bytes, types.Uuid, types.String, types.AnyEnum}
