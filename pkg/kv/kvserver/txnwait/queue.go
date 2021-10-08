@@ -134,6 +134,20 @@ func (pt *pendingTxn) getTxn() *roachpb.Transaction {
 	return pt.txn.Load().(*roachpb.Transaction)
 }
 
+func (pt *pendingTxn) takeWaitingPushes() list.List {
+	wp := pt.waitingPushes
+	pt.waitingPushes = list.List{}
+	return wp
+}
+
+// Only do so if the
+// waitingPushes list isn't already empty. If it is, the pending push ... TODO
+func (pt *pendingTxn) removeFromWaitingPushes(e *list.Element) {
+	if pt.waitingPushes.Len() != 0 {
+		pt.waitingPushes.Remove(e)
+	}
+}
+
 func (pt *pendingTxn) getDependentsSet() map[uuid.UUID]struct{} {
 	set := map[uuid.UUID]struct{}{}
 	for e := pt.waitingPushes.Front(); e != nil; e = e.Next() {
@@ -219,8 +233,9 @@ func (q *Queue) Clear(disable bool) {
 	pushWaiterLists := make([]list.List, 0, len(q.mu.txns))
 	pushWaiterCount := 0
 	for _, pt := range q.mu.txns {
-		pushWaiterLists = append(pushWaiterLists, pt.waitingPushes)
-		pushWaiterCount += pt.waitingPushes.Len()
+		waitingPushes := pt.takeWaitingPushes()
+		pushWaiterLists = append(pushWaiterLists, waitingPushes)
+		pushWaiterCount += waitingPushes.Len()
 	}
 
 	queryWaiters := q.mu.queries
@@ -327,7 +342,7 @@ func (q *Queue) UpdateTxn(ctx context.Context, txn *roachpb.Transaction) {
 		q.mu.Unlock()
 		return
 	}
-	waitingPushes := pending.waitingPushes
+	waitingPushes := pending.takeWaitingPushes()
 	pending.txn.Store(txn)
 	delete(q.mu.txns, txn.ID)
 	q.mu.Unlock()
@@ -453,7 +468,7 @@ func (q *Queue) MaybeWaitForPush(
 	// When we return, remove our push from the pending queue.
 	defer func() {
 		q.mu.Lock()
-		pending.waitingPushes.Remove(pushElem)
+		pending.removeFromWaitingPushes(pushElem)
 		q.mu.Unlock()
 	}()
 
