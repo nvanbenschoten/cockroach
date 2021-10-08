@@ -130,12 +130,6 @@ func TestTxnWaitQueueEnableDisable(t *testing.T) {
 
 	// Now disable the queue and make sure the waiter is returned.
 	q.Clear(true /* disable */)
-	if q.IsEnabled() {
-		t.Errorf("expected queue to be disabled")
-	}
-	if err := checkAllGaugesZero(tc); err != nil {
-		t.Fatal(err.Error())
-	}
 
 	respWithErr := <-retCh
 	if respWithErr.resp != nil {
@@ -145,6 +139,12 @@ func TestTxnWaitQueueEnableDisable(t *testing.T) {
 		t.Errorf("expected nil err; got %+v", respWithErr.pErr)
 	}
 
+	if q.IsEnabled() {
+		t.Errorf("expected queue to be disabled")
+	}
+	if err := checkAllGaugesZero(tc); err != nil {
+		t.Fatal(err.Error())
+	}
 	if deps := q.GetDependents(txn.ID); deps != nil {
 		t.Errorf("expected GetDependents to return nil as queue is disabled; got %+v", deps)
 	}
@@ -408,7 +408,7 @@ func TestTxnWaitQueueTxnSilentlyCompletes(t *testing.T) {
 		t.Errorf("expected committed txn response; got %+v, err=%v", respWithErr.resp, respWithErr.pErr)
 	}
 	testutils.SucceedsSoon(t, func() error {
-		if act, exp := m.PusherWaiting.Value(), int64(1); act != exp {
+		if act, exp := m.PusherWaiting.Value(), int64(0); act != exp {
 			return errors.Errorf("%d pushers, but want %d", act, exp)
 		}
 		if act, exp := m.PusheeWaiting.Value(), int64(1); act != exp {
@@ -560,7 +560,7 @@ func TestTxnWaitQueuePusheeExpires(t *testing.T) {
 
 	m := tc.store.txnWaitMetrics
 	testutils.SucceedsSoon(t, func() error {
-		if act, exp := m.PusherWaiting.Value(), int64(2); act != exp {
+		if act, exp := m.PusherWaiting.Value(), int64(0); act != exp {
 			return errors.Errorf("%d pushers, but want %d", act, exp)
 		}
 		if act, exp := m.PusheeWaiting.Value(), int64(1); act != exp {
@@ -667,7 +667,7 @@ func TestTxnWaitQueuePusherUpdate(t *testing.T) {
 
 				m := tc.store.txnWaitMetrics
 				testutils.SucceedsSoon(t, func() error {
-					if act, exp := m.PusherWaiting.Value(), int64(1); act != exp {
+					if act, exp := m.PusherWaiting.Value(), int64(0); act != exp {
 						return errors.Errorf("%d pushers, but want %d", act, exp)
 					}
 					if act, exp := m.PusheeWaiting.Value(), int64(1); act != exp {
