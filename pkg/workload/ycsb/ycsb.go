@@ -98,6 +98,8 @@ type ycsb struct {
 	json        bool
 	families    bool
 	sfu         bool
+	stale       bool
+	upsert      bool
 	splits      int
 
 	workload                                                        string
@@ -121,6 +123,8 @@ var ycsbMeta = workload.Meta{
 		g.flags.FlagSet = pflag.NewFlagSet(`ycsb`, pflag.ContinueOnError)
 		g.flags.Meta = map[string]workload.FlagMeta{
 			`workload`: {RuntimeOnly: true},
+			`stale`:    {RuntimeOnly: true},
+			`upsert`:   {RuntimeOnly: true},
 		}
 		g.flags.Uint64Var(&g.seed, `seed`, 1, `Key hash seed.`)
 		g.flags.BoolVar(&g.timeString, `time-string`, false, `Prepend field[0-9] data with current time in microsecond precision.`)
@@ -132,6 +136,8 @@ var ycsbMeta = workload.Meta{
 		g.flags.BoolVar(&g.json, `json`, false, `Use JSONB rather than relational data`)
 		g.flags.BoolVar(&g.families, `families`, true, `Place each column in its own column family`)
 		g.flags.BoolVar(&g.sfu, `select-for-update`, true, `Use SELECT FOR UPDATE syntax in read-modify-write transactions`)
+		g.flags.BoolVar(&g.stale, `stale`, false, `Use bounded staleness reads in read-only queries`)
+		g.flags.BoolVar(&g.upsert, `upsert`, false, `Use upserts instead of updates to perform blind-writes`)
 		g.flags.IntVar(&g.splits, `splits`, 0, `Number of splits to perform before starting normal operations`)
 		g.flags.StringVar(&g.workload, `workload`, `B`, `Workload type. Choose from A-F.`)
 		g.flags.StringVar(&g.requestDistribution, `request-distribution`, ``, `Distribution for request key generation [zipfian, uniform, latest]. The default for workloads A, B, C, E, and F is zipfian, and the default for workload D is latest.`)
@@ -191,6 +197,9 @@ func (g *ycsb) Hooks() workload.Hooks {
 				// If `--families` was not specified, default its value to the
 				// configuration that we expect to lead to better performance.
 				g.families = preferColumnFamilies(g.workload)
+			}
+			if g.families && g.upsert {
+				return errors.Errorf("if --upsert is true, --families must be false")
 			}
 
 			if g.recordCount == 0 {
@@ -376,7 +385,11 @@ func (g *ycsb) Ops(
 	db.SetMaxOpenConns(g.connFlags.Concurrency + 1)
 	db.SetMaxIdleConns(g.connFlags.Concurrency + 1)
 
-	readStmt, err := db.Prepare(`SELECT * FROM usertable WHERE ycsb_key = $1`)
+	readQ := `SELECT ycsb_key, field0, field1, field2, field3, field4, field5, field6, field7, field8, field9 FROM usertable WHERE ycsb_key = $1`
+	if g.stale {
+		readQ = `SELECT ycsb_key, field0, field1, field2, field3, field4, field5, field6, field7, field8, field9 FROM usertable AS OF SYSTEM TIME with_max_staleness('1m') WHERE ycsb_key = $1`
+	}
+	readStmt, err := db.Prepare(readQ)
 	if err != nil {
 		return workload.QueryLoad{}, err
 	}
@@ -438,6 +451,17 @@ func (g *ycsb) Ops(
 	} else {
 		for i := 0; i < numTableFields; i++ {
 			q := fmt.Sprintf(`UPDATE usertable SET field%d = $2 WHERE ycsb_key = $1`, i)
+			if g.upsert {
+				fields := []string{`$1`}
+				for j := 0; j < numTableFields; j++ {
+					f := `''`
+					if i == j {
+						f = `$2`
+					}
+					fields = append(fields, f)
+				}
+				q = fmt.Sprintf(`UPSERT INTO usertable VALUES (%s)`, strings.Join(fields, ", "))
+			}
 			stmt, err := db.Prepare(q)
 			if err != nil {
 				return workload.QueryLoad{}, err
@@ -565,6 +589,8 @@ func (yw *ycsbWorker) run(ctx context.Context) error {
 
 	elapsed := timeutil.Since(start)
 	yw.hists.Get(string(op)).Record(elapsed)
+	// Used for CDF generation.
+	fmt.Printf("LATENCY: %s %d\n", op, elapsed.Nanoseconds())
 	return nil
 }
 
