@@ -862,6 +862,10 @@ func (c *conn) handleParse(
 				sqlTypeHints[i] = nil
 				continue
 			}
+			if t == oid.T_unknown {
+				sqlTypeHints[i] = nil
+				continue
+			}
 			v, ok := types.OidToType[t]
 			if !ok {
 				err := pgwirebase.NewProtocolViolationErrorf("unknown oid type: %v", t)

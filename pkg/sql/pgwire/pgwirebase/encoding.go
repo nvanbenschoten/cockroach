@@ -783,7 +783,9 @@ func DecodeDatum(
 		return tree.MakeDEnumFromLogicalRepresentation(t, string(b))
 	}
 	switch id {
-	case oid.T_text, oid.T_varchar:
+	case oid.T_text, oid.T_varchar, oid.T_unknown:
+		// WIP: support decoding unknown (OID 705) in text/binary format
+		// Tracked in https://github.com/cockroachdb/cockroach/issues/70027.
 		if err := validateStringBytes(b); err != nil {
 			return nil, err
 		}
