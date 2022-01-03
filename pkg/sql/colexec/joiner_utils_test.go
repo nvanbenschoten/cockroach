@@ -148,7 +148,7 @@ func (tc *joinTestCase) mutateTypes() []*joinTestCase {
 					case types.DecimalFamily:
 						var d apd.Decimal
 						_, _ = d.SetFloat64(float64(tups[i][j].(int)))
-						tups[i][j] = d
+						tups[i][j] = &d
 					case types.BytesFamily:
 						tups[i][j] = fmt.Sprintf("%.10d", tups[i][j].(int))
 					}

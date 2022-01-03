@@ -291,6 +291,8 @@ func getCmpGoType(typeFamily types.Family) string {
 		return toPhysicalRepresentation(types.TimestampTZFamily, anyWidth)
 	case types.TimeFamily, types.TimeTZFamily:
 		return "tree.Datum"
+	case types.DecimalFamily:
+		return "apd.Decimal"
 	}
 	return toPhysicalRepresentation(typeconv.TypeFamilyToCanonicalTypeFamily(typeFamily), anyWidth)
 }

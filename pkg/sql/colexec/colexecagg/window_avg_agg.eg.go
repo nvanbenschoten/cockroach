@@ -92,9 +92,6 @@ func (a *avgInt16WindowAgg) SetOutput(vec coldata.Vec) {
 func (a *avgInt16WindowAgg) Compute(
 	vecs []coldata.Vec, inputIdxs []uint32, startIdx, endIdx int, sel []int,
 ) {
-	// In order to inline the templated code of overloads, we need to have a
-	// "_overloadHelper" local variable of type "overloadHelper".
-	_overloadHelper := a.overloadHelper
 	oldCurSumSize := tree.SizeOfDecimal(&a.curSum)
 	vec := vecs[inputIdxs[0]]
 	col, nulls := vec.Int16(), vec.Nulls()
@@ -113,9 +110,9 @@ func (a *avgInt16WindowAgg) Compute(
 
 				{
 
-					tmpDec := &_overloadHelper.TmpDec1
+					var tmpDec apd.Decimal
 					tmpDec.SetInt64(int64(v))
-					if _, err := tree.ExactCtx.Add(&a.curSum, &a.curSum, tmpDec); err != nil {
+					if _, err := tree.ExactCtx.Add(&a.curSum, &a.curSum, &tmpDec); err != nil {
 						colexecerror.ExpectedError(err)
 					}
 				}
@@ -134,9 +131,9 @@ func (a *avgInt16WindowAgg) Compute(
 
 				{
 
-					tmpDec := &_overloadHelper.TmpDec1
+					var tmpDec apd.Decimal
 					tmpDec.SetInt64(int64(v))
-					if _, err := tree.ExactCtx.Add(&a.curSum, &a.curSum, tmpDec); err != nil {
+					if _, err := tree.ExactCtx.Add(&a.curSum, &a.curSum, &tmpDec); err != nil {
 						colexecerror.ExpectedError(err)
 					}
 				}
@@ -167,7 +164,8 @@ func (a *avgInt16WindowAgg) Flush(outputIdx int) {
 }
 
 func (a *avgInt16WindowAgg) Reset() {
-	a.curSum = zeroDecimalValue
+	zero := zeroDecimalValue
+	a.curSum.Set(zero)
 	a.curCount = 0
 }
 
@@ -195,9 +193,6 @@ func (a *avgInt16WindowAggAlloc) newAggFunc() AggregateFunc {
 // Remove implements the slidingWindowAggregateFunc interface (see
 // window_aggregator_tmpl.go).
 func (a *avgInt16WindowAgg) Remove(vecs []coldata.Vec, inputIdxs []uint32, startIdx, endIdx int) {
-	// In order to inline the templated code of overloads, we need to have a
-	// "_overloadHelper" local variable of type "overloadHelper".
-	_overloadHelper := a.overloadHelper
 	oldCurSumSize := tree.SizeOfDecimal(&a.curSum)
 	vec := vecs[inputIdxs[0]]
 	col, nulls := vec.Int16(), vec.Nulls()
@@ -213,9 +208,9 @@ func (a *avgInt16WindowAgg) Remove(vecs []coldata.Vec, inputIdxs []uint32, start
 
 				{
 
-					tmpDec := &_overloadHelper.TmpDec1
+					var tmpDec apd.Decimal
 					tmpDec.SetInt64(int64(v))
-					if _, err := tree.ExactCtx.Sub(&a.curSum, &a.curSum, tmpDec); err != nil {
+					if _, err := tree.ExactCtx.Sub(&a.curSum, &a.curSum, &tmpDec); err != nil {
 						colexecerror.ExpectedError(err)
 					}
 				}
@@ -234,9 +229,9 @@ func (a *avgInt16WindowAgg) Remove(vecs []coldata.Vec, inputIdxs []uint32, start
 
 				{
 
-					tmpDec := &_overloadHelper.TmpDec1
+					var tmpDec apd.Decimal
 					tmpDec.SetInt64(int64(v))
-					if _, err := tree.ExactCtx.Sub(&a.curSum, &a.curSum, tmpDec); err != nil {
+					if _, err := tree.ExactCtx.Sub(&a.curSum, &a.curSum, &tmpDec); err != nil {
 						colexecerror.ExpectedError(err)
 					}
 				}
@@ -275,9 +270,6 @@ func (a *avgInt32WindowAgg) SetOutput(vec coldata.Vec) {
 func (a *avgInt32WindowAgg) Compute(
 	vecs []coldata.Vec, inputIdxs []uint32, startIdx, endIdx int, sel []int,
 ) {
-	// In order to inline the templated code of overloads, we need to have a
-	// "_overloadHelper" local variable of type "overloadHelper".
-	_overloadHelper := a.overloadHelper
 	oldCurSumSize := tree.SizeOfDecimal(&a.curSum)
 	vec := vecs[inputIdxs[0]]
 	col, nulls := vec.Int32(), vec.Nulls()
@@ -296,9 +288,9 @@ func (a *avgInt32WindowAgg) Compute(
 
 				{
 
-					tmpDec := &_overloadHelper.TmpDec1
+					var tmpDec apd.Decimal
 					tmpDec.SetInt64(int64(v))
-					if _, err := tree.ExactCtx.Add(&a.curSum, &a.curSum, tmpDec); err != nil {
+					if _, err := tree.ExactCtx.Add(&a.curSum, &a.curSum, &tmpDec); err != nil {
 						colexecerror.ExpectedError(err)
 					}
 				}
@@ -317,9 +309,9 @@ func (a *avgInt32WindowAgg) Compute(
 
 				{
 
-					tmpDec := &_overloadHelper.TmpDec1
+					var tmpDec apd.Decimal
 					tmpDec.SetInt64(int64(v))
-					if _, err := tree.ExactCtx.Add(&a.curSum, &a.curSum, tmpDec); err != nil {
+					if _, err := tree.ExactCtx.Add(&a.curSum, &a.curSum, &tmpDec); err != nil {
 						colexecerror.ExpectedError(err)
 					}
 				}
@@ -350,7 +342,8 @@ func (a *avgInt32WindowAgg) Flush(outputIdx int) {
 }
 
 func (a *avgInt32WindowAgg) Reset() {
-	a.curSum = zeroDecimalValue
+	zero := zeroDecimalValue
+	a.curSum.Set(zero)
 	a.curCount = 0
 }
 
@@ -378,9 +371,6 @@ func (a *avgInt32WindowAggAlloc) newAggFunc() AggregateFunc {
 // Remove implements the slidingWindowAggregateFunc interface (see
 // window_aggregator_tmpl.go).
 func (a *avgInt32WindowAgg) Remove(vecs []coldata.Vec, inputIdxs []uint32, startIdx, endIdx int) {
-	// In order to inline the templated code of overloads, we need to have a
-	// "_overloadHelper" local variable of type "overloadHelper".
-	_overloadHelper := a.overloadHelper
 	oldCurSumSize := tree.SizeOfDecimal(&a.curSum)
 	vec := vecs[inputIdxs[0]]
 	col, nulls := vec.Int32(), vec.Nulls()
@@ -396,9 +386,9 @@ func (a *avgInt32WindowAgg) Remove(vecs []coldata.Vec, inputIdxs []uint32, start
 
 				{
 
-					tmpDec := &_overloadHelper.TmpDec1
+					var tmpDec apd.Decimal
 					tmpDec.SetInt64(int64(v))
-					if _, err := tree.ExactCtx.Sub(&a.curSum, &a.curSum, tmpDec); err != nil {
+					if _, err := tree.ExactCtx.Sub(&a.curSum, &a.curSum, &tmpDec); err != nil {
 						colexecerror.ExpectedError(err)
 					}
 				}
@@ -417,9 +407,9 @@ func (a *avgInt32WindowAgg) Remove(vecs []coldata.Vec, inputIdxs []uint32, start
 
 				{
 
-					tmpDec := &_overloadHelper.TmpDec1
+					var tmpDec apd.Decimal
 					tmpDec.SetInt64(int64(v))
-					if _, err := tree.ExactCtx.Sub(&a.curSum, &a.curSum, tmpDec); err != nil {
+					if _, err := tree.ExactCtx.Sub(&a.curSum, &a.curSum, &tmpDec); err != nil {
 						colexecerror.ExpectedError(err)
 					}
 				}
@@ -458,9 +448,6 @@ func (a *avgInt64WindowAgg) SetOutput(vec coldata.Vec) {
 func (a *avgInt64WindowAgg) Compute(
 	vecs []coldata.Vec, inputIdxs []uint32, startIdx, endIdx int, sel []int,
 ) {
-	// In order to inline the templated code of overloads, we need to have a
-	// "_overloadHelper" local variable of type "overloadHelper".
-	_overloadHelper := a.overloadHelper
 	oldCurSumSize := tree.SizeOfDecimal(&a.curSum)
 	vec := vecs[inputIdxs[0]]
 	col, nulls := vec.Int64(), vec.Nulls()
@@ -479,9 +466,9 @@ func (a *avgInt64WindowAgg) Compute(
 
 				{
 
-					tmpDec := &_overloadHelper.TmpDec1
+					var tmpDec apd.Decimal
 					tmpDec.SetInt64(int64(v))
-					if _, err := tree.ExactCtx.Add(&a.curSum, &a.curSum, tmpDec); err != nil {
+					if _, err := tree.ExactCtx.Add(&a.curSum, &a.curSum, &tmpDec); err != nil {
 						colexecerror.ExpectedError(err)
 					}
 				}
@@ -500,9 +487,9 @@ func (a *avgInt64WindowAgg) Compute(
 
 				{
 
-					tmpDec := &_overloadHelper.TmpDec1
+					var tmpDec apd.Decimal
 					tmpDec.SetInt64(int64(v))
-					if _, err := tree.ExactCtx.Add(&a.curSum, &a.curSum, tmpDec); err != nil {
+					if _, err := tree.ExactCtx.Add(&a.curSum, &a.curSum, &tmpDec); err != nil {
 						colexecerror.ExpectedError(err)
 					}
 				}
@@ -533,7 +520,8 @@ func (a *avgInt64WindowAgg) Flush(outputIdx int) {
 }
 
 func (a *avgInt64WindowAgg) Reset() {
-	a.curSum = zeroDecimalValue
+	zero := zeroDecimalValue
+	a.curSum.Set(zero)
 	a.curCount = 0
 }
 
@@ -561,9 +549,6 @@ func (a *avgInt64WindowAggAlloc) newAggFunc() AggregateFunc {
 // Remove implements the slidingWindowAggregateFunc interface (see
 // window_aggregator_tmpl.go).
 func (a *avgInt64WindowAgg) Remove(vecs []coldata.Vec, inputIdxs []uint32, startIdx, endIdx int) {
-	// In order to inline the templated code of overloads, we need to have a
-	// "_overloadHelper" local variable of type "overloadHelper".
-	_overloadHelper := a.overloadHelper
 	oldCurSumSize := tree.SizeOfDecimal(&a.curSum)
 	vec := vecs[inputIdxs[0]]
 	col, nulls := vec.Int64(), vec.Nulls()
@@ -579,9 +564,9 @@ func (a *avgInt64WindowAgg) Remove(vecs []coldata.Vec, inputIdxs []uint32, start
 
 				{
 
-					tmpDec := &_overloadHelper.TmpDec1
+					var tmpDec apd.Decimal
 					tmpDec.SetInt64(int64(v))
-					if _, err := tree.ExactCtx.Sub(&a.curSum, &a.curSum, tmpDec); err != nil {
+					if _, err := tree.ExactCtx.Sub(&a.curSum, &a.curSum, &tmpDec); err != nil {
 						colexecerror.ExpectedError(err)
 					}
 				}
@@ -600,9 +585,9 @@ func (a *avgInt64WindowAgg) Remove(vecs []coldata.Vec, inputIdxs []uint32, start
 
 				{
 
-					tmpDec := &_overloadHelper.TmpDec1
+					var tmpDec apd.Decimal
 					tmpDec.SetInt64(int64(v))
-					if _, err := tree.ExactCtx.Sub(&a.curSum, &a.curSum, tmpDec); err != nil {
+					if _, err := tree.ExactCtx.Sub(&a.curSum, &a.curSum, &tmpDec); err != nil {
 						colexecerror.ExpectedError(err)
 					}
 				}
@@ -658,7 +643,7 @@ func (a *avgDecimalWindowAgg) Compute(
 
 				{
 
-					_, err := tree.ExactCtx.Add(&a.curSum, &a.curSum, &v)
+					_, err := tree.ExactCtx.Add(&a.curSum, &a.curSum, v)
 					if err != nil {
 						colexecerror.ExpectedError(err)
 					}
@@ -678,7 +663,7 @@ func (a *avgDecimalWindowAgg) Compute(
 
 				{
 
-					_, err := tree.ExactCtx.Add(&a.curSum, &a.curSum, &v)
+					_, err := tree.ExactCtx.Add(&a.curSum, &a.curSum, v)
 					if err != nil {
 						colexecerror.ExpectedError(err)
 					}
@@ -710,7 +695,8 @@ func (a *avgDecimalWindowAgg) Flush(outputIdx int) {
 }
 
 func (a *avgDecimalWindowAgg) Reset() {
-	a.curSum = zeroDecimalValue
+	zero := zeroDecimalValue
+	a.curSum.Set(zero)
 	a.curCount = 0
 }
 
@@ -753,7 +739,7 @@ func (a *avgDecimalWindowAgg) Remove(vecs []coldata.Vec, inputIdxs []uint32, sta
 
 				{
 
-					_, err := tree.ExactCtx.Sub(&a.curSum, &a.curSum, &v)
+					_, err := tree.ExactCtx.Sub(&a.curSum, &a.curSum, v)
 					if err != nil {
 						colexecerror.ExpectedError(err)
 					}
@@ -773,7 +759,7 @@ func (a *avgDecimalWindowAgg) Remove(vecs []coldata.Vec, inputIdxs []uint32, sta
 
 				{
 
-					_, err := tree.ExactCtx.Sub(&a.curSum, &a.curSum, &v)
+					_, err := tree.ExactCtx.Sub(&a.curSum, &a.curSum, v)
 					if err != nil {
 						colexecerror.ExpectedError(err)
 					}
@@ -872,7 +858,8 @@ func (a *avgFloat64WindowAgg) Flush(outputIdx int) {
 }
 
 func (a *avgFloat64WindowAgg) Reset() {
-	a.curSum = zeroFloat64Value
+	zero := zeroFloat64Value
+	a.curSum = zero
 	a.curCount = 0
 }
 
@@ -1018,7 +1005,8 @@ func (a *avgIntervalWindowAgg) Flush(outputIdx int) {
 }
 
 func (a *avgIntervalWindowAgg) Reset() {
-	a.curSum = zeroIntervalValue
+	zero := zeroIntervalValue
+	a.curSum = zero
 	a.curCount = 0
 }
 
@@ -1045,7 +1033,9 @@ func (a *avgIntervalWindowAggAlloc) newAggFunc() AggregateFunc {
 
 // Remove implements the slidingWindowAggregateFunc interface (see
 // window_aggregator_tmpl.go).
-func (a *avgIntervalWindowAgg) Remove(vecs []coldata.Vec, inputIdxs []uint32, startIdx, endIdx int) {
+func (a *avgIntervalWindowAgg) Remove(
+	vecs []coldata.Vec, inputIdxs []uint32, startIdx, endIdx int,
+) {
 	var oldCurSumSize uintptr
 	vec := vecs[inputIdxs[0]]
 	col, nulls := vec.Interval(), vec.Nulls()

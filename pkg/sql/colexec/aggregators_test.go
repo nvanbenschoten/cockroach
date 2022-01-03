@@ -115,7 +115,7 @@ func (tc *aggregatorTestCase) init() error {
 						if err != nil {
 							return err
 						}
-						tuple[i] = *d
+						tuple[i] = d
 					case string:
 						d := &apd.Decimal{}
 						d, _, err := d.SetString(v)
@@ -124,7 +124,7 @@ func (tc *aggregatorTestCase) init() error {
 							// leave the datum as is.
 							continue
 						}
-						tuple[i] = *d
+						tuple[i] = d
 					}
 				}
 			}

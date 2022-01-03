@@ -244,7 +244,10 @@ type jsonNull struct{}
 // NullJSONValue is JSON `null`
 var NullJSONValue = jsonNull{}
 
-type jsonNumber apd.Decimal
+type jsonNumber struct {
+	d *apd.Decimal
+}
+
 type jsonString string
 
 type jsonArray []JSON
@@ -469,10 +472,7 @@ func (j jsonTrue) AsDecimal() (*apd.Decimal, bool)   { return nil, false }
 func (j jsonString) AsDecimal() (*apd.Decimal, bool) { return nil, false }
 func (j jsonArray) AsDecimal() (*apd.Decimal, bool)  { return nil, false }
 func (j jsonObject) AsDecimal() (*apd.Decimal, bool) { return nil, false }
-func (j jsonNumber) AsDecimal() (*apd.Decimal, bool) {
-	d := apd.Decimal(j)
-	return &d, true
-}
+func (j jsonNumber) AsDecimal() (*apd.Decimal, bool) { return j.d, true }
 
 func (j jsonNull) AsBool() (bool, bool)   { return false, false }
 func (j jsonFalse) AsBool() (bool, bool)  { return false, true }
@@ -524,9 +524,9 @@ func (j jsonNumber) Compare(other JSON) (int, error) {
 	if other, err = decodeIfNeeded(other); err != nil {
 		return 0, err
 	}
-	dec := apd.Decimal(j)
-	o := apd.Decimal(other.(jsonNumber))
-	return dec.Cmp(&o), nil
+	dec := j.d
+	o := other.(jsonNumber).d
+	return dec.Cmp(o), nil
 }
 
 func (j jsonString) Compare(other JSON) (int, error) {
@@ -627,7 +627,7 @@ func (jsonFalse) Format(buf *bytes.Buffer) { buf.WriteString("false") }
 func (jsonTrue) Format(buf *bytes.Buffer) { buf.WriteString("true") }
 
 func (j jsonNumber) Format(buf *bytes.Buffer) {
-	dec := apd.Decimal(j)
+	dec := j.d
 	// Make sure non-finite values are encoded as valid strings by
 	// quoting them. Unfortunately, since this is JSON, there's no
 	// defined way to express the three special numeric values (+inf,
@@ -756,7 +756,7 @@ func (jsonFalse) Size() uintptr { return 0 }
 func (jsonTrue) Size() uintptr { return 0 }
 
 func (j jsonNumber) Size() uintptr {
-	intVal := j.Coeff
+	intVal := &j.d.Coeff
 	return decimalSize + uintptr(cap(intVal.Bits()))*wordSize
 }
 
@@ -938,8 +938,8 @@ func (j jsonString) encodeContainedInvertedIndexSpans(
 
 func (j jsonNumber) encodeInvertedIndexKeys(b []byte) ([][]byte, error) {
 	b = encoding.AddJSONPathTerminator(b)
-	var dec = apd.Decimal(j)
-	return [][]byte{encoding.EncodeDecimalAscending(b, &dec)}, nil
+	dec := j.d
+	return [][]byte{encoding.EncodeDecimalAscending(b, dec)}, nil
 }
 
 func (j jsonNumber) encodeContainingInvertedIndexSpans(
@@ -1560,8 +1560,8 @@ func FromSpatialObject(so geopb.SpatialObject, numDecimalDigits int) (JSON, erro
 }
 
 // FromDecimal returns a JSON value given a apd.Decimal.
-func FromDecimal(v apd.Decimal) JSON {
-	return jsonNumber(v)
+func FromDecimal(v *apd.Decimal) JSON {
+	return jsonNumber{v}
 }
 
 // FromNumber returns a JSON value given a json.Number.
@@ -1571,7 +1571,7 @@ func FromNumber(v json.Number) (JSON, error) {
 	// of the set of valid apd.Decimal values.
 	dec := apd.Decimal{}
 	_, _, err := dec.SetString(string(v))
-	return jsonNumber(dec), err
+	return jsonNumber{&dec}, err
 }
 
 // FromString returns a JSON value given a string.
@@ -1625,14 +1625,14 @@ func fromMap(v map[string]interface{}) (JSON, error) {
 func FromInt(v int) JSON {
 	dec := apd.Decimal{}
 	dec.SetInt64(int64(v))
-	return jsonNumber(dec)
+	return jsonNumber{&dec}
 }
 
 // FromInt64 returns a JSON value given a int64.
 func FromInt64(v int64) JSON {
 	dec := apd.Decimal{}
 	dec.SetInt64(v)
-	return jsonNumber(dec)
+	return jsonNumber{&dec}
 }
 
 // FromFloat64 returns a JSON value given a float64.
@@ -1642,7 +1642,7 @@ func FromFloat64(v float64) (JSON, error) {
 	if err != nil {
 		return nil, err
 	}
-	return jsonNumber(dec), nil
+	return jsonNumber{&dec}, nil
 }
 
 // MakeJSON returns a JSON value given a Go-style representation of JSON.

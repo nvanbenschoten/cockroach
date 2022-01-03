@@ -3148,7 +3148,8 @@ func (a *decimalSumSqrDiffsAggregate) Result() (tree.Datum, error) {
 	if a.count.Cmp(decimalOne) < 0 {
 		return tree.DNull, nil
 	}
-	dd := &tree.DDecimal{Decimal: a.sqrDiff}
+	dd := &tree.DDecimal{}
+	dd.Set(&a.sqrDiff)
 	return dd, nil
 }
 

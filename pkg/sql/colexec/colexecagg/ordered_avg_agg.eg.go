@@ -92,9 +92,6 @@ func (a *avgInt16OrderedAgg) SetOutput(vec coldata.Vec) {
 func (a *avgInt16OrderedAgg) Compute(
 	vecs []coldata.Vec, inputIdxs []uint32, startIdx, endIdx int, sel []int,
 ) {
-	// In order to inline the templated code of overloads, we need to have a
-	// "_overloadHelper" local variable of type "overloadHelper".
-	_overloadHelper := a.overloadHelper
 	oldCurSumSize := tree.SizeOfDecimal(&a.curSum)
 	vec := vecs[inputIdxs[0]]
 	col, nulls := vec.Int16(), vec.Nulls()
@@ -124,7 +121,7 @@ func (a *avgInt16OrderedAgg) Compute(
 								}
 							}
 							a.curIdx++
-							a.curSum = zeroDecimalValue
+							a.curSum.Set(zeroDecimalValue)
 							a.curCount = 0
 						}
 						a.isFirstGroup = false
@@ -138,9 +135,9 @@ func (a *avgInt16OrderedAgg) Compute(
 
 						{
 
-							tmpDec := &_overloadHelper.TmpDec1
+							var tmpDec apd.Decimal
 							tmpDec.SetInt64(int64(v))
-							if _, err := tree.ExactCtx.Add(&a.curSum, &a.curSum, tmpDec); err != nil {
+							if _, err := tree.ExactCtx.Add(&a.curSum, &a.curSum, &tmpDec); err != nil {
 								colexecerror.ExpectedError(err)
 							}
 						}
@@ -166,7 +163,7 @@ func (a *avgInt16OrderedAgg) Compute(
 								}
 							}
 							a.curIdx++
-							a.curSum = zeroDecimalValue
+							a.curSum.Set(zeroDecimalValue)
 							a.curCount = 0
 						}
 						a.isFirstGroup = false
@@ -180,9 +177,9 @@ func (a *avgInt16OrderedAgg) Compute(
 
 						{
 
-							tmpDec := &_overloadHelper.TmpDec1
+							var tmpDec apd.Decimal
 							tmpDec.SetInt64(int64(v))
-							if _, err := tree.ExactCtx.Add(&a.curSum, &a.curSum, tmpDec); err != nil {
+							if _, err := tree.ExactCtx.Add(&a.curSum, &a.curSum, &tmpDec); err != nil {
 								colexecerror.ExpectedError(err)
 							}
 						}
@@ -210,7 +207,7 @@ func (a *avgInt16OrderedAgg) Compute(
 								}
 							}
 							a.curIdx++
-							a.curSum = zeroDecimalValue
+							a.curSum.Set(zeroDecimalValue)
 							a.curCount = 0
 						}
 						a.isFirstGroup = false
@@ -223,9 +220,9 @@ func (a *avgInt16OrderedAgg) Compute(
 
 						{
 
-							tmpDec := &_overloadHelper.TmpDec1
+							var tmpDec apd.Decimal
 							tmpDec.SetInt64(int64(v))
-							if _, err := tree.ExactCtx.Add(&a.curSum, &a.curSum, tmpDec); err != nil {
+							if _, err := tree.ExactCtx.Add(&a.curSum, &a.curSum, &tmpDec); err != nil {
 								colexecerror.ExpectedError(err)
 							}
 						}
@@ -250,7 +247,7 @@ func (a *avgInt16OrderedAgg) Compute(
 								}
 							}
 							a.curIdx++
-							a.curSum = zeroDecimalValue
+							a.curSum.Set(zeroDecimalValue)
 							a.curCount = 0
 						}
 						a.isFirstGroup = false
@@ -263,9 +260,9 @@ func (a *avgInt16OrderedAgg) Compute(
 
 						{
 
-							tmpDec := &_overloadHelper.TmpDec1
+							var tmpDec apd.Decimal
 							tmpDec.SetInt64(int64(v))
-							if _, err := tree.ExactCtx.Add(&a.curSum, &a.curSum, tmpDec); err != nil {
+							if _, err := tree.ExactCtx.Add(&a.curSum, &a.curSum, &tmpDec); err != nil {
 								colexecerror.ExpectedError(err)
 							}
 						}
@@ -294,9 +291,10 @@ func (a *avgInt16OrderedAgg) Flush(outputIdx int) {
 	if a.curCount == 0 {
 		a.nulls.SetNull(outputIdx)
 	} else {
+		col := a.vec.Decimal()
 
-		a.col[outputIdx].SetInt64(a.curCount)
-		if _, err := tree.DecimalCtx.Quo(&a.col[outputIdx], &a.curSum, &a.col[outputIdx]); err != nil {
+		col[outputIdx].SetInt64(a.curCount)
+		if _, err := tree.DecimalCtx.Quo(&col[outputIdx], &a.curSum, &col[outputIdx]); err != nil {
 			colexecerror.InternalError(err)
 		}
 	}
@@ -304,7 +302,8 @@ func (a *avgInt16OrderedAgg) Flush(outputIdx int) {
 
 func (a *avgInt16OrderedAgg) Reset() {
 	a.orderedAggregateFuncBase.Reset()
-	a.curSum = zeroDecimalValue
+	zero := zeroDecimalValue
+	a.curSum.Set(zero)
 	a.curCount = 0
 }
 
@@ -353,9 +352,6 @@ func (a *avgInt32OrderedAgg) SetOutput(vec coldata.Vec) {
 func (a *avgInt32OrderedAgg) Compute(
 	vecs []coldata.Vec, inputIdxs []uint32, startIdx, endIdx int, sel []int,
 ) {
-	// In order to inline the templated code of overloads, we need to have a
-	// "_overloadHelper" local variable of type "overloadHelper".
-	_overloadHelper := a.overloadHelper
 	oldCurSumSize := tree.SizeOfDecimal(&a.curSum)
 	vec := vecs[inputIdxs[0]]
 	col, nulls := vec.Int32(), vec.Nulls()
@@ -385,7 +381,7 @@ func (a *avgInt32OrderedAgg) Compute(
 								}
 							}
 							a.curIdx++
-							a.curSum = zeroDecimalValue
+							a.curSum.Set(zeroDecimalValue)
 							a.curCount = 0
 						}
 						a.isFirstGroup = false
@@ -399,9 +395,9 @@ func (a *avgInt32OrderedAgg) Compute(
 
 						{
 
-							tmpDec := &_overloadHelper.TmpDec1
+							var tmpDec apd.Decimal
 							tmpDec.SetInt64(int64(v))
-							if _, err := tree.ExactCtx.Add(&a.curSum, &a.curSum, tmpDec); err != nil {
+							if _, err := tree.ExactCtx.Add(&a.curSum, &a.curSum, &tmpDec); err != nil {
 								colexecerror.ExpectedError(err)
 							}
 						}
@@ -427,7 +423,7 @@ func (a *avgInt32OrderedAgg) Compute(
 								}
 							}
 							a.curIdx++
-							a.curSum = zeroDecimalValue
+							a.curSum.Set(zeroDecimalValue)
 							a.curCount = 0
 						}
 						a.isFirstGroup = false
@@ -441,9 +437,9 @@ func (a *avgInt32OrderedAgg) Compute(
 
 						{
 
-							tmpDec := &_overloadHelper.TmpDec1
+							var tmpDec apd.Decimal
 							tmpDec.SetInt64(int64(v))
-							if _, err := tree.ExactCtx.Add(&a.curSum, &a.curSum, tmpDec); err != nil {
+							if _, err := tree.ExactCtx.Add(&a.curSum, &a.curSum, &tmpDec); err != nil {
 								colexecerror.ExpectedError(err)
 							}
 						}
@@ -471,7 +467,7 @@ func (a *avgInt32OrderedAgg) Compute(
 								}
 							}
 							a.curIdx++
-							a.curSum = zeroDecimalValue
+							a.curSum.Set(zeroDecimalValue)
 							a.curCount = 0
 						}
 						a.isFirstGroup = false
@@ -484,9 +480,9 @@ func (a *avgInt32OrderedAgg) Compute(
 
 						{
 
-							tmpDec := &_overloadHelper.TmpDec1
+							var tmpDec apd.Decimal
 							tmpDec.SetInt64(int64(v))
-							if _, err := tree.ExactCtx.Add(&a.curSum, &a.curSum, tmpDec); err != nil {
+							if _, err := tree.ExactCtx.Add(&a.curSum, &a.curSum, &tmpDec); err != nil {
 								colexecerror.ExpectedError(err)
 							}
 						}
@@ -511,7 +507,7 @@ func (a *avgInt32OrderedAgg) Compute(
 								}
 							}
 							a.curIdx++
-							a.curSum = zeroDecimalValue
+							a.curSum.Set(zeroDecimalValue)
 							a.curCount = 0
 						}
 						a.isFirstGroup = false
@@ -524,9 +520,9 @@ func (a *avgInt32OrderedAgg) Compute(
 
 						{
 
-							tmpDec := &_overloadHelper.TmpDec1
+							var tmpDec apd.Decimal
 							tmpDec.SetInt64(int64(v))
-							if _, err := tree.ExactCtx.Add(&a.curSum, &a.curSum, tmpDec); err != nil {
+							if _, err := tree.ExactCtx.Add(&a.curSum, &a.curSum, &tmpDec); err != nil {
 								colexecerror.ExpectedError(err)
 							}
 						}
@@ -555,9 +551,10 @@ func (a *avgInt32OrderedAgg) Flush(outputIdx int) {
 	if a.curCount == 0 {
 		a.nulls.SetNull(outputIdx)
 	} else {
+		col := a.vec.Decimal()
 
-		a.col[outputIdx].SetInt64(a.curCount)
-		if _, err := tree.DecimalCtx.Quo(&a.col[outputIdx], &a.curSum, &a.col[outputIdx]); err != nil {
+		col[outputIdx].SetInt64(a.curCount)
+		if _, err := tree.DecimalCtx.Quo(&col[outputIdx], &a.curSum, &col[outputIdx]); err != nil {
 			colexecerror.InternalError(err)
 		}
 	}
@@ -565,7 +562,8 @@ func (a *avgInt32OrderedAgg) Flush(outputIdx int) {
 
 func (a *avgInt32OrderedAgg) Reset() {
 	a.orderedAggregateFuncBase.Reset()
-	a.curSum = zeroDecimalValue
+	zero := zeroDecimalValue
+	a.curSum.Set(zero)
 	a.curCount = 0
 }
 
@@ -614,9 +612,6 @@ func (a *avgInt64OrderedAgg) SetOutput(vec coldata.Vec) {
 func (a *avgInt64OrderedAgg) Compute(
 	vecs []coldata.Vec, inputIdxs []uint32, startIdx, endIdx int, sel []int,
 ) {
-	// In order to inline the templated code of overloads, we need to have a
-	// "_overloadHelper" local variable of type "overloadHelper".
-	_overloadHelper := a.overloadHelper
 	oldCurSumSize := tree.SizeOfDecimal(&a.curSum)
 	vec := vecs[inputIdxs[0]]
 	col, nulls := vec.Int64(), vec.Nulls()
@@ -646,7 +641,7 @@ func (a *avgInt64OrderedAgg) Compute(
 								}
 							}
 							a.curIdx++
-							a.curSum = zeroDecimalValue
+							a.curSum.Set(zeroDecimalValue)
 							a.curCount = 0
 						}
 						a.isFirstGroup = false
@@ -660,9 +655,9 @@ func (a *avgInt64OrderedAgg) Compute(
 
 						{
 
-							tmpDec := &_overloadHelper.TmpDec1
+							var tmpDec apd.Decimal
 							tmpDec.SetInt64(int64(v))
-							if _, err := tree.ExactCtx.Add(&a.curSum, &a.curSum, tmpDec); err != nil {
+							if _, err := tree.ExactCtx.Add(&a.curSum, &a.curSum, &tmpDec); err != nil {
 								colexecerror.ExpectedError(err)
 							}
 						}
@@ -688,7 +683,7 @@ func (a *avgInt64OrderedAgg) Compute(
 								}
 							}
 							a.curIdx++
-							a.curSum = zeroDecimalValue
+							a.curSum.Set(zeroDecimalValue)
 							a.curCount = 0
 						}
 						a.isFirstGroup = false
@@ -702,9 +697,9 @@ func (a *avgInt64OrderedAgg) Compute(
 
 						{
 
-							tmpDec := &_overloadHelper.TmpDec1
+							var tmpDec apd.Decimal
 							tmpDec.SetInt64(int64(v))
-							if _, err := tree.ExactCtx.Add(&a.curSum, &a.curSum, tmpDec); err != nil {
+							if _, err := tree.ExactCtx.Add(&a.curSum, &a.curSum, &tmpDec); err != nil {
 								colexecerror.ExpectedError(err)
 							}
 						}
@@ -732,7 +727,7 @@ func (a *avgInt64OrderedAgg) Compute(
 								}
 							}
 							a.curIdx++
-							a.curSum = zeroDecimalValue
+							a.curSum.Set(zeroDecimalValue)
 							a.curCount = 0
 						}
 						a.isFirstGroup = false
@@ -745,9 +740,9 @@ func (a *avgInt64OrderedAgg) Compute(
 
 						{
 
-							tmpDec := &_overloadHelper.TmpDec1
+							var tmpDec apd.Decimal
 							tmpDec.SetInt64(int64(v))
-							if _, err := tree.ExactCtx.Add(&a.curSum, &a.curSum, tmpDec); err != nil {
+							if _, err := tree.ExactCtx.Add(&a.curSum, &a.curSum, &tmpDec); err != nil {
 								colexecerror.ExpectedError(err)
 							}
 						}
@@ -772,7 +767,7 @@ func (a *avgInt64OrderedAgg) Compute(
 								}
 							}
 							a.curIdx++
-							a.curSum = zeroDecimalValue
+							a.curSum.Set(zeroDecimalValue)
 							a.curCount = 0
 						}
 						a.isFirstGroup = false
@@ -785,9 +780,9 @@ func (a *avgInt64OrderedAgg) Compute(
 
 						{
 
-							tmpDec := &_overloadHelper.TmpDec1
+							var tmpDec apd.Decimal
 							tmpDec.SetInt64(int64(v))
-							if _, err := tree.ExactCtx.Add(&a.curSum, &a.curSum, tmpDec); err != nil {
+							if _, err := tree.ExactCtx.Add(&a.curSum, &a.curSum, &tmpDec); err != nil {
 								colexecerror.ExpectedError(err)
 							}
 						}
@@ -816,9 +811,10 @@ func (a *avgInt64OrderedAgg) Flush(outputIdx int) {
 	if a.curCount == 0 {
 		a.nulls.SetNull(outputIdx)
 	} else {
+		col := a.vec.Decimal()
 
-		a.col[outputIdx].SetInt64(a.curCount)
-		if _, err := tree.DecimalCtx.Quo(&a.col[outputIdx], &a.curSum, &a.col[outputIdx]); err != nil {
+		col[outputIdx].SetInt64(a.curCount)
+		if _, err := tree.DecimalCtx.Quo(&col[outputIdx], &a.curSum, &col[outputIdx]); err != nil {
 			colexecerror.InternalError(err)
 		}
 	}
@@ -826,7 +822,8 @@ func (a *avgInt64OrderedAgg) Flush(outputIdx int) {
 
 func (a *avgInt64OrderedAgg) Reset() {
 	a.orderedAggregateFuncBase.Reset()
-	a.curSum = zeroDecimalValue
+	zero := zeroDecimalValue
+	a.curSum.Set(zero)
 	a.curCount = 0
 }
 
@@ -903,7 +900,7 @@ func (a *avgDecimalOrderedAgg) Compute(
 								}
 							}
 							a.curIdx++
-							a.curSum = zeroDecimalValue
+							a.curSum.Set(zeroDecimalValue)
 							a.curCount = 0
 						}
 						a.isFirstGroup = false
@@ -917,7 +914,7 @@ func (a *avgDecimalOrderedAgg) Compute(
 
 						{
 
-							_, err := tree.ExactCtx.Add(&a.curSum, &a.curSum, &v)
+							_, err := tree.ExactCtx.Add(&a.curSum, &a.curSum, v)
 							if err != nil {
 								colexecerror.ExpectedError(err)
 							}
@@ -944,7 +941,7 @@ func (a *avgDecimalOrderedAgg) Compute(
 								}
 							}
 							a.curIdx++
-							a.curSum = zeroDecimalValue
+							a.curSum.Set(zeroDecimalValue)
 							a.curCount = 0
 						}
 						a.isFirstGroup = false
@@ -958,7 +955,7 @@ func (a *avgDecimalOrderedAgg) Compute(
 
 						{
 
-							_, err := tree.ExactCtx.Add(&a.curSum, &a.curSum, &v)
+							_, err := tree.ExactCtx.Add(&a.curSum, &a.curSum, v)
 							if err != nil {
 								colexecerror.ExpectedError(err)
 							}
@@ -987,7 +984,7 @@ func (a *avgDecimalOrderedAgg) Compute(
 								}
 							}
 							a.curIdx++
-							a.curSum = zeroDecimalValue
+							a.curSum.Set(zeroDecimalValue)
 							a.curCount = 0
 						}
 						a.isFirstGroup = false
@@ -1000,7 +997,7 @@ func (a *avgDecimalOrderedAgg) Compute(
 
 						{
 
-							_, err := tree.ExactCtx.Add(&a.curSum, &a.curSum, &v)
+							_, err := tree.ExactCtx.Add(&a.curSum, &a.curSum, v)
 							if err != nil {
 								colexecerror.ExpectedError(err)
 							}
@@ -1026,7 +1023,7 @@ func (a *avgDecimalOrderedAgg) Compute(
 								}
 							}
 							a.curIdx++
-							a.curSum = zeroDecimalValue
+							a.curSum.Set(zeroDecimalValue)
 							a.curCount = 0
 						}
 						a.isFirstGroup = false
@@ -1039,7 +1036,7 @@ func (a *avgDecimalOrderedAgg) Compute(
 
 						{
 
-							_, err := tree.ExactCtx.Add(&a.curSum, &a.curSum, &v)
+							_, err := tree.ExactCtx.Add(&a.curSum, &a.curSum, v)
 							if err != nil {
 								colexecerror.ExpectedError(err)
 							}
@@ -1069,9 +1066,10 @@ func (a *avgDecimalOrderedAgg) Flush(outputIdx int) {
 	if a.curCount == 0 {
 		a.nulls.SetNull(outputIdx)
 	} else {
+		col := a.vec.Decimal()
 
-		a.col[outputIdx].SetInt64(a.curCount)
-		if _, err := tree.DecimalCtx.Quo(&a.col[outputIdx], &a.curSum, &a.col[outputIdx]); err != nil {
+		col[outputIdx].SetInt64(a.curCount)
+		if _, err := tree.DecimalCtx.Quo(&col[outputIdx], &a.curSum, &col[outputIdx]); err != nil {
 			colexecerror.InternalError(err)
 		}
 	}
@@ -1079,7 +1077,8 @@ func (a *avgDecimalOrderedAgg) Flush(outputIdx int) {
 
 func (a *avgDecimalOrderedAgg) Reset() {
 	a.orderedAggregateFuncBase.Reset()
-	a.curSum = zeroDecimalValue
+	zero := zeroDecimalValue
+	a.curSum.Set(zero)
 	a.curCount = 0
 }
 
@@ -1294,13 +1293,15 @@ func (a *avgFloat64OrderedAgg) Flush(outputIdx int) {
 	if a.curCount == 0 {
 		a.nulls.SetNull(outputIdx)
 	} else {
-		a.col[outputIdx] = a.curSum / float64(a.curCount)
+		col := a.vec.Float64()
+		col[outputIdx] = a.curSum / float64(a.curCount)
 	}
 }
 
 func (a *avgFloat64OrderedAgg) Reset() {
 	a.orderedAggregateFuncBase.Reset()
-	a.curSum = zeroFloat64Value
+	zero := zeroFloat64Value
+	a.curSum = zero
 	a.curCount = 0
 }
 
@@ -1495,13 +1496,15 @@ func (a *avgIntervalOrderedAgg) Flush(outputIdx int) {
 	if a.curCount == 0 {
 		a.nulls.SetNull(outputIdx)
 	} else {
-		a.col[outputIdx] = a.curSum.Div(int64(a.curCount))
+		col := a.vec.Interval()
+		col[outputIdx] = a.curSum.Div(int64(a.curCount))
 	}
 }
 
 func (a *avgIntervalOrderedAgg) Reset() {
 	a.orderedAggregateFuncBase.Reset()
-	a.curSum = zeroIntervalValue
+	zero := zeroIntervalValue
+	a.curSum = zero
 	a.curCount = 0
 }
 

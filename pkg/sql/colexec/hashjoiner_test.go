@@ -747,14 +747,14 @@ func getHJTestCases() []*joinTestCase {
 
 			// Test types.Decimal type as equality column.
 			leftTuples: colexectestutils.Tuples{
-				{decs[0]},
-				{decs[1]},
-				{decs[2]},
+				{&decs[0]},
+				{&decs[1]},
+				{&decs[2]},
 			},
 			rightTuples: colexectestutils.Tuples{
-				{decs[2]},
-				{decs[3]},
-				{decs[0]},
+				{&decs[2]},
+				{&decs[3]},
+				{&decs[0]},
 			},
 
 			leftEqCols:   []uint32{0},
@@ -766,8 +766,8 @@ func getHJTestCases() []*joinTestCase {
 			rightEqColsAreKey: true,
 
 			expected: colexectestutils.Tuples{
-				{decs[2]},
-				{decs[0]},
+				{&decs[2]},
+				{&decs[0]},
 			},
 		},
 		{
@@ -1139,7 +1139,7 @@ func TestHashJoinerProjection(t *testing.T) {
 	leftTypes := []*types.T{types.Bool, types.Int, types.Bytes}
 	rightTypes := []*types.T{types.Int, types.Float, types.Decimal}
 	leftTuples := colexectestutils.Tuples{{false, 1, "foo"}}
-	rightTuples := colexectestutils.Tuples{{1, 1.1, decs[1]}}
+	rightTuples := colexectestutils.Tuples{{1, 1.1, &decs[1]}}
 
 	spec := &execinfrapb.ProcessorSpec{
 		Core: execinfrapb.ProcessorCoreUnion{

@@ -2729,7 +2729,7 @@ may increase either contention or retry errors, or both.`,
 			ReturnType: tree.FixedReturnType(types.TimestampTZ),
 			Fn: func(_ *tree.EvalContext, args tree.Datums) (tree.Datum, error) {
 				d := tree.MustBeDDecimal(args[0])
-				return tree.DecimalToInexactDTimestampTZ(&d)
+				return tree.DecimalToInexactDTimestampTZ(d)
 			},
 			Info: `Returns a TimestampTZ representation of a CockroachDB HLC in decimal form.
 

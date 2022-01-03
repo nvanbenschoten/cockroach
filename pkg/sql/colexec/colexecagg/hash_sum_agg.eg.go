@@ -73,8 +73,6 @@ type sumInt16HashAgg struct {
 	// curAgg holds the running total, so we can index into the slice once per
 	// group, instead of on each iteration.
 	curAgg apd.Decimal
-	// col points to the output vector we are updating.
-	col []apd.Decimal
 	// numNonNull tracks the number of non-null values we have seen for the group
 	// that is currently being aggregated.
 	numNonNull     uint64
@@ -85,15 +83,11 @@ var _ AggregateFunc = &sumInt16HashAgg{}
 
 func (a *sumInt16HashAgg) SetOutput(vec coldata.Vec) {
 	a.unorderedAggregateFuncBase.SetOutput(vec)
-	a.col = vec.Decimal()
 }
 
 func (a *sumInt16HashAgg) Compute(
 	vecs []coldata.Vec, inputIdxs []uint32, startIdx, endIdx int, sel []int,
 ) {
-	// In order to inline the templated code of overloads, we need to have a
-	// "_overloadHelper" local variable of type "overloadHelper".
-	_overloadHelper := a.overloadHelper
 	oldCurAggSize := tree.SizeOfDecimal(&a.curAgg)
 	vec := vecs[inputIdxs[0]]
 	col, nulls := vec.Int16(), vec.Nulls()
@@ -110,9 +104,9 @@ func (a *sumInt16HashAgg) Compute(
 
 						{
 
-							tmpDec := &_overloadHelper.TmpDec1
+							var tmpDec apd.Decimal
 							tmpDec.SetInt64(int64(v))
-							if _, err := tree.ExactCtx.Add(&a.curAgg, &a.curAgg, tmpDec); err != nil {
+							if _, err := tree.ExactCtx.Add(&a.curAgg, &a.curAgg, &tmpDec); err != nil {
 								colexecerror.ExpectedError(err)
 							}
 						}
@@ -130,9 +124,9 @@ func (a *sumInt16HashAgg) Compute(
 
 						{
 
-							tmpDec := &_overloadHelper.TmpDec1
+							var tmpDec apd.Decimal
 							tmpDec.SetInt64(int64(v))
-							if _, err := tree.ExactCtx.Add(&a.curAgg, &a.curAgg, tmpDec); err != nil {
+							if _, err := tree.ExactCtx.Add(&a.curAgg, &a.curAgg, &tmpDec); err != nil {
 								colexecerror.ExpectedError(err)
 							}
 						}
@@ -157,12 +151,14 @@ func (a *sumInt16HashAgg) Flush(outputIdx int) {
 	if a.numNonNull == 0 {
 		a.nulls.SetNull(outputIdx)
 	} else {
-		a.col[outputIdx] = a.curAgg
+		col := a.vec.Decimal()
+		col[outputIdx].Set(&a.curAgg)
 	}
 }
 
 func (a *sumInt16HashAgg) Reset() {
-	a.curAgg = zeroDecimalValue
+	zero := zeroDecimalValue
+	a.curAgg.Set(zero)
 	a.numNonNull = 0
 }
 
@@ -192,8 +188,6 @@ type sumInt32HashAgg struct {
 	// curAgg holds the running total, so we can index into the slice once per
 	// group, instead of on each iteration.
 	curAgg apd.Decimal
-	// col points to the output vector we are updating.
-	col []apd.Decimal
 	// numNonNull tracks the number of non-null values we have seen for the group
 	// that is currently being aggregated.
 	numNonNull     uint64
@@ -204,15 +198,11 @@ var _ AggregateFunc = &sumInt32HashAgg{}
 
 func (a *sumInt32HashAgg) SetOutput(vec coldata.Vec) {
 	a.unorderedAggregateFuncBase.SetOutput(vec)
-	a.col = vec.Decimal()
 }
 
 func (a *sumInt32HashAgg) Compute(
 	vecs []coldata.Vec, inputIdxs []uint32, startIdx, endIdx int, sel []int,
 ) {
-	// In order to inline the templated code of overloads, we need to have a
-	// "_overloadHelper" local variable of type "overloadHelper".
-	_overloadHelper := a.overloadHelper
 	oldCurAggSize := tree.SizeOfDecimal(&a.curAgg)
 	vec := vecs[inputIdxs[0]]
 	col, nulls := vec.Int32(), vec.Nulls()
@@ -229,9 +219,9 @@ func (a *sumInt32HashAgg) Compute(
 
 						{
 
-							tmpDec := &_overloadHelper.TmpDec1
+							var tmpDec apd.Decimal
 							tmpDec.SetInt64(int64(v))
-							if _, err := tree.ExactCtx.Add(&a.curAgg, &a.curAgg, tmpDec); err != nil {
+							if _, err := tree.ExactCtx.Add(&a.curAgg, &a.curAgg, &tmpDec); err != nil {
 								colexecerror.ExpectedError(err)
 							}
 						}
@@ -249,9 +239,9 @@ func (a *sumInt32HashAgg) Compute(
 
 						{
 
-							tmpDec := &_overloadHelper.TmpDec1
+							var tmpDec apd.Decimal
 							tmpDec.SetInt64(int64(v))
-							if _, err := tree.ExactCtx.Add(&a.curAgg, &a.curAgg, tmpDec); err != nil {
+							if _, err := tree.ExactCtx.Add(&a.curAgg, &a.curAgg, &tmpDec); err != nil {
 								colexecerror.ExpectedError(err)
 							}
 						}
@@ -276,12 +266,14 @@ func (a *sumInt32HashAgg) Flush(outputIdx int) {
 	if a.numNonNull == 0 {
 		a.nulls.SetNull(outputIdx)
 	} else {
-		a.col[outputIdx] = a.curAgg
+		col := a.vec.Decimal()
+		col[outputIdx].Set(&a.curAgg)
 	}
 }
 
 func (a *sumInt32HashAgg) Reset() {
-	a.curAgg = zeroDecimalValue
+	zero := zeroDecimalValue
+	a.curAgg.Set(zero)
 	a.numNonNull = 0
 }
 
@@ -311,8 +303,6 @@ type sumInt64HashAgg struct {
 	// curAgg holds the running total, so we can index into the slice once per
 	// group, instead of on each iteration.
 	curAgg apd.Decimal
-	// col points to the output vector we are updating.
-	col []apd.Decimal
 	// numNonNull tracks the number of non-null values we have seen for the group
 	// that is currently being aggregated.
 	numNonNull     uint64
@@ -323,15 +313,11 @@ var _ AggregateFunc = &sumInt64HashAgg{}
 
 func (a *sumInt64HashAgg) SetOutput(vec coldata.Vec) {
 	a.unorderedAggregateFuncBase.SetOutput(vec)
-	a.col = vec.Decimal()
 }
 
 func (a *sumInt64HashAgg) Compute(
 	vecs []coldata.Vec, inputIdxs []uint32, startIdx, endIdx int, sel []int,
 ) {
-	// In order to inline the templated code of overloads, we need to have a
-	// "_overloadHelper" local variable of type "overloadHelper".
-	_overloadHelper := a.overloadHelper
 	oldCurAggSize := tree.SizeOfDecimal(&a.curAgg)
 	vec := vecs[inputIdxs[0]]
 	col, nulls := vec.Int64(), vec.Nulls()
@@ -348,9 +334,9 @@ func (a *sumInt64HashAgg) Compute(
 
 						{
 
-							tmpDec := &_overloadHelper.TmpDec1
+							var tmpDec apd.Decimal
 							tmpDec.SetInt64(int64(v))
-							if _, err := tree.ExactCtx.Add(&a.curAgg, &a.curAgg, tmpDec); err != nil {
+							if _, err := tree.ExactCtx.Add(&a.curAgg, &a.curAgg, &tmpDec); err != nil {
 								colexecerror.ExpectedError(err)
 							}
 						}
@@ -368,9 +354,9 @@ func (a *sumInt64HashAgg) Compute(
 
 						{
 
-							tmpDec := &_overloadHelper.TmpDec1
+							var tmpDec apd.Decimal
 							tmpDec.SetInt64(int64(v))
-							if _, err := tree.ExactCtx.Add(&a.curAgg, &a.curAgg, tmpDec); err != nil {
+							if _, err := tree.ExactCtx.Add(&a.curAgg, &a.curAgg, &tmpDec); err != nil {
 								colexecerror.ExpectedError(err)
 							}
 						}
@@ -395,12 +381,14 @@ func (a *sumInt64HashAgg) Flush(outputIdx int) {
 	if a.numNonNull == 0 {
 		a.nulls.SetNull(outputIdx)
 	} else {
-		a.col[outputIdx] = a.curAgg
+		col := a.vec.Decimal()
+		col[outputIdx].Set(&a.curAgg)
 	}
 }
 
 func (a *sumInt64HashAgg) Reset() {
-	a.curAgg = zeroDecimalValue
+	zero := zeroDecimalValue
+	a.curAgg.Set(zero)
 	a.numNonNull = 0
 }
 
@@ -430,8 +418,6 @@ type sumDecimalHashAgg struct {
 	// curAgg holds the running total, so we can index into the slice once per
 	// group, instead of on each iteration.
 	curAgg apd.Decimal
-	// col points to the output vector we are updating.
-	col []apd.Decimal
 	// numNonNull tracks the number of non-null values we have seen for the group
 	// that is currently being aggregated.
 	numNonNull uint64
@@ -441,7 +427,6 @@ var _ AggregateFunc = &sumDecimalHashAgg{}
 
 func (a *sumDecimalHashAgg) SetOutput(vec coldata.Vec) {
 	a.unorderedAggregateFuncBase.SetOutput(vec)
-	a.col = vec.Decimal()
 }
 
 func (a *sumDecimalHashAgg) Compute(
@@ -463,7 +448,7 @@ func (a *sumDecimalHashAgg) Compute(
 
 						{
 
-							_, err := tree.ExactCtx.Add(&a.curAgg, &a.curAgg, &v)
+							_, err := tree.ExactCtx.Add(&a.curAgg, &a.curAgg, v)
 							if err != nil {
 								colexecerror.ExpectedError(err)
 							}
@@ -482,7 +467,7 @@ func (a *sumDecimalHashAgg) Compute(
 
 						{
 
-							_, err := tree.ExactCtx.Add(&a.curAgg, &a.curAgg, &v)
+							_, err := tree.ExactCtx.Add(&a.curAgg, &a.curAgg, v)
 							if err != nil {
 								colexecerror.ExpectedError(err)
 							}
@@ -508,12 +493,14 @@ func (a *sumDecimalHashAgg) Flush(outputIdx int) {
 	if a.numNonNull == 0 {
 		a.nulls.SetNull(outputIdx)
 	} else {
-		a.col[outputIdx] = a.curAgg
+		col := a.vec.Decimal()
+		col[outputIdx].Set(&a.curAgg)
 	}
 }
 
 func (a *sumDecimalHashAgg) Reset() {
-	a.curAgg = zeroDecimalValue
+	zero := zeroDecimalValue
+	a.curAgg.Set(zero)
 	a.numNonNull = 0
 }
 
@@ -543,8 +530,6 @@ type sumFloat64HashAgg struct {
 	// curAgg holds the running total, so we can index into the slice once per
 	// group, instead of on each iteration.
 	curAgg float64
-	// col points to the output vector we are updating.
-	col []float64
 	// numNonNull tracks the number of non-null values we have seen for the group
 	// that is currently being aggregated.
 	numNonNull uint64
@@ -554,7 +539,6 @@ var _ AggregateFunc = &sumFloat64HashAgg{}
 
 func (a *sumFloat64HashAgg) SetOutput(vec coldata.Vec) {
 	a.unorderedAggregateFuncBase.SetOutput(vec)
-	a.col = vec.Float64()
 }
 
 func (a *sumFloat64HashAgg) Compute(
@@ -615,7 +599,8 @@ func (a *sumFloat64HashAgg) Flush(outputIdx int) {
 	if a.numNonNull == 0 {
 		a.nulls.SetNull(outputIdx)
 	} else {
-		a.col[outputIdx] = a.curAgg
+		col := a.vec.Float64()
+		col[outputIdx] = a.curAgg
 	}
 }
 
@@ -650,8 +635,6 @@ type sumIntervalHashAgg struct {
 	// curAgg holds the running total, so we can index into the slice once per
 	// group, instead of on each iteration.
 	curAgg duration.Duration
-	// col points to the output vector we are updating.
-	col []duration.Duration
 	// numNonNull tracks the number of non-null values we have seen for the group
 	// that is currently being aggregated.
 	numNonNull uint64
@@ -661,7 +644,6 @@ var _ AggregateFunc = &sumIntervalHashAgg{}
 
 func (a *sumIntervalHashAgg) SetOutput(vec coldata.Vec) {
 	a.unorderedAggregateFuncBase.SetOutput(vec)
-	a.col = vec.Interval()
 }
 
 func (a *sumIntervalHashAgg) Compute(
@@ -712,7 +694,8 @@ func (a *sumIntervalHashAgg) Flush(outputIdx int) {
 	if a.numNonNull == 0 {
 		a.nulls.SetNull(outputIdx)
 	} else {
-		a.col[outputIdx] = a.curAgg
+		col := a.vec.Interval()
+		col[outputIdx] = a.curAgg
 	}
 }
 

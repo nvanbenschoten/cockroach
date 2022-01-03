@@ -434,10 +434,10 @@ func (d *decimal) decodeJSON(js json.JSON) error {
 	if !ok {
 		return errors.New("unable to decode decimal")
 	}
-	*d = (decimal)(*dec)
+	((*apd.Decimal)(d)).Set(dec)
 	return nil
 }
 
 func (d *decimal) encodeJSON() (json.JSON, error) {
-	return json.FromDecimal(*(*apd.Decimal)(d)), nil
+	return json.FromDecimal((*apd.Decimal)(d)), nil
 }

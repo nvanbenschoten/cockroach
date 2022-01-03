@@ -206,7 +206,7 @@ func TestPerformAppend(t *testing.T) {
 			datum := randgen.RandDatum(rng, typs[intIdx], nullOk)
 			b.ColVec(intIdx).Int64()[i] = int64(*(datum.(*tree.DInt)))
 			datum = randgen.RandDatum(rng, typs[decimalIdx], nullOk)
-			b.ColVec(decimalIdx).Decimal()[i] = datum.(*tree.DDecimal).Decimal
+			b.ColVec(decimalIdx).Decimal().Set(i, &datum.(*tree.DDecimal).Decimal)
 			datum = randgen.RandDatum(rng, typs[datumIdx], nullOk)
 			b.ColVec(datumIdx).Datum().Set(i, datum)
 		}

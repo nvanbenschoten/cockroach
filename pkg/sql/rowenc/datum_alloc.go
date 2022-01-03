@@ -164,7 +164,7 @@ func (a *DatumAlloc) NewDBitArray(v tree.DBitArray) *tree.DBitArray {
 }
 
 // NewDDecimal allocates a DDecimal.
-func (a *DatumAlloc) NewDDecimal(v tree.DDecimal) *tree.DDecimal {
+func (a *DatumAlloc) NewDDecimal() *tree.DDecimal {
 	if a.AllocSize == 0 {
 		a.AllocSize = defaultDatumAllocSize
 	}
@@ -173,7 +173,6 @@ func (a *DatumAlloc) NewDDecimal(v tree.DDecimal) *tree.DDecimal {
 		*buf = make([]tree.DDecimal, a.AllocSize)
 	}
 	r := &(*buf)[0]
-	*r = v
 	*buf = (*buf)[1:]
 	return r
 }

@@ -2894,7 +2894,7 @@ func (rs resultScanner) ScanIndex(row tree.Datums, index int, dst interface{}) e
 		if !ok {
 			return errors.Errorf("source type assertion failed")
 		}
-		*d = s.Decimal
+		d.Set(&s.Decimal)
 
 	case **apd.Decimal:
 		s, ok := src.(*tree.DDecimal)

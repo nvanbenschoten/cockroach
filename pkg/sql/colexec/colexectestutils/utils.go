@@ -68,9 +68,7 @@ func (t Tuple) String() string {
 		if i != 0 {
 			sb.WriteString(", ")
 		}
-		if d, ok := t[i].(apd.Decimal); ok {
-			sb.WriteString(d.String())
-		} else if d, ok := t[i].(*apd.Decimal); ok {
+		if d, ok := t[i].(*apd.Decimal); ok {
 			sb.WriteString(d.String())
 		} else if d, ok := t[i].([]byte); ok {
 			sb.WriteString(string(d))
@@ -109,10 +107,10 @@ func (t Tuple) less(other Tuple, evalCtx *tree.EvalContext, tupleFromOtherSet Tu
 		rhsVal := reflect.ValueOf(other[i])
 
 		// apd.Decimal are not comparable, so we check that first.
-		if lhsVal.Type().Name() == "Decimal" && lhsVal.CanInterface() {
-			lhsDecimal := lhsVal.Interface().(apd.Decimal)
-			rhsDecimal := rhsVal.Interface().(apd.Decimal)
-			cmp := (&lhsDecimal).CmpTotal(&rhsDecimal)
+		if lhsVal.Type().Kind() == reflect.Ptr && lhsVal.Type().Elem().Name() == "Decimal" && lhsVal.CanInterface() {
+			lhsDecimal := lhsVal.Interface().(*apd.Decimal)
+			rhsDecimal := rhsVal.Interface().(*apd.Decimal)
+			cmp := lhsDecimal.CmpTotal(rhsDecimal)
 			if cmp == 0 {
 				continue
 			} else if cmp == -1 {
@@ -209,7 +207,7 @@ func (t Tuple) less(other Tuple, evalCtx *tree.EvalContext, tupleFromOtherSet Tu
 			}
 			return lString < rString
 		default:
-			colexecerror.InternalError(errors.AssertionFailedf("Unhandled comparison type: %s", typ))
+			colexecerror.InternalError(errors.AssertionFailedf("Unhandled comparison type: %s %s", typ, lhsVal.Type().Name()))
 		}
 	}
 	return false
@@ -756,8 +754,8 @@ func setColVal(vec coldata.Vec, idx int, val interface{}, evalCtx *tree.EvalCont
 	case types.DecimalFamily:
 		// setColVal is used in multiple places, therefore val can be either a float
 		// or apd.Decimal.
-		if decimalVal, ok := val.(apd.Decimal); ok {
-			vec.Decimal()[idx].Set(&decimalVal)
+		if decimalVal, ok := val.(*apd.Decimal); ok {
+			vec.Decimal()[idx].Set(decimalVal)
 		} else {
 			floatVal := val.(float64)
 			decimalVal, _, err := apd.NewFromString(fmt.Sprintf("%f", floatVal))
@@ -974,7 +972,6 @@ func (s *opTestInput) Next() coldata.Batch {
 		vec := s.batch.ColVec(i)
 		// Automatically convert the Go values into exec.Type slice elements using
 		// reflection. This is slow, but acceptable for tests.
-		col := reflect.ValueOf(vec.Col())
 		for j := 0; j < batchSize; j++ {
 			// If useSel is false, then the selection vector will contain
 			// [0, ..., batchSize] in ascending order.
@@ -996,7 +993,7 @@ func (s *opTestInput) Next() coldata.Batch {
 						if err != nil {
 							colexecerror.InternalError(errors.NewAssertionErrorWithWrappedErrf(err, "error setting float"))
 						}
-						col.Index(outputIdx).Set(reflect.ValueOf(d))
+						setColVal(vec, outputIdx, &d, s.evalCtx)
 					case types.BytesFamily:
 						newBytes := make([]byte, rng.Intn(16)+1)
 						rng.Read(newBytes)
@@ -1225,7 +1222,7 @@ func GetTupleFromBatch(batch coldata.Batch, tupleIdx int) Tuple {
 				colDec := vec.Decimal()
 				var newDec apd.Decimal
 				newDec.Set(&colDec[tupleIdx])
-				val = reflect.ValueOf(newDec)
+				val = reflect.ValueOf(&newDec)
 			} else if family == types.JsonFamily {
 				colJSON := vec.JSON()
 				newJSON := colJSON.Get(tupleIdx)
@@ -1400,7 +1397,7 @@ func tupleEquals(expected Tuple, actual Tuple, evalCtx *tree.EvalContext) bool {
 				}
 			}
 			// Special case for decimals.
-			if d1, ok := actual[i].(apd.Decimal); ok {
+			if d1, ok := actual[i].(*apd.Decimal); ok {
 				if f2, ok := expected[i].(float64); ok {
 					d2, _, err := apd.NewFromString(fmt.Sprintf("%f", f2))
 					if err == nil && d1.Cmp(d2) == 0 {

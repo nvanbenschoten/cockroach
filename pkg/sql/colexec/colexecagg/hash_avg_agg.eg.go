@@ -94,7 +94,6 @@ func (a *avgInt16HashAgg) Compute(
 ) {
 	// In order to inline the templated code of overloads, we need to have a
 	// "_overloadHelper" local variable of type "overloadHelper".
-	_overloadHelper := a.overloadHelper
 	oldCurSumSize := tree.SizeOfDecimal(&a.curSum)
 	vec := vecs[inputIdxs[0]]
 	col, nulls := vec.Int16(), vec.Nulls()
@@ -111,9 +110,9 @@ func (a *avgInt16HashAgg) Compute(
 
 						{
 
-							tmpDec := &_overloadHelper.TmpDec1
+							var tmpDec apd.Decimal
 							tmpDec.SetInt64(int64(v))
-							if _, err := tree.ExactCtx.Add(&a.curSum, &a.curSum, tmpDec); err != nil {
+							if _, err := tree.ExactCtx.Add(&a.curSum, &a.curSum, &tmpDec); err != nil {
 								colexecerror.ExpectedError(err)
 							}
 						}
@@ -131,9 +130,9 @@ func (a *avgInt16HashAgg) Compute(
 
 						{
 
-							tmpDec := &_overloadHelper.TmpDec1
+							var tmpDec apd.Decimal
 							tmpDec.SetInt64(int64(v))
-							if _, err := tree.ExactCtx.Add(&a.curSum, &a.curSum, tmpDec); err != nil {
+							if _, err := tree.ExactCtx.Add(&a.curSum, &a.curSum, &tmpDec); err != nil {
 								colexecerror.ExpectedError(err)
 							}
 						}
@@ -167,7 +166,8 @@ func (a *avgInt16HashAgg) Flush(outputIdx int) {
 }
 
 func (a *avgInt16HashAgg) Reset() {
-	a.curSum = zeroDecimalValue
+	zero := zeroDecimalValue
+	a.curSum.Set(zero)
 	a.curCount = 0
 }
 
@@ -218,7 +218,6 @@ func (a *avgInt32HashAgg) Compute(
 ) {
 	// In order to inline the templated code of overloads, we need to have a
 	// "_overloadHelper" local variable of type "overloadHelper".
-	_overloadHelper := a.overloadHelper
 	oldCurSumSize := tree.SizeOfDecimal(&a.curSum)
 	vec := vecs[inputIdxs[0]]
 	col, nulls := vec.Int32(), vec.Nulls()
@@ -235,9 +234,9 @@ func (a *avgInt32HashAgg) Compute(
 
 						{
 
-							tmpDec := &_overloadHelper.TmpDec1
+							var tmpDec apd.Decimal
 							tmpDec.SetInt64(int64(v))
-							if _, err := tree.ExactCtx.Add(&a.curSum, &a.curSum, tmpDec); err != nil {
+							if _, err := tree.ExactCtx.Add(&a.curSum, &a.curSum, &tmpDec); err != nil {
 								colexecerror.ExpectedError(err)
 							}
 						}
@@ -255,9 +254,9 @@ func (a *avgInt32HashAgg) Compute(
 
 						{
 
-							tmpDec := &_overloadHelper.TmpDec1
+							var tmpDec apd.Decimal
 							tmpDec.SetInt64(int64(v))
-							if _, err := tree.ExactCtx.Add(&a.curSum, &a.curSum, tmpDec); err != nil {
+							if _, err := tree.ExactCtx.Add(&a.curSum, &a.curSum, &tmpDec); err != nil {
 								colexecerror.ExpectedError(err)
 							}
 						}
@@ -291,7 +290,8 @@ func (a *avgInt32HashAgg) Flush(outputIdx int) {
 }
 
 func (a *avgInt32HashAgg) Reset() {
-	a.curSum = zeroDecimalValue
+	zero := zeroDecimalValue
+	a.curSum.Set(zero)
 	a.curCount = 0
 }
 
@@ -342,7 +342,6 @@ func (a *avgInt64HashAgg) Compute(
 ) {
 	// In order to inline the templated code of overloads, we need to have a
 	// "_overloadHelper" local variable of type "overloadHelper".
-	_overloadHelper := a.overloadHelper
 	oldCurSumSize := tree.SizeOfDecimal(&a.curSum)
 	vec := vecs[inputIdxs[0]]
 	col, nulls := vec.Int64(), vec.Nulls()
@@ -359,9 +358,9 @@ func (a *avgInt64HashAgg) Compute(
 
 						{
 
-							tmpDec := &_overloadHelper.TmpDec1
+							var tmpDec apd.Decimal
 							tmpDec.SetInt64(int64(v))
-							if _, err := tree.ExactCtx.Add(&a.curSum, &a.curSum, tmpDec); err != nil {
+							if _, err := tree.ExactCtx.Add(&a.curSum, &a.curSum, &tmpDec); err != nil {
 								colexecerror.ExpectedError(err)
 							}
 						}
@@ -379,9 +378,9 @@ func (a *avgInt64HashAgg) Compute(
 
 						{
 
-							tmpDec := &_overloadHelper.TmpDec1
+							var tmpDec apd.Decimal
 							tmpDec.SetInt64(int64(v))
-							if _, err := tree.ExactCtx.Add(&a.curSum, &a.curSum, tmpDec); err != nil {
+							if _, err := tree.ExactCtx.Add(&a.curSum, &a.curSum, &tmpDec); err != nil {
 								colexecerror.ExpectedError(err)
 							}
 						}
@@ -415,7 +414,8 @@ func (a *avgInt64HashAgg) Flush(outputIdx int) {
 }
 
 func (a *avgInt64HashAgg) Reset() {
-	a.curSum = zeroDecimalValue
+	zero := zeroDecimalValue
+	a.curSum.Set(zero)
 	a.curCount = 0
 }
 
@@ -479,7 +479,7 @@ func (a *avgDecimalHashAgg) Compute(
 
 						{
 
-							_, err := tree.ExactCtx.Add(&a.curSum, &a.curSum, &v)
+							_, err := tree.ExactCtx.Add(&a.curSum, &a.curSum, v)
 							if err != nil {
 								colexecerror.ExpectedError(err)
 							}
@@ -498,7 +498,7 @@ func (a *avgDecimalHashAgg) Compute(
 
 						{
 
-							_, err := tree.ExactCtx.Add(&a.curSum, &a.curSum, &v)
+							_, err := tree.ExactCtx.Add(&a.curSum, &a.curSum, v)
 							if err != nil {
 								colexecerror.ExpectedError(err)
 							}
@@ -533,7 +533,8 @@ func (a *avgDecimalHashAgg) Flush(outputIdx int) {
 }
 
 func (a *avgDecimalHashAgg) Reset() {
-	a.curSum = zeroDecimalValue
+	zero := zeroDecimalValue
+	a.curSum.Set(zero)
 	a.curCount = 0
 }
 
@@ -641,7 +642,8 @@ func (a *avgFloat64HashAgg) Flush(outputIdx int) {
 }
 
 func (a *avgFloat64HashAgg) Reset() {
-	a.curSum = zeroFloat64Value
+	zero := zeroFloat64Value
+	a.curSum = zero
 	a.curCount = 0
 }
 
@@ -739,7 +741,8 @@ func (a *avgIntervalHashAgg) Flush(outputIdx int) {
 }
 
 func (a *avgIntervalHashAgg) Reset() {
-	a.curSum = zeroIntervalValue
+	zero := zeroIntervalValue
+	a.curSum = zero
 	a.curCount = 0
 }
 

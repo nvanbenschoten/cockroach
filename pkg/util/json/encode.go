@@ -65,8 +65,8 @@ func (j jsonString) encode(appendTo []byte) (e jEntry, b []byte, err error) {
 
 func (j jsonNumber) encode(appendTo []byte) (e jEntry, b []byte, err error) {
 	decOffset := len(appendTo)
-	dec := apd.Decimal(j)
-	appendTo = encoding.EncodeUntaggedDecimalValue(appendTo, &dec)
+	dec := j.d
+	appendTo = encoding.EncodeUntaggedDecimalValue(appendTo, dec)
 	lengthInBytes := len(appendTo) - decOffset
 	if err := checkLength(lengthInBytes); err != nil {
 		return jEntry{}, b, err
@@ -288,11 +288,12 @@ func decodeJSONObject(containerHeader uint32, b []byte) ([]byte, JSON, error) {
 }
 
 func decodeJSONNumber(b []byte) ([]byte, JSON, error) {
-	b, d, err := encoding.DecodeUntaggedDecimalValue(b)
+	var d apd.Decimal
+	b, err := encoding.DecodeIntoUntaggedDecimalValue(&d, b)
 	if err != nil {
 		return b, nil, err
 	}
-	return b, jsonNumber(d), nil
+	return b, jsonNumber{&d}, nil
 }
 
 func decodeJSONValue(e jEntry, b []byte) ([]byte, JSON, error) {

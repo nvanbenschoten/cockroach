@@ -167,12 +167,14 @@ func testSumAndAvg(t *testing.T, evalCtx *tree.EvalContext, wfr *tree.WindowFram
 			if err != nil {
 				t.Errorf("Unexpected error received when getting sum from sliding window: %+v", err)
 			}
-			sumResult := tree.DDecimal{Decimal: res.(*tree.DDecimal).Decimal}
+			var sumResult tree.DDecimal
+			sumResult.Set(&res.(*tree.DDecimal).Decimal)
 			res, err = avg.Compute(evalCtx.Ctx(), evalCtx, wfr)
 			if err != nil {
 				t.Errorf("Unexpected error received when getting avg from sliding window: %+v", err)
 			}
-			avgResult := tree.DDecimal{Decimal: res.(*tree.DDecimal).Decimal}
+			var avgResult tree.DDecimal
+			avgResult.Set(&res.(*tree.DDecimal).Decimal)
 			naiveSum := int64(0)
 			for idx := wfr.RowIdx - offset; idx <= wfr.RowIdx+offset; idx++ {
 				if idx < 0 || idx >= wfr.PartitionSize() {

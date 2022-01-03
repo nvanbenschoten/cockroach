@@ -800,20 +800,20 @@ func TestDecimalRatRoundtrip(t *testing.T) {
 			{5, apd.New(1, -5)},
 		}
 		for d, test := range tests {
-			rat, err := decimalToRat(*test.dec, test.scale)
+			rat, err := decimalToRat(test.dec, test.scale)
 			require.NoError(t, err)
 			roundtrip := ratToDecimal(rat, test.scale)
-			if test.dec.CmpTotal(&roundtrip) != 0 {
-				t.Errorf(`%d: %s != %s`, d, test.dec, &roundtrip)
+			if test.dec.CmpTotal(roundtrip) != 0 {
+				t.Errorf(`%d: %s != %s`, d, test.dec, roundtrip)
 			}
 		}
 	})
 	t.Run(`error`, func(t *testing.T) {
-		_, err := decimalToRat(*apd.New(1, -2), 1)
+		_, err := decimalToRat(apd.New(1, -2), 1)
 		require.EqualError(t, err, "0.01 will not roundtrip at scale 1")
-		_, err = decimalToRat(*apd.New(1, -1), 2)
+		_, err = decimalToRat(apd.New(1, -1), 2)
 		require.EqualError(t, err, "0.1 will not roundtrip at scale 2")
-		_, err = decimalToRat(apd.Decimal{Form: apd.Infinite}, 0)
+		_, err = decimalToRat(&apd.Decimal{Form: apd.Infinite}, 0)
 		require.EqualError(t, err, "cannot convert Infinite form decimal")
 	})
 	t.Run(`rand`, func(t *testing.T) {
@@ -822,11 +822,11 @@ func TestDecimalRatRoundtrip(t *testing.T) {
 		scale := rng.Int31n(precision + 1)
 		coeff := rng.Int63n(int64(math.Pow10(int(precision))))
 		dec := apd.New(coeff, -scale)
-		rat, err := decimalToRat(*dec, scale)
+		rat, err := decimalToRat(dec, scale)
 		require.NoError(t, err)
 		roundtrip := ratToDecimal(rat, scale)
-		if dec.CmpTotal(&roundtrip) != 0 {
-			t.Errorf(`%s != %s`, dec, &roundtrip)
+		if dec.CmpTotal(roundtrip) != 0 {
+			t.Errorf(`%s != %s`, dec, roundtrip)
 		}
 	})
 }

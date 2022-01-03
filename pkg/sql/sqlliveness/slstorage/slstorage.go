@@ -15,6 +15,7 @@ import (
 	"math/rand"
 	"time"
 
+	"github.com/cockroachdb/apd/v2"
 	"github.com/cockroachdb/cockroach/pkg/keys"
 	"github.com/cockroachdb/cockroach/pkg/kv"
 	"github.com/cockroachdb/cockroach/pkg/multitenant"
@@ -468,7 +469,8 @@ func decodeValue(kv kv.KeyValue) (hlc.Timestamp, error) {
 		return hlc.Timestamp{},
 			errors.Wrapf(err, "failed to decode tuple from key %v", kv.Key)
 	}
-	_, dec, err := encoding.DecodeDecimalValue(tup)
+	var dec apd.Decimal
+	_, err = encoding.DecodeDecimalValue(&dec, tup)
 	if err != nil {
 		return hlc.Timestamp{},
 			errors.Wrapf(err, "failed to decode decimal from key %v", kv.Key)
@@ -478,7 +480,8 @@ func decodeValue(kv kv.KeyValue) (hlc.Timestamp, error) {
 
 func encodeValue(expiration hlc.Timestamp) roachpb.Value {
 	var v roachpb.Value
-	dec := tree.TimestampToDecimal(expiration)
+	var dec apd.Decimal
+	tree.TimestampToDecimal(expiration, &dec)
 	v.SetTuple(encoding.EncodeDecimalValue(nil, 2, &dec))
 	return v
 }

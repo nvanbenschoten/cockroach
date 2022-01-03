@@ -118,7 +118,10 @@ var (
 						if t.NaN {
 							v = &apd.Decimal{Form: apd.NaN}
 						} else {
-							v = apd.NewWithBigInt(t.Int, t.Exp)
+							d := apd.New(0, t.Exp)
+							d.Negative = t.Int.Sign() < 0
+							d.Coeff.SetBytes(t.Int.Bytes())
+							v = d
 						}
 					}
 				case int64:

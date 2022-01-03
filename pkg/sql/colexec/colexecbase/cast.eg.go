@@ -1707,7 +1707,6 @@ func (c *castDecimalInt2Op) Next() coldata.Batch {
 	}
 	// In order to inline the templated code of overloads, we need to have a
 	// "_overloadHelper" local variable of type "execgen.OverloadHelper".
-	_overloadHelper := c.overloadHelper
 	sel := batch.Selection()
 	inputVec := batch.ColVec(c.colIdx)
 	outputVec := batch.ColVec(c.outputIdx)
@@ -1737,8 +1736,8 @@ func (c *castDecimalInt2Op) Next() coldata.Batch {
 							var r int16
 
 							{
-								tmpDec := &_overloadHelper.TmpDec1
-								_, err := tree.DecimalCtx.RoundToIntegralValue(tmpDec, &v)
+								var tmpDec apd.Decimal
+								_, err := tree.DecimalCtx.RoundToIntegralValue(&tmpDec, v)
 								if err != nil {
 									colexecerror.ExpectedError(err)
 								}
@@ -1776,8 +1775,8 @@ func (c *castDecimalInt2Op) Next() coldata.Batch {
 							var r int16
 
 							{
-								tmpDec := &_overloadHelper.TmpDec1
-								_, err := tree.DecimalCtx.RoundToIntegralValue(tmpDec, &v)
+								var tmpDec apd.Decimal
+								_, err := tree.DecimalCtx.RoundToIntegralValue(&tmpDec, v)
 								if err != nil {
 									colexecerror.ExpectedError(err)
 								}
@@ -1818,8 +1817,8 @@ func (c *castDecimalInt2Op) Next() coldata.Batch {
 							var r int16
 
 							{
-								tmpDec := &_overloadHelper.TmpDec1
-								_, err := tree.DecimalCtx.RoundToIntegralValue(tmpDec, &v)
+								var tmpDec apd.Decimal
+								_, err := tree.DecimalCtx.RoundToIntegralValue(&tmpDec, v)
 								if err != nil {
 									colexecerror.ExpectedError(err)
 								}
@@ -1857,8 +1856,8 @@ func (c *castDecimalInt2Op) Next() coldata.Batch {
 							var r int16
 
 							{
-								tmpDec := &_overloadHelper.TmpDec1
-								_, err := tree.DecimalCtx.RoundToIntegralValue(tmpDec, &v)
+								var tmpDec apd.Decimal
+								_, err := tree.DecimalCtx.RoundToIntegralValue(&tmpDec, v)
 								if err != nil {
 									colexecerror.ExpectedError(err)
 								}
@@ -1904,7 +1903,6 @@ func (c *castDecimalInt4Op) Next() coldata.Batch {
 	}
 	// In order to inline the templated code of overloads, we need to have a
 	// "_overloadHelper" local variable of type "execgen.OverloadHelper".
-	_overloadHelper := c.overloadHelper
 	sel := batch.Selection()
 	inputVec := batch.ColVec(c.colIdx)
 	outputVec := batch.ColVec(c.outputIdx)
@@ -1934,8 +1932,8 @@ func (c *castDecimalInt4Op) Next() coldata.Batch {
 							var r int32
 
 							{
-								tmpDec := &_overloadHelper.TmpDec1
-								_, err := tree.DecimalCtx.RoundToIntegralValue(tmpDec, &v)
+								var tmpDec apd.Decimal
+								_, err := tree.DecimalCtx.RoundToIntegralValue(&tmpDec, v)
 								if err != nil {
 									colexecerror.ExpectedError(err)
 								}
@@ -1973,8 +1971,8 @@ func (c *castDecimalInt4Op) Next() coldata.Batch {
 							var r int32
 
 							{
-								tmpDec := &_overloadHelper.TmpDec1
-								_, err := tree.DecimalCtx.RoundToIntegralValue(tmpDec, &v)
+								var tmpDec apd.Decimal
+								_, err := tree.DecimalCtx.RoundToIntegralValue(&tmpDec, v)
 								if err != nil {
 									colexecerror.ExpectedError(err)
 								}
@@ -2015,8 +2013,8 @@ func (c *castDecimalInt4Op) Next() coldata.Batch {
 							var r int32
 
 							{
-								tmpDec := &_overloadHelper.TmpDec1
-								_, err := tree.DecimalCtx.RoundToIntegralValue(tmpDec, &v)
+								var tmpDec apd.Decimal
+								_, err := tree.DecimalCtx.RoundToIntegralValue(&tmpDec, v)
 								if err != nil {
 									colexecerror.ExpectedError(err)
 								}
@@ -2054,8 +2052,8 @@ func (c *castDecimalInt4Op) Next() coldata.Batch {
 							var r int32
 
 							{
-								tmpDec := &_overloadHelper.TmpDec1
-								_, err := tree.DecimalCtx.RoundToIntegralValue(tmpDec, &v)
+								var tmpDec apd.Decimal
+								_, err := tree.DecimalCtx.RoundToIntegralValue(&tmpDec, v)
 								if err != nil {
 									colexecerror.ExpectedError(err)
 								}
@@ -2101,7 +2099,6 @@ func (c *castDecimalIntOp) Next() coldata.Batch {
 	}
 	// In order to inline the templated code of overloads, we need to have a
 	// "_overloadHelper" local variable of type "execgen.OverloadHelper".
-	_overloadHelper := c.overloadHelper
 	sel := batch.Selection()
 	inputVec := batch.ColVec(c.colIdx)
 	outputVec := batch.ColVec(c.outputIdx)
@@ -2131,8 +2128,8 @@ func (c *castDecimalIntOp) Next() coldata.Batch {
 							var r int64
 
 							{
-								tmpDec := &_overloadHelper.TmpDec1
-								_, err := tree.DecimalCtx.RoundToIntegralValue(tmpDec, &v)
+								var tmpDec apd.Decimal
+								_, err := tree.DecimalCtx.RoundToIntegralValue(&tmpDec, v)
 								if err != nil {
 									colexecerror.ExpectedError(err)
 								}
@@ -2164,8 +2161,8 @@ func (c *castDecimalIntOp) Next() coldata.Batch {
 							var r int64
 
 							{
-								tmpDec := &_overloadHelper.TmpDec1
-								_, err := tree.DecimalCtx.RoundToIntegralValue(tmpDec, &v)
+								var tmpDec apd.Decimal
+								_, err := tree.DecimalCtx.RoundToIntegralValue(&tmpDec, v)
 								if err != nil {
 									colexecerror.ExpectedError(err)
 								}
@@ -2200,8 +2197,8 @@ func (c *castDecimalIntOp) Next() coldata.Batch {
 							var r int64
 
 							{
-								tmpDec := &_overloadHelper.TmpDec1
-								_, err := tree.DecimalCtx.RoundToIntegralValue(tmpDec, &v)
+								var tmpDec apd.Decimal
+								_, err := tree.DecimalCtx.RoundToIntegralValue(&tmpDec, v)
 								if err != nil {
 									colexecerror.ExpectedError(err)
 								}
@@ -2233,8 +2230,8 @@ func (c *castDecimalIntOp) Next() coldata.Batch {
 							var r int64
 
 							{
-								tmpDec := &_overloadHelper.TmpDec1
-								_, err := tree.DecimalCtx.RoundToIntegralValue(tmpDec, &v)
+								var tmpDec apd.Decimal
+								_, err := tree.DecimalCtx.RoundToIntegralValue(&tmpDec, v)
 								if err != nil {
 									colexecerror.ExpectedError(err)
 								}
@@ -2446,12 +2443,12 @@ func (c *castDecimalDecimalOp) Next() coldata.Batch {
 							v := inputCol.Get(tupleIdx)
 							var r apd.Decimal
 
-							r.Set(&v)
+							r.Set(v)
 							if err := tree.LimitDecimalWidth(&r, int(toType.Precision()), int(toType.Scale())); err != nil {
 								colexecerror.ExpectedError(err)
 							}
 
-							outputCol.Set(tupleIdx, r)
+							outputCol.Set(tupleIdx, &r)
 						}
 					}
 				} else {
@@ -2471,13 +2468,13 @@ func (c *castDecimalDecimalOp) Next() coldata.Batch {
 							v := inputCol.Get(tupleIdx)
 							var r apd.Decimal
 
-							r.Set(&v)
+							r.Set(v)
 							if err := tree.LimitDecimalWidth(&r, int(toType.Precision()), int(toType.Scale())); err != nil {
 								colexecerror.ExpectedError(err)
 							}
 
 							//gcassert:bce
-							outputCol.Set(tupleIdx, r)
+							outputCol.Set(tupleIdx, &r)
 						}
 					}
 				}
@@ -2499,12 +2496,12 @@ func (c *castDecimalDecimalOp) Next() coldata.Batch {
 							v := inputCol.Get(tupleIdx)
 							var r apd.Decimal
 
-							r.Set(&v)
+							r.Set(v)
 							if err := tree.LimitDecimalWidth(&r, int(toType.Precision()), int(toType.Scale())); err != nil {
 								colexecerror.ExpectedError(err)
 							}
 
-							outputCol.Set(tupleIdx, r)
+							outputCol.Set(tupleIdx, &r)
 						}
 					}
 				} else {
@@ -2524,13 +2521,13 @@ func (c *castDecimalDecimalOp) Next() coldata.Batch {
 							v := inputCol.Get(tupleIdx)
 							var r apd.Decimal
 
-							r.Set(&v)
+							r.Set(v)
 							if err := tree.LimitDecimalWidth(&r, int(toType.Precision()), int(toType.Scale())); err != nil {
 								colexecerror.ExpectedError(err)
 							}
 
 							//gcassert:bce
-							outputCol.Set(tupleIdx, r)
+							outputCol.Set(tupleIdx, &r)
 						}
 					}
 				}
@@ -2944,7 +2941,7 @@ func (c *castInt2DecimalOp) Next() coldata.Batch {
 								colexecerror.ExpectedError(err)
 							}
 
-							outputCol.Set(tupleIdx, r)
+							outputCol.Set(tupleIdx, &r)
 						}
 					}
 				} else {
@@ -2971,7 +2968,7 @@ func (c *castInt2DecimalOp) Next() coldata.Batch {
 							}
 
 							//gcassert:bce
-							outputCol.Set(tupleIdx, r)
+							outputCol.Set(tupleIdx, &r)
 						}
 					}
 				}
@@ -2999,7 +2996,7 @@ func (c *castInt2DecimalOp) Next() coldata.Batch {
 								colexecerror.ExpectedError(err)
 							}
 
-							outputCol.Set(tupleIdx, r)
+							outputCol.Set(tupleIdx, &r)
 						}
 					}
 				} else {
@@ -3026,7 +3023,7 @@ func (c *castInt2DecimalOp) Next() coldata.Batch {
 							}
 
 							//gcassert:bce
-							outputCol.Set(tupleIdx, r)
+							outputCol.Set(tupleIdx, &r)
 						}
 					}
 				}
@@ -3588,7 +3585,7 @@ func (c *castInt4DecimalOp) Next() coldata.Batch {
 								colexecerror.ExpectedError(err)
 							}
 
-							outputCol.Set(tupleIdx, r)
+							outputCol.Set(tupleIdx, &r)
 						}
 					}
 				} else {
@@ -3615,7 +3612,7 @@ func (c *castInt4DecimalOp) Next() coldata.Batch {
 							}
 
 							//gcassert:bce
-							outputCol.Set(tupleIdx, r)
+							outputCol.Set(tupleIdx, &r)
 						}
 					}
 				}
@@ -3643,7 +3640,7 @@ func (c *castInt4DecimalOp) Next() coldata.Batch {
 								colexecerror.ExpectedError(err)
 							}
 
-							outputCol.Set(tupleIdx, r)
+							outputCol.Set(tupleIdx, &r)
 						}
 					}
 				} else {
@@ -3670,7 +3667,7 @@ func (c *castInt4DecimalOp) Next() coldata.Batch {
 							}
 
 							//gcassert:bce
-							outputCol.Set(tupleIdx, r)
+							outputCol.Set(tupleIdx, &r)
 						}
 					}
 				}
@@ -4256,7 +4253,7 @@ func (c *castIntDecimalOp) Next() coldata.Batch {
 								colexecerror.ExpectedError(err)
 							}
 
-							outputCol.Set(tupleIdx, r)
+							outputCol.Set(tupleIdx, &r)
 						}
 					}
 				} else {
@@ -4283,7 +4280,7 @@ func (c *castIntDecimalOp) Next() coldata.Batch {
 							}
 
 							//gcassert:bce
-							outputCol.Set(tupleIdx, r)
+							outputCol.Set(tupleIdx, &r)
 						}
 					}
 				}
@@ -4311,7 +4308,7 @@ func (c *castIntDecimalOp) Next() coldata.Batch {
 								colexecerror.ExpectedError(err)
 							}
 
-							outputCol.Set(tupleIdx, r)
+							outputCol.Set(tupleIdx, &r)
 						}
 					}
 				} else {
@@ -4338,7 +4335,7 @@ func (c *castIntDecimalOp) Next() coldata.Batch {
 							}
 
 							//gcassert:bce
-							outputCol.Set(tupleIdx, r)
+							outputCol.Set(tupleIdx, &r)
 						}
 					}
 				}
@@ -4646,7 +4643,7 @@ func (c *castFloatDecimalOp) Next() coldata.Batch {
 								colexecerror.ExpectedError(err)
 							}
 
-							outputCol.Set(tupleIdx, r)
+							outputCol.Set(tupleIdx, &r)
 						}
 					}
 				} else {
@@ -4675,7 +4672,7 @@ func (c *castFloatDecimalOp) Next() coldata.Batch {
 							}
 
 							//gcassert:bce
-							outputCol.Set(tupleIdx, r)
+							outputCol.Set(tupleIdx, &r)
 						}
 					}
 				}
@@ -4705,7 +4702,7 @@ func (c *castFloatDecimalOp) Next() coldata.Batch {
 								colexecerror.ExpectedError(err)
 							}
 
-							outputCol.Set(tupleIdx, r)
+							outputCol.Set(tupleIdx, &r)
 						}
 					}
 				} else {
@@ -4734,7 +4731,7 @@ func (c *castFloatDecimalOp) Next() coldata.Batch {
 							}
 
 							//gcassert:bce
-							outputCol.Set(tupleIdx, r)
+							outputCol.Set(tupleIdx, &r)
 						}
 					}
 				}
@@ -5720,7 +5717,7 @@ func (c *castDateDecimalOp) Next() coldata.Batch {
 								colexecerror.ExpectedError(err)
 							}
 
-							outputCol.Set(tupleIdx, r)
+							outputCol.Set(tupleIdx, &r)
 						}
 					}
 				} else {
@@ -5747,7 +5744,7 @@ func (c *castDateDecimalOp) Next() coldata.Batch {
 							}
 
 							//gcassert:bce
-							outputCol.Set(tupleIdx, r)
+							outputCol.Set(tupleIdx, &r)
 						}
 					}
 				}
@@ -5775,7 +5772,7 @@ func (c *castDateDecimalOp) Next() coldata.Batch {
 								colexecerror.ExpectedError(err)
 							}
 
-							outputCol.Set(tupleIdx, r)
+							outputCol.Set(tupleIdx, &r)
 						}
 					}
 				} else {
@@ -5802,7 +5799,7 @@ func (c *castDateDecimalOp) Next() coldata.Batch {
 							}
 
 							//gcassert:bce
-							outputCol.Set(tupleIdx, r)
+							outputCol.Set(tupleIdx, &r)
 						}
 					}
 				}
@@ -7481,10 +7478,10 @@ func (c *castDatumDecimalOp) Next() coldata.Batch {
 								if err != nil {
 									colexecerror.ExpectedError(err)
 								}
-								r = converter(_castedDatum).(apd.Decimal)
+								r.Set(converter(_castedDatum).(*apd.Decimal))
 							}
 
-							outputCol.Set(tupleIdx, r)
+							outputCol.Set(tupleIdx, &r)
 						}
 					}
 				} else {
@@ -7507,11 +7504,11 @@ func (c *castDatumDecimalOp) Next() coldata.Batch {
 								if err != nil {
 									colexecerror.ExpectedError(err)
 								}
-								r = converter(_castedDatum).(apd.Decimal)
+								r.Set(converter(_castedDatum).(*apd.Decimal))
 							}
 
 							//gcassert:bce
-							outputCol.Set(tupleIdx, r)
+							outputCol.Set(tupleIdx, &r)
 						}
 					}
 				}
@@ -7538,10 +7535,10 @@ func (c *castDatumDecimalOp) Next() coldata.Batch {
 								if err != nil {
 									colexecerror.ExpectedError(err)
 								}
-								r = converter(_castedDatum).(apd.Decimal)
+								r.Set(converter(_castedDatum).(*apd.Decimal))
 							}
 
-							outputCol.Set(tupleIdx, r)
+							outputCol.Set(tupleIdx, &r)
 						}
 					}
 				} else {
@@ -7564,11 +7561,11 @@ func (c *castDatumDecimalOp) Next() coldata.Batch {
 								if err != nil {
 									colexecerror.ExpectedError(err)
 								}
-								r = converter(_castedDatum).(apd.Decimal)
+								r.Set(converter(_castedDatum).(*apd.Decimal))
 							}
 
 							//gcassert:bce
-							outputCol.Set(tupleIdx, r)
+							outputCol.Set(tupleIdx, &r)
 						}
 					}
 				}

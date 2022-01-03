@@ -13,7 +13,6 @@ package colencoding
 import (
 	"time"
 
-	"github.com/cockroachdb/apd/v2"
 	"github.com/cockroachdb/cockroach/pkg/col/coldata"
 	"github.com/cockroachdb/cockroach/pkg/roachpb"
 	"github.com/cockroachdb/cockroach/pkg/sql/catalog/descpb"
@@ -155,13 +154,12 @@ func decodeTableKeyToCol(
 		}
 		vecs.Float64Cols[colIdx][rowIdx] = f
 	case types.DecimalFamily:
-		var d apd.Decimal
+		d := &vecs.DecimalCols[colIdx][rowIdx]
 		if dir == descpb.IndexDescriptor_ASC {
-			rkey, d, err = encoding.DecodeDecimalAscending(key, scratch[:0])
+			rkey, err = encoding.DecodeDecimalAscending(d, key, scratch[:0])
 		} else {
-			rkey, d, err = encoding.DecodeDecimalDescending(key, scratch[:0])
+			rkey, err = encoding.DecodeDecimalDescending(d, key, scratch[:0])
 		}
-		vecs.DecimalCols[colIdx][rowIdx] = d
 	case types.BytesFamily, types.StringFamily, types.UuidFamily:
 		if dir == descpb.IndexDescriptor_ASC {
 			// We ask for the deep copy to be made so that scratch doesn't

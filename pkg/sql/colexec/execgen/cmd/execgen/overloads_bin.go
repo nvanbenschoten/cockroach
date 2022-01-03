@@ -336,7 +336,7 @@ func (decimalCustomizer) getBinOpAssignFunc() assignFunc {
 					colexecerror.ExpectedError(tree.ErrDivByZero)
 				}
 				{{end}}
-				_, err := tree.{{.Ctx}}.{{.Op}}(&{{.Target}}, &{{.Left}}, &{{.Right}})
+				_, err := tree.{{.Ctx}}.{{.Op}}(&{{.Target}}, {{.Left}}, {{.Right}})
 				if err != nil {
 					colexecerror.ExpectedError(err)
 				}
@@ -552,7 +552,7 @@ func (c decimalIntCustomizer) getBinOpAssignFunc() assignFunc {
 				{{end}}
 				tmpDec := &_overloadHelper.TmpDec1
 				tmpDec.SetInt64(int64({{.Right}}))
-				if _, err := tree.{{.Ctx}}.{{.Op}}(&{{.Target}}, &{{.Left}}, tmpDec); err != nil {
+				if _, err := tree.{{.Ctx}}.{{.Op}}(&{{.Target}}, {{.Left}}, tmpDec); err != nil {
 					colexecerror.ExpectedError(err)
 				}
 			}
@@ -585,7 +585,7 @@ func (c intDecimalCustomizer) getBinOpAssignFunc() assignFunc {
 				{{end}}
 				tmpDec := &_overloadHelper.TmpDec1
 				tmpDec.SetInt64(int64({{.Left}}))
-				_, err := tree.{{.Ctx}}.{{.Op}}(&{{.Target}}, tmpDec, &{{.Right}})
+				_, err := tree.{{.Ctx}}.{{.Op}}(&{{.Target}}, tmpDec, {{.Right}})
 				if err != nil {
 					colexecerror.ExpectedError(err)
 				}

@@ -413,13 +413,13 @@ func TestDecodeInvalid(t *testing.T) {
 			name:    "Decimal, malformed uvarint",
 			buf:     []byte{decimalPosLarge},
 			pattern: "insufficient bytes to decode uvarint value",
-			decode:  func(b []byte) error { _, _, err := DecodeDecimalAscending(b, nil); return err },
+			decode:  func(b []byte) error { _, err := DecodeDecimalAscending(new(apd.Decimal), b, nil); return err },
 		},
 		{
 			name:    "DecimalDescending, malformed uvarint",
 			buf:     []byte{decimalPosLarge},
 			pattern: "insufficient bytes to decode uvarint value",
-			decode:  func(b []byte) error { _, _, err := DecodeDecimalDescending(b, nil); return err },
+			decode:  func(b []byte) error { _, err := DecodeDecimalDescending(new(apd.Decimal), b, nil); return err },
 		},
 	}
 	for _, test := range tests {
@@ -1961,12 +1961,13 @@ func TestValueEncodeDecodeDecimal(t *testing.T) {
 	}
 	for _, test := range tests {
 		buf := EncodeDecimalValue(nil, NoColumnID, test)
-		_, x, err := DecodeDecimalValue(buf)
+		var x apd.Decimal
+		_, err := DecodeDecimalValue(&x, buf)
 		if err != nil {
 			t.Fatal(err)
 		}
 		if x.Cmp(test) != 0 {
-			t.Errorf("seed %d: expected %v got %v", seed, test, x)
+			t.Errorf("seed %d: expected %v got %v", seed, test, &x)
 		}
 	}
 }
@@ -2236,7 +2237,7 @@ func randValueEncode(rd randData, buf []byte, colID uint32, typ Type) ([]byte, i
 		return EncodeFloatValue(buf, colID, x), x, true
 	case Decimal:
 		x := rd.decimal()
-		return EncodeDecimalValue(buf, colID, x), *x, true
+		return EncodeDecimalValue(buf, colID, x), x, true
 	case Bytes:
 		x := randutil.RandBytes(rd.Rand, 100)
 		return EncodeBytesValue(buf, colID, x), x, true
@@ -2397,7 +2398,9 @@ func TestValueEncodingRand(t *testing.T) {
 		case Float:
 			buf, decoded, err = DecodeFloatValue(buf)
 		case Decimal:
-			buf, decoded, err = DecodeDecimalValue(buf)
+			var dec apd.Decimal
+			buf, err = DecodeDecimalValue(&dec, buf)
+			decoded = &dec
 		case Bytes:
 			buf, decoded, err = DecodeBytesValue(buf)
 		case Time:
@@ -2423,9 +2426,9 @@ func TestValueEncodingRand(t *testing.T) {
 				t.Fatalf("seed %d: %s got %x expected %x", seed, typ, decoded.([]byte), value.([]byte))
 			}
 		case Decimal:
-			d := decoded.(apd.Decimal)
-			val := value.(apd.Decimal)
-			if d.Cmp(&val) != 0 {
+			d := decoded.(*apd.Decimal)
+			val := value.(*apd.Decimal)
+			if d.Cmp(val) != 0 {
 				t.Fatalf("seed %d: %s got %v expected %v", seed, typ, decoded, value)
 			}
 		case IPAddr:
@@ -2758,7 +2761,8 @@ func BenchmarkDecodeDecimalValue(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		if _, _, err := DecodeDecimalValue(vals[i%len(vals)]); err != nil {
+		var res apd.Decimal
+		if _, err := DecodeDecimalValue(&res, vals[i%len(vals)]); err != nil {
 			b.Fatal(err)
 		}
 	}

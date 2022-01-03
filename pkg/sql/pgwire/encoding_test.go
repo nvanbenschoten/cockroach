@@ -342,7 +342,8 @@ func TestExoticNumericEncodings(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			expected := &tree.DDecimal{Decimal: *c.Value}
+			expected := &tree.DDecimal{}
+			expected.Set(c.Value)
 			if d.Compare(&evalCtx, expected) != 0 {
 				t.Fatalf("%v != %v", d, expected)
 			}

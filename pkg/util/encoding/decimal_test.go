@@ -95,19 +95,19 @@ func encodeDecimalWithDir(dir Direction, buf []byte, d *apd.Decimal) []byte {
 
 func decodeDecimalWithDir(
 	t *testing.T, dir Direction, buf []byte, tmp []byte,
-) ([]byte, apd.Decimal) {
+) ([]byte, *apd.Decimal) {
 	var err error
 	var resBuf []byte
 	var res apd.Decimal
 	if dir == Ascending {
-		resBuf, res, err = DecodeDecimalAscending(buf, tmp)
+		resBuf, err = DecodeDecimalAscending(&res, buf, tmp)
 	} else {
-		resBuf, res, err = DecodeDecimalDescending(buf, tmp)
+		resBuf, err = DecodeDecimalDescending(&res, buf, tmp)
 	}
 	if err != nil {
 		t.Fatal(err)
 	}
-	return resBuf, res
+	return resBuf, &res
 }
 
 func mustDecimalFloat64(f float64) *apd.Decimal {
@@ -264,11 +264,11 @@ func TestEncodeDecimalRand(t *testing.T) {
 			if dir == Ascending {
 				enc = EncodeDecimalAscending(appendTo, cur)
 				enc = enc[len(appendTo):]
-				_, res, err = DecodeDecimalAscending(enc, tmp)
+				_, err = DecodeDecimalAscending(&res, enc, tmp)
 			} else {
 				enc = EncodeDecimalDescending(appendTo, cur)
 				enc = enc[len(appendTo):]
-				_, res, err = DecodeDecimalDescending(enc, tmp)
+				_, err = DecodeDecimalDescending(&res, enc, tmp)
 			}
 			if err != nil {
 				t.Fatal(err)
@@ -278,7 +278,7 @@ func TestEncodeDecimalRand(t *testing.T) {
 
 			// Make sure we decode the same value we encoded.
 			if cur.Cmp(&res) != 0 {
-				t.Fatalf("unexpected mismatch for %v, got %v", cur, res)
+				t.Fatalf("unexpected mismatch for %v, got %v", cur, &res)
 			}
 
 			// Make sure lexicographical sorting is consistent.
@@ -355,7 +355,8 @@ func TestNonsortingEncodeDecimal(t *testing.T) {
 		for i, c := range testCases {
 			t.Run(fmt.Sprintf("%d_%d_%s", cap(tmp), i, c.Value), func(t *testing.T) {
 				enc := EncodeNonsortingDecimal(nil, c.Value)
-				dec, err := DecodeNonsortingDecimal(enc, tmp)
+				var dec apd.Decimal
+				err := DecodeIntoNonsortingDecimal(&dec, enc, tmp)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -364,7 +365,7 @@ func TestNonsortingEncodeDecimal(t *testing.T) {
 						c.Value, c.Encoding, enc)
 				}
 				if dec.CmpTotal(c.Value) != 0 {
-					t.Errorf("%d unexpected mismatch for %v. got %v", i, c.Value, dec)
+					t.Errorf("%d unexpected mismatch for %v. got %v", i, c.Value, &dec)
 				}
 				// Test that appending the decimal to an existing buffer works. It
 				// is important to test with various values, slice lengths, and
@@ -379,13 +380,13 @@ func TestNonsortingEncodeDecimal(t *testing.T) {
 					copy(buf, orig)
 
 					enc := EncodeNonsortingDecimal(buf, c.Value)
-					dec, err := DecodeNonsortingDecimal(enc[origLen:], tmp)
+					err := DecodeIntoNonsortingDecimal(&dec, enc[origLen:], tmp)
 					if err != nil {
 						t.Fatal(err)
 					}
 
 					if dec.CmpTotal(c.Value) != 0 {
-						t.Errorf("unexpected mismatch for %v. got %v", c.Value, dec)
+						t.Errorf("unexpected mismatch for %v. got %v", c.Value, &dec)
 					}
 					// Verify the existing values weren't modified.
 					for i := range orig {
@@ -418,14 +419,15 @@ func TestNonsortingEncodeDecimalRand(t *testing.T) {
 
 		enc := EncodeNonsortingDecimal(appendTo, cur)
 		enc = enc[len(appendTo):]
-		res, err := DecodeNonsortingDecimal(enc, tmp)
+		var res apd.Decimal
+		err := DecodeIntoNonsortingDecimal(&res, enc, tmp)
 		if err != nil {
 			t.Fatal(err)
 		}
 
 		// Make sure we decode the same value we encoded.
 		if cur.Cmp(&res) != 0 {
-			t.Fatalf("unexpected mismatch for %v, got %v", cur, res)
+			t.Fatalf("unexpected mismatch for %v, got %v", cur, &res)
 		}
 
 		// Make sure we would have overestimated the value.
@@ -460,7 +462,8 @@ func TestNonsortingEncodeDecimalRoundtrip(t *testing.T) {
 				t.Fatal(err)
 			}
 			enc := EncodeNonsortingDecimal(nil, d)
-			res, err := DecodeNonsortingDecimal(enc, nil)
+			var res apd.Decimal
+			err = DecodeIntoNonsortingDecimal(&res, enc, nil)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -571,7 +574,8 @@ func BenchmarkDecodeDecimalSmall(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, _, _ = DecodeDecimalAscending(vals[i%len(vals)], buf)
+		var res apd.Decimal
+		_, _ = DecodeDecimalAscending(&res, vals[i%len(vals)], buf)
 	}
 }
 
@@ -591,7 +595,8 @@ func BenchmarkDecodeDecimalMedium(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, _, _ = DecodeDecimalAscending(vals[i%len(vals)], buf)
+		var res apd.Decimal
+		_, _ = DecodeDecimalAscending(&res, vals[i%len(vals)], buf)
 	}
 }
 
@@ -611,7 +616,8 @@ func BenchmarkDecodeDecimalLarge(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, _, _ = DecodeDecimalAscending(vals[i%len(vals)], buf)
+		var res apd.Decimal
+		_, _ = DecodeDecimalAscending(&res, vals[i%len(vals)], buf)
 	}
 }
 
@@ -647,6 +653,7 @@ func BenchmarkNonsortingDecodeDecimal(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, _ = DecodeNonsortingDecimal(vals[i%len(vals)], buf)
+		var res apd.Decimal
+		_ = DecodeIntoNonsortingDecimal(&res, vals[i%len(vals)], buf)
 	}
 }

@@ -13,7 +13,6 @@ package tree
 import (
 	"fmt"
 	"math"
-	"math/big"
 	"strconv"
 	"strings"
 	"time"
@@ -1662,7 +1661,7 @@ func performCastWithoutPrecisionTruncation(
 			}
 			res = NewDInt(DInt(f))
 		case *DDecimal:
-			i, err := roundDecimalToInt(ctx, &v.Decimal)
+			i, err := roundDecimalToInt(&v.Decimal)
 			if err != nil {
 				return nil, err
 			}
@@ -1703,7 +1702,7 @@ func performCastWithoutPrecisionTruncation(
 			i, err := dec.Int64()
 			if err != nil {
 				// Attempt to round the number to an integer.
-				i, err = roundDecimalToInt(ctx, dec)
+				i, err = roundDecimalToInt(dec)
 				if err != nil {
 					return nil, err
 				}
@@ -1804,15 +1803,17 @@ func performCastWithoutPrecisionTruncation(
 			val := &dd.Coeff
 			val.SetInt64(v.Unix())
 			val.Mul(val, big10E6)
-			micros := v.Nanosecond() / int(time.Microsecond)
-			val.Add(val, big.NewInt(int64(micros)))
+			var micros apd.BigInt
+			micros.SetInt64(int64(v.Nanosecond() / int(time.Microsecond)))
+			val.Add(val, &micros)
 			dd.Exponent = -6
 		case *DTimestampTZ:
 			val := &dd.Coeff
 			val.SetInt64(v.Unix())
 			val.Mul(val, big10E6)
-			micros := v.Nanosecond() / int(time.Microsecond)
-			val.Add(val, big.NewInt(int64(micros)))
+			var micros apd.BigInt
+			micros.SetInt64(int64(v.Nanosecond() / int(time.Microsecond)))
+			val.Add(val, &micros)
 			dd.Exponent = -6
 		case *DInterval:
 			v.AsBigInt(&dd.Coeff)
@@ -2247,12 +2248,12 @@ func performCastWithoutPrecisionTruncation(
 		case *DTime:
 			return NewDInterval(duration.MakeDuration(int64(*v)*1000, 0, 0), itm), nil
 		case *DDecimal:
-			d := ctx.getTmpDec()
-			dnanos := v.Decimal
+			var d apd.Decimal
+			dnanos := &v.Decimal
 			dnanos.Exponent += 9
 			// We need HighPrecisionCtx because duration values can contain
 			// upward of 35 decimal digits and DecimalCtx only provides 25.
-			_, err := HighPrecisionCtx.Quantize(d, &dnanos, 0)
+			_, err := HighPrecisionCtx.Quantize(&d, dnanos, 0)
 			if err != nil {
 				return nil, err
 			}
@@ -2412,9 +2413,9 @@ func performIntToOidCast(ctx *EvalContext, t *types.T, v DInt) (Datum, error) {
 	}
 }
 
-func roundDecimalToInt(ctx *EvalContext, d *apd.Decimal) (int64, error) {
-	newD := ctx.getTmpDec()
-	if _, err := DecimalCtx.RoundToIntegralValue(newD, d); err != nil {
+func roundDecimalToInt(d *apd.Decimal) (int64, error) {
+	var newD apd.Decimal
+	if _, err := DecimalCtx.RoundToIntegralValue(&newD, d); err != nil {
 		return 0, err
 	}
 	i, err := newD.Int64()

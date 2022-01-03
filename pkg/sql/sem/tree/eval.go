@@ -14,7 +14,6 @@ import (
 	"context"
 	"fmt"
 	"math"
-	"math/big"
 	"regexp"
 	"strings"
 	"time"
@@ -74,8 +73,8 @@ var (
 	// ErrShiftArgOutOfRange is reported when a shift argument is out of range.
 	ErrShiftArgOutOfRange = pgerror.New(pgcode.InvalidParameterValue, "shift argument out of range")
 
-	big10E6  = big.NewInt(1e6)
-	big10E10 = big.NewInt(1e10)
+	big10E6  = apd.NewBigInt(1e6)
+	big10E10 = apd.NewBigInt(1e10)
 )
 
 // NewCannotMixBitArraySizesError creates an error for the case when a bitwise
@@ -1428,10 +1427,11 @@ var BinOps = map[BinaryOperatorSymbol]binOpOverload{
 				if rInt == 0 {
 					return nil, ErrDivByZero
 				}
-				div := ctx.getTmpDec().SetInt64(int64(rInt))
+				var div apd.Decimal
+				div.SetInt64(int64(rInt))
 				dd := &DDecimal{}
 				dd.SetInt64(int64(MustBeDInt(left)))
-				_, err := DecimalCtx.Quo(&dd.Decimal, &dd.Decimal, div)
+				_, err := DecimalCtx.Quo(&dd.Decimal, &dd.Decimal, &div)
 				return dd, err
 			},
 			Volatility: VolatilityImmutable,
@@ -3600,7 +3600,6 @@ type EvalContext struct {
 	DB *kv.DB
 
 	ReCache *RegexpCache
-	tmpDec  apd.Decimal
 
 	// TODO(mjibson): remove prepareOnly in favor of a 2-step prepare-exec solution
 	// that is also able to save the plan to skip work during the exec step.
@@ -3763,15 +3762,14 @@ func (ctx *EvalContext) HasPlaceholders() bool {
 // TimestampToDecimal converts the logical timestamp into a decimal
 // value with the number of nanoseconds in the integer part and the
 // logical counter in the decimal part.
-func TimestampToDecimal(ts hlc.Timestamp) apd.Decimal {
+func TimestampToDecimal(ts hlc.Timestamp, res *apd.Decimal) {
 	// Compute Walltime * 10^10 + Logical.
 	// We need 10 decimals for the Logical field because its maximum
 	// value is 4294967295 (2^32-1), a value with 10 decimal digits.
-	var res apd.Decimal
 	val := &res.Coeff
 	val.SetInt64(ts.WallTime)
 	val.Mul(val, big10E10)
-	val.Add(val, big.NewInt(int64(ts.Logical)))
+	val.Add(val, apd.NewBigInt(int64(ts.Logical)))
 
 	// val must be positive. If it was set to a negative value above,
 	// transfer the sign to res.Negative.
@@ -3781,7 +3779,6 @@ func TimestampToDecimal(ts hlc.Timestamp) apd.Decimal {
 	// Shift 10 decimals to the right, so that the logical
 	// field appears as fractional part.
 	res.Exponent = -10
-	return res
 }
 
 // DecimalToInexactDTimestampTZ is the inverse of TimestampToDecimal. It converts
@@ -3796,7 +3793,7 @@ func DecimalToInexactDTimestampTZ(d *DDecimal) (*DTimestampTZ, error) {
 }
 
 func decimalToHLC(d *DDecimal) (hlc.Timestamp, error) {
-	var coef big.Int
+	var coef apd.BigInt
 	coef.Set(&d.Decimal.Coeff)
 	// The physical portion of the HLC is stored shifted up by 10^10, so shift
 	// it down and clear out the logical component.
@@ -3824,10 +3821,9 @@ func DecimalToInexactDTimestamp(d *DDecimal) (*DTimestamp, error) {
 // TimestampToDecimalDatum is the same as TimestampToDecimal, but
 // returns a datum.
 func TimestampToDecimalDatum(ts hlc.Timestamp) *DDecimal {
-	res := TimestampToDecimal(ts)
-	return &DDecimal{
-		Decimal: res,
-	}
+	var d DDecimal
+	TimestampToDecimal(ts, &d.Decimal)
+	return &d
 }
 
 // TimestampToInexactDTimestamp converts the logical timestamp into an
@@ -3927,10 +3923,6 @@ func (ctx *EvalContext) GetDateStyle() pgdate.DateStyle {
 // Ctx returns the session's context.
 func (ctx *EvalContext) Ctx() context.Context {
 	return ctx.Context
-}
-
-func (ctx *EvalContext) getTmpDec() *apd.Decimal {
-	return &ctx.tmpDec
 }
 
 // Eval implements the TypedExpr interface.

@@ -1961,9 +1961,9 @@ func prettyPrintFirstValue(dir Direction, b []byte) ([]byte, string, error) {
 	case Decimal:
 		var d apd.Decimal
 		if dir == Descending {
-			b, d, err = DecodeDecimalDescending(b, nil)
+			b, err = DecodeDecimalDescending(&d, b, nil)
 		} else {
-			b, d, err = DecodeDecimalAscending(b, nil)
+			b, err = DecodeDecimalAscending(&d, b, nil)
 		}
 		if err != nil {
 			return b, "", err
@@ -2631,12 +2631,12 @@ func DecodeUntaggedTimeTZValue(b []byte) (remaining []byte, t timetz.TimeTZ, err
 }
 
 // DecodeDecimalValue decodes a value encoded by EncodeDecimalValue.
-func DecodeDecimalValue(b []byte) (remaining []byte, d apd.Decimal, err error) {
+func DecodeDecimalValue(dec *apd.Decimal, b []byte) (remaining []byte, err error) {
 	b, err = decodeValueTypeAssert(b, Decimal)
 	if err != nil {
-		return b, apd.Decimal{}, err
+		return b, err
 	}
-	return DecodeUntaggedDecimalValue(b)
+	return DecodeIntoUntaggedDecimalValue(dec, b)
 }
 
 // DecodeUntaggedBox2DValue decodes a value encoded by EncodeUntaggedBox2DValue.
@@ -2678,20 +2678,7 @@ func DecodeUntaggedGeoValue(b []byte, so *geopb.SpatialObject) (remaining []byte
 	return remaining, err
 }
 
-// DecodeUntaggedDecimalValue decodes a value encoded by EncodeUntaggedDecimalValue.
-func DecodeUntaggedDecimalValue(b []byte) (remaining []byte, d apd.Decimal, err error) {
-	var i uint64
-	b, _, i, err = DecodeNonsortingStdlibUvarint(b)
-	if err != nil {
-		return b, apd.Decimal{}, err
-	}
-	d, err = DecodeNonsortingDecimal(b[:int(i)], nil)
-	return b[int(i):], d, err
-}
-
-// DecodeIntoUntaggedDecimalValue is like DecodeUntaggedDecimalValue except it
-// writes the new Decimal into the input apd.Decimal pointer, which must be
-// non-nil.
+// DecodeIntoUntaggedDecimalValue decodes a value encoded by EncodeUntaggedDecimalValue.
 func DecodeIntoUntaggedDecimalValue(d *apd.Decimal, b []byte) (remaining []byte, err error) {
 	var i uint64
 	b, _, i, err = DecodeNonsortingStdlibUvarint(b)
@@ -2947,7 +2934,7 @@ func PrettyPrintValueEncoded(b []byte) ([]byte, string, error) {
 		return b, strconv.FormatFloat(f, 'g', -1, 64), nil
 	case Decimal:
 		var d apd.Decimal
-		b, d, err = DecodeDecimalValue(b)
+		b, err = DecodeDecimalValue(&d, b)
 		if err != nil {
 			return b, "", err
 		}

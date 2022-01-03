@@ -73,9 +73,9 @@ func testStartPreceding(
 		case types.FloatFamily:
 			typedOffset = NewDFloat(DFloat(offset))
 		case types.DecimalFamily:
-			decimal := apd.Decimal{}
+			decimal := &DDecimal{}
 			decimal.SetInt64(int64(offset))
-			typedOffset = &DDecimal{Decimal: decimal}
+			typedOffset = decimal
 		default:
 			t.Fatal("unsupported offset type")
 		}
@@ -123,9 +123,9 @@ func testStartFollowing(
 		case types.FloatFamily:
 			typedOffset = NewDFloat(DFloat(offset))
 		case types.DecimalFamily:
-			decimal := apd.Decimal{}
+			decimal := &DDecimal{}
 			decimal.SetInt64(int64(offset))
-			typedOffset = &DDecimal{Decimal: decimal}
+			typedOffset = decimal
 		default:
 			t.Fatal("unsupported offset type")
 		}
@@ -182,9 +182,9 @@ func testEndPreceding(
 		case types.FloatFamily:
 			typedOffset = NewDFloat(DFloat(offset))
 		case types.DecimalFamily:
-			decimal := apd.Decimal{}
+			decimal := &DDecimal{}
 			decimal.SetInt64(int64(offset))
-			typedOffset = &DDecimal{Decimal: decimal}
+			typedOffset = decimal
 		default:
 			t.Fatal("unsupported offset type")
 		}
@@ -232,9 +232,9 @@ func testEndFollowing(
 		case types.FloatFamily:
 			typedOffset = NewDFloat(DFloat(offset))
 		case types.DecimalFamily:
-			decimal := apd.Decimal{}
+			decimal := &DDecimal{}
 			decimal.SetInt64(int64(offset))
-			typedOffset = &DDecimal{Decimal: decimal}
+			typedOffset = decimal
 		default:
 			t.Fatal("unsupported offset type")
 		}

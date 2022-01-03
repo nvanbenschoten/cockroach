@@ -186,7 +186,8 @@ func BenchmarkArrowBatchConverter(b *testing.B) {
 			// Decimal is variable length type, so we want to calculate precisely the
 			// total size of all decimals in the vector.
 			decimals := batch.ColVec(0).Decimal()
-			for _, d := range decimals {
+			for i := range decimals {
+				d := &decimals[i]
 				marshaled, err := d.MarshalText()
 				require.NoError(b, err)
 				numBytes[typIdx] += int64(len(marshaled))

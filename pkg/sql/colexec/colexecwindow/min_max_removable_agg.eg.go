@@ -500,7 +500,7 @@ type minDecimalAggregator struct {
 	// curAgg holds the running min/max, so we can index into the output column
 	// once per row, instead of on each iteration.
 	// NOTE: if the length of the queue is zero, curAgg is undefined.
-	curAgg apd.Decimal
+	curAgg *apd.Decimal
 }
 
 // processBatch implements the bufferedWindower interface.
@@ -535,7 +535,7 @@ func (a *minDecimalAggregator) processBatch(batch coldata.Batch, startIdx, endId
 						vec, idx, _ := a.buffer.GetVecWithTuple(a.Ctx, argColIdx, int(newBestIdx))
 						col := vec.Decimal()
 						val := col.Get(idx)
-						a.curAgg.Set(&val)
+						a.curAgg.Set(val)
 					}
 				}
 			}
@@ -558,7 +558,7 @@ func (a *minDecimalAggregator) processBatch(batch coldata.Batch, startIdx, endId
 				outNulls.SetNull(i)
 			} else {
 				// The aggregate may be reused between rows, so we need to copy it.
-				a.curAgg.Set(&a.curAgg)
+				a.curAgg.Set(a.curAgg)
 
 				// gcassert:bce
 				outCol.Set(i, a.curAgg)
@@ -587,7 +587,7 @@ func (a *minDecimalAggregator) aggregateOverIntervals(intervals []windowInterval
 
 					{
 						var cmpResult int
-						cmpResult = tree.CompareDecimals(&val, &a.curAgg)
+						cmpResult = tree.CompareDecimals(val, a.curAgg)
 						cmp = cmpResult < 0
 					}
 
@@ -603,7 +603,7 @@ func (a *minDecimalAggregator) aggregateOverIntervals(intervals []windowInterval
 					// If any values were omitted from the queue, they would be dominated
 					// by this one anyway, so reset omittedIndex.
 					a.queue.addLast(idxToAdd)
-					a.curAgg.Set(&val)
+					a.curAgg.Set(val)
 					a.omittedIndex = -1
 					continue
 				}
@@ -618,7 +618,7 @@ func (a *minDecimalAggregator) aggregateOverIntervals(intervals []windowInterval
 
 					{
 						var cmpResult int
-						cmpResult = tree.CompareDecimals(&cmpVal, &val)
+						cmpResult = tree.CompareDecimals(cmpVal, val)
 						cmp = cmpResult < 0
 					}
 
@@ -2433,7 +2433,7 @@ type maxDecimalAggregator struct {
 	// curAgg holds the running min/max, so we can index into the output column
 	// once per row, instead of on each iteration.
 	// NOTE: if the length of the queue is zero, curAgg is undefined.
-	curAgg apd.Decimal
+	curAgg *apd.Decimal
 }
 
 // processBatch implements the bufferedWindower interface.
@@ -2468,7 +2468,7 @@ func (a *maxDecimalAggregator) processBatch(batch coldata.Batch, startIdx, endId
 						vec, idx, _ := a.buffer.GetVecWithTuple(a.Ctx, argColIdx, int(newBestIdx))
 						col := vec.Decimal()
 						val := col.Get(idx)
-						a.curAgg.Set(&val)
+						a.curAgg.Set(val)
 					}
 				}
 			}
@@ -2491,7 +2491,7 @@ func (a *maxDecimalAggregator) processBatch(batch coldata.Batch, startIdx, endId
 				outNulls.SetNull(i)
 			} else {
 				// The aggregate may be reused between rows, so we need to copy it.
-				a.curAgg.Set(&a.curAgg)
+				a.curAgg.Set(a.curAgg)
 
 				// gcassert:bce
 				outCol.Set(i, a.curAgg)
@@ -2520,7 +2520,7 @@ func (a *maxDecimalAggregator) aggregateOverIntervals(intervals []windowInterval
 
 					{
 						var cmpResult int
-						cmpResult = tree.CompareDecimals(&val, &a.curAgg)
+						cmpResult = tree.CompareDecimals(val, a.curAgg)
 						cmp = cmpResult > 0
 					}
 
@@ -2536,7 +2536,7 @@ func (a *maxDecimalAggregator) aggregateOverIntervals(intervals []windowInterval
 					// If any values were omitted from the queue, they would be dominated
 					// by this one anyway, so reset omittedIndex.
 					a.queue.addLast(idxToAdd)
-					a.curAgg.Set(&val)
+					a.curAgg.Set(val)
 					a.omittedIndex = -1
 					continue
 				}
@@ -2551,7 +2551,7 @@ func (a *maxDecimalAggregator) aggregateOverIntervals(intervals []windowInterval
 
 					{
 						var cmpResult int
-						cmpResult = tree.CompareDecimals(&cmpVal, &val)
+						cmpResult = tree.CompareDecimals(cmpVal, val)
 						cmp = cmpResult > 0
 					}
 

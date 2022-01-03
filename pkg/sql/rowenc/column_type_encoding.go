@@ -13,7 +13,6 @@ package rowenc
 import (
 	"time"
 
-	"github.com/cockroachdb/apd/v2"
 	"github.com/cockroachdb/cockroach/pkg/geo"
 	"github.com/cockroachdb/cockroach/pkg/geo/geopb"
 	"github.com/cockroachdb/cockroach/pkg/roachpb"
@@ -261,13 +260,12 @@ func DecodeTableKey(
 		}
 		return a.NewDFloat(tree.DFloat(f)), rkey, err
 	case types.DecimalFamily:
-		var d apd.Decimal
+		dd := a.NewDDecimal()
 		if dir == encoding.Ascending {
-			rkey, d, err = encoding.DecodeDecimalAscending(key, nil)
+			rkey, err = encoding.DecodeDecimalAscending(&dd.Decimal, key, nil)
 		} else {
-			rkey, d, err = encoding.DecodeDecimalDescending(key, nil)
+			rkey, err = encoding.DecodeDecimalDescending(&dd.Decimal, key, nil)
 		}
-		dd := a.NewDDecimal(tree.DDecimal{Decimal: d})
 		return dd, rkey, err
 	case types.StringFamily:
 		var r string
@@ -599,11 +597,12 @@ func DecodeUntaggedDatum(a *DatumAlloc, t *types.T, buf []byte) (tree.Datum, []b
 		}
 		return a.NewDFloat(tree.DFloat(data)), b, nil
 	case types.DecimalFamily:
-		b, data, err := encoding.DecodeUntaggedDecimalValue(buf)
+		dd := a.NewDDecimal()
+		b, err := encoding.DecodeIntoUntaggedDecimalValue(&dd.Decimal, buf)
 		if err != nil {
 			return nil, b, err
 		}
-		return a.NewDDecimal(tree.DDecimal{Decimal: data}), b, nil
+		return dd, b, nil
 	case types.BytesFamily:
 		b, data, err := encoding.DecodeUntaggedBytesValue(buf)
 		if err != nil {
@@ -915,11 +914,11 @@ func UnmarshalColumnValue(a *DatumAlloc, typ *types.T, value roachpb.Value) (tre
 		}
 		return a.NewDFloat(tree.DFloat(v)), nil
 	case types.DecimalFamily:
-		v, err := value.GetDecimal()
+		dd := a.NewDDecimal()
+		err := value.GetDecimal(&dd.Decimal)
 		if err != nil {
 			return nil, err
 		}
-		dd := a.NewDDecimal(tree.DDecimal{Decimal: v})
 		return dd, nil
 	case types.StringFamily:
 		v, err := value.GetBytes()

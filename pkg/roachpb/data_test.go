@@ -368,7 +368,8 @@ func TestSetGetChecked(t *testing.T) {
 	if err := v.SetDecimal(dec); err != nil {
 		t.Fatal(err)
 	}
-	if r, err := v.GetDecimal(); err != nil {
+	var r apd.Decimal
+	if err := v.GetDecimal(&r); err != nil {
 		t.Fatal(err)
 	} else if dec.Cmp(&r) != 0 {
 		t.Errorf("set %s on a value and extracted it, expected %s back, but got %s", dec, dec, &r)
@@ -1633,7 +1634,8 @@ func BenchmarkValueGetDecimal(b *testing.B) {
 	}
 
 	for i := 0; i < b.N; i++ {
-		if _, err := v.GetDecimal(); err != nil {
+		var d apd.Decimal
+		if err := v.GetDecimal(&d); err != nil {
 			b.Fatal(err)
 		}
 	}

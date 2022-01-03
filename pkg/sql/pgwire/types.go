@@ -14,7 +14,6 @@ import (
 	"context"
 	"encoding/binary"
 	"math"
-	"math/big"
 	"net"
 	"strconv"
 	"strings"
@@ -418,7 +417,7 @@ func writeBinaryDecimal(b *writeBuffer, v *apd.Decimal) {
 	alloc := struct {
 		pgNum pgwirebase.PGNumeric
 
-		bigI big.Int
+		bigI apd.BigInt
 	}{
 		pgNum: pgwirebase.PGNumeric{
 			// Since we use 2000 as the exponent limits in tree.DecimalCtx, this
@@ -782,7 +781,7 @@ func (b *writeBuffer) writeBinaryColumnarElement(
 
 	case types.DecimalFamily:
 		v := vecs.DecimalCols[colIdx].Get(rowIdx)
-		writeBinaryDecimal(b, &v)
+		writeBinaryDecimal(b, v)
 
 	case types.BytesFamily:
 		writeBinaryBytes(b, vecs.BytesCols[colIdx].Get(rowIdx))

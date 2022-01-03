@@ -967,7 +967,7 @@ func (rf *cFetcher) NextBatch(ctx context.Context) (coldata.Batch, error) {
 			// on a per row basis since each row can be modified at a different
 			// time.
 			if rf.table.timestampOutputIdx != noOutputColumn {
-				rf.machine.timestampCol[rf.machine.rowIdx] = tree.TimestampToDecimal(rf.table.rowLastModified)
+				tree.TimestampToDecimal(rf.table.rowLastModified, &rf.machine.timestampCol[rf.machine.rowIdx])
 			}
 
 			// We're finished with a row. Fill the row in with nulls if

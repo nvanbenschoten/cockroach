@@ -10,10 +10,7 @@
 
 package execgen
 
-import (
-	"github.com/cockroachdb/apd/v2"
-	"github.com/cockroachdb/cockroach/pkg/sql/sem/tree"
-)
+import "github.com/cockroachdb/cockroach/pkg/sql/sem/tree"
 
 // OverloadHelper is a utility struct used for templates that helps us avoid
 // allocations of temporary decimals on every overloaded operation with them as
@@ -23,8 +20,7 @@ import (
 // `_overloadHelper` of this type must be declared before the inlined
 // overloaded code.
 type OverloadHelper struct {
-	TmpDec1, TmpDec2 apd.Decimal
-	BinFn            tree.TwoArgFn
-	EvalCtx          *tree.EvalContext
-	ByteScratch      []byte
+	BinFn       tree.TwoArgFn
+	EvalCtx     *tree.EvalContext
+	ByteScratch []byte
 }

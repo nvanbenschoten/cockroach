@@ -515,7 +515,7 @@ func typeToAvroSchema(typ *types.T) (*avroSchemaField, error) {
 		setNullableWithStringFallback(
 			decimalType,
 			func(d tree.Datum, _ interface{}) (interface{}, error) {
-				dec := d.(*tree.DDecimal).Decimal
+				dec := &d.(*tree.DDecimal).Decimal
 
 				if dec.Form != apd.Finite {
 					return d.String(), nil
@@ -524,7 +524,7 @@ func typeToAvroSchema(typ *types.T) (*avroSchemaField, error) {
 				// If the decimal happens to fit a smaller width than the
 				// column allows, add trailing zeroes so the scale is constant
 				if typ.Width() > -dec.Exponent {
-					_, err := tree.DecimalCtx.WithPrecision(uint32(prec)).Quantize(&dec, &dec, -int32(width))
+					_, err := tree.DecimalCtx.WithPrecision(uint32(prec)).Quantize(dec, dec, -int32(width))
 					if err != nil {
 						// This should always be possible without rounding since we're using the column def,
 						// but if it's not, WithPrecision will force it to error.
@@ -547,7 +547,9 @@ func typeToAvroSchema(typ *types.T) (*avroSchemaField, error) {
 				unionMap := x.(map[string]interface{})
 				rat, ok := unionMap[avroUnionKey(decimalType)]
 				if ok {
-					return &tree.DDecimal{Decimal: ratToDecimal(*rat.(*big.Rat), int32(width))}, nil
+					dec := new(tree.DDecimal)
+					dec.Set(ratToDecimal(*rat.(*big.Rat), int32(width)))
+					return dec, nil
 				}
 				return tree.ParseDDecimal(unionMap[avroUnionKey(avroSchemaString)].(string))
 			},
@@ -1004,23 +1006,27 @@ func (r *avroDataRecord) refreshTypeMetadata(tbl catalog.TableDescriptor) {
 // decimalToRat converts one of our apd decimals to the format expected by the
 // avro library we use. If the column has a fixed scale (which is always true if
 // precision is set) this is roundtripable without information loss.
-func decimalToRat(dec apd.Decimal, scale int32) (big.Rat, error) {
+func decimalToRat(dec *apd.Decimal, scale int32) (big.Rat, error) {
 	if dec.Form != apd.Finite {
 		return big.Rat{}, errors.Errorf(`cannot convert %s form decimal`, dec.Form)
 	}
 	if scale > 0 && scale != -dec.Exponent {
-		return big.Rat{}, errors.Errorf(`%s will not roundtrip at scale %d`, &dec, scale)
+		return big.Rat{}, errors.Errorf(`%s will not roundtrip at scale %d`, dec, scale)
 	}
+	// HACK.
+	var coeff big.Int
+	coeff.SetBytes(dec.Coeff.Bytes())
+
 	var r big.Rat
 	if dec.Exponent >= 0 {
 		exp := big.NewInt(10)
 		exp = exp.Exp(exp, big.NewInt(int64(dec.Exponent)), nil)
-		var coeff big.Int
-		r.SetFrac(coeff.Mul(&dec.Coeff, exp), big.NewInt(1))
+		var other big.Int
+		r.SetFrac(other.Mul(&coeff, exp), big.NewInt(1))
 	} else {
 		exp := big.NewInt(10)
 		exp = exp.Exp(exp, big.NewInt(int64(-dec.Exponent)), nil)
-		r.SetFrac(&dec.Coeff, exp)
+		r.SetFrac(&coeff, exp)
 	}
 	if dec.Negative {
 		r.Mul(&r, big.NewRat(-1, 1))
@@ -1031,12 +1037,17 @@ func decimalToRat(dec apd.Decimal, scale int32) (big.Rat, error) {
 // ratToDecimal converts the output of decimalToRat back into the original apd
 // decimal, given a fixed column scale. NB: big.Rat is lossy-compared to apd
 // decimal, so this is not possible when the scale is not fixed.
-func ratToDecimal(rat big.Rat, scale int32) apd.Decimal {
+func ratToDecimal(rat big.Rat, scale int32) *apd.Decimal {
 	num, denom := rat.Num(), rat.Denom()
 	exp := big.NewInt(10)
 	exp = exp.Exp(exp, big.NewInt(int64(scale)), nil)
 	sf := denom.Div(exp, denom)
 	coeff := num.Mul(num, sf)
-	dec := apd.NewWithBigInt(coeff, -scale)
-	return *dec
+
+	// HACK.
+	var d apd.BigInt
+	d.SetBytes(coeff.Bytes())
+
+	dec := apd.NewWithBigInt(&d, -scale)
+	return dec
 }

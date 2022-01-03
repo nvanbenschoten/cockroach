@@ -1399,7 +1399,8 @@ func (rf *Fetcher) finalizeRow() error {
 		// TODO (rohany): Datums are immutable, so we can't store a DDecimal on the
 		//  fetcher and change its contents with each row. If that assumption gets
 		//  lifted, then we can avoid an allocation of a new decimal datum here.
-		dec := rf.alloc.NewDDecimal(tree.DDecimal{Decimal: tree.TimestampToDecimal(rf.RowLastModified())})
+		dec := rf.alloc.NewDDecimal()
+		tree.TimestampToDecimal(rf.RowLastModified(), &dec.Decimal)
 		table.row[table.timestampOutputIdx] = rowenc.EncDatum{Datum: dec}
 	}
 	if table.oidOutputIdx != noOutputColumn {

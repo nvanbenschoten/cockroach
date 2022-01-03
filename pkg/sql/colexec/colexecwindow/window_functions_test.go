@@ -63,10 +63,10 @@ func TestWindowFunctions(t *testing.T) {
 	var monitorRegistry colexecargs.MonitorRegistry
 	defer monitorRegistry.Close(ctx)
 
-	dec := func(val string) apd.Decimal {
+	dec := func(val string) *apd.Decimal {
 		res, _, err := apd.NewFromString(val)
 		require.NoError(t, err)
-		return *res
+		return res
 	}
 
 	rowNumberFn := execinfrapb.WindowerSpec_ROW_NUMBER

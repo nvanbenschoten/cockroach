@@ -998,10 +998,10 @@ type DDecimal struct {
 
 // MustBeDDecimal attempts to retrieve a DDecimal from an Expr, panicking if the
 // assertion fails.
-func MustBeDDecimal(e Expr) DDecimal {
+func MustBeDDecimal(e Expr) *DDecimal {
 	switch t := e.(type) {
 	case *DDecimal:
-		return *t
+		return t
 	}
 	panic(errors.AssertionFailedf("expected *DDecimal, found %T", e))
 }
@@ -1058,13 +1058,17 @@ func (d *DDecimal) CompareError(ctx *EvalContext, other Datum) (int, error) {
 		// NULL is less than any non-NULL value.
 		return 1, nil
 	}
-	v := ctx.getTmpDec()
+	var v *apd.Decimal
 	switch t := UnwrapDatum(ctx, other).(type) {
 	case *DDecimal:
 		v = &t.Decimal
 	case *DInt:
+		var tmp apd.Decimal
+		v = &tmp
 		v.SetInt64(int64(*t))
 	case *DFloat:
+		var tmp apd.Decimal
+		v = &tmp
 		if _, err := v.SetFloat64(float64(*t)); err != nil {
 			panic(errors.NewAssertionErrorWithWrappedErrf(err, "decimal compare, unexpected error"))
 		}
@@ -1165,7 +1169,7 @@ func (d *DDecimal) Size() uintptr {
 
 var (
 	decimalNegativeZero = &apd.Decimal{Negative: true}
-	bigTen              = big.NewInt(10)
+	bigTen              = apd.NewBigInt(10)
 )
 
 // IsComposite implements the CompositeDatum interface.
@@ -1176,7 +1180,7 @@ func (d *DDecimal) IsComposite() bool {
 	}
 
 	// Check if d is divisible by 10.
-	var r big.Int
+	var r apd.BigInt
 	r.Rem(&d.Decimal.Coeff, bigTen)
 	return r.Sign() == 0
 }
@@ -3493,7 +3497,7 @@ func AsJSON(
 	case *DFloat:
 		return json.FromFloat64(float64(*t))
 	case *DDecimal:
-		return json.FromDecimal(t.Decimal), nil
+		return json.FromDecimal(&t.Decimal), nil
 	case *DString:
 		return json.FromString(string(*t)), nil
 	case *DCollatedString:

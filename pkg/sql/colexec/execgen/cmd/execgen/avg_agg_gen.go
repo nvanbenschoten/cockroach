@@ -63,7 +63,7 @@ func (a avgTmplInfo) AssignDivInt64(targetElem, leftElem, rightElem, _, _, _ str
 		// decimal, so ints and decimals share the division code.
 		return fmt.Sprintf(`
 			%s.SetInt64(%s)
-			if _, err := tree.DecimalCtx.Quo(&%s, &%s, &%s); err != nil {
+			if _, err := tree.DecimalCtx.Quo(&%s, %s, &%s); err != nil {
 				colexecerror.InternalError(err)
 			}`,
 			targetElem, rightElem, targetElem, leftElem, targetElem,

@@ -270,36 +270,36 @@ func (m *memColumn) Append(args SliceArgs) {
 			// attention to whether the values are NULL. However, if we do start paying
 			// attention, the performance suffers dramatically, so we choose to copy
 			// over "actual" as well as "garbage" values.
+			__desiredCap := args.DestIdx + args.SrcEndIdx - args.SrcStartIdx
+			if cap(toCol) >= __desiredCap {
+				toCol = toCol[:__desiredCap]
+			} else {
+				__prevCap := cap(toCol)
+				__capToAllocate := __desiredCap
+				if __capToAllocate < 2*__prevCap {
+					__capToAllocate = 2 * __prevCap
+				}
+				__new_slice := make([]apd.Decimal, __desiredCap, __capToAllocate)
+				for __i := range toCol[:args.DestIdx] {
+					__new_slice[__i].Set(&toCol[__i])
+				}
+				toCol = __new_slice
+			}
 			if args.Sel == nil {
-				{
-					__desiredCap := args.DestIdx + args.SrcEndIdx - args.SrcStartIdx
-					if cap(toCol) >= __desiredCap {
-						toCol = toCol[:__desiredCap]
-					} else {
-						__prevCap := cap(toCol)
-						__capToAllocate := __desiredCap
-						if __capToAllocate < 2*__prevCap {
-							__capToAllocate = 2 * __prevCap
-						}
-						__new_slice := make([]apd.Decimal, __desiredCap, __capToAllocate)
-						copy(__new_slice, toCol[:args.DestIdx])
-						toCol = __new_slice
-					}
-					__src_slice := fromCol[args.SrcStartIdx:args.SrcEndIdx]
-					__dst_slice := toCol[args.DestIdx:]
-					_ = __dst_slice[len(__src_slice)-1]
-					for __i := range __src_slice {
-						//gcassert:bce
-						__dst_slice[__i].Set(&__src_slice[__i])
-					}
+				__src_slice := fromCol[args.SrcStartIdx:args.SrcEndIdx]
+				__dst_slice := toCol[args.DestIdx:]
+				_ = __dst_slice[len(__src_slice)-1]
+				for __i := range __src_slice {
+					//gcassert:bce
+					__dst_slice[__i].Set(&__src_slice[__i])
 				}
 			} else {
 				sel := args.Sel[args.SrcStartIdx:args.SrcEndIdx]
-				toCol = toCol.Window(0, args.DestIdx)
-				for _, selIdx := range sel {
+				__dst_slice := toCol[args.DestIdx:]
+				for __i, selIdx := range sel {
 					val := fromCol.Get(selIdx)
-					toCol = append(toCol, apd.Decimal{})
-					toCol[len(toCol)-1].Set(&val)
+					//gcassert:bce
+					__dst_slice[__i].Set(val)
 				}
 			}
 			m.nulls.set(args)
@@ -1447,7 +1447,7 @@ func SetValueAt(v Vec, elem interface{}, rowIdx int) {
 		case -1:
 		default:
 			target := v.Decimal()
-			newVal := elem.(apd.Decimal)
+			newVal := elem.(*apd.Decimal)
 			target.Set(rowIdx, newVal)
 		}
 	case types.IntFamily:

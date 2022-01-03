@@ -474,7 +474,7 @@ if _err != nil {
 }
 `, src, dest)
 	case types.DecimalFamily:
-		return fmt.Sprintf("%s.Set(&%s)", dest, src)
+		return fmt.Sprintf("%s.Set(%s)", dest, src)
 	}
 	return fmt.Sprintf("%s = %s", dest, src)
 }
@@ -555,7 +555,7 @@ func (b *argWidthOverloadBase) AppendVal(target, v string) string {
 		return fmt.Sprintf("%s.AppendVal(%s)", target, v)
 	case types.DecimalFamily:
 		return fmt.Sprintf(`%[1]s = append(%[1]s, apd.Decimal{})
-%[1]s[len(%[1]s)-1].Set(&%[2]s)`, target, v)
+		%[1]s[len(%[1]s)-1].Set(%[2]s)`, target, v)
 	}
 	return fmt.Sprintf("%[1]s = append(%[1]s, %[2]s)", target, v)
 }
@@ -575,7 +575,7 @@ if %[2]s != nil {
     %[1]s = %[2]s.Size()
 }`, target, value)
 	case types.DecimalFamily:
-		return fmt.Sprintf(`%s := tree.SizeOfDecimal(&%s)`, target, value)
+		return fmt.Sprintf(`%s := tree.SizeOfDecimal(%s)`, target, value)
 	case typeconv.DatumVecCanonicalTypeFamily:
 		return fmt.Sprintf(`
 		var %[1]s uintptr
@@ -891,7 +891,7 @@ func toPhysicalRepresentation(canonicalTypeFamily types.Family, width int32) str
 	case types.BytesFamily:
 		return "[]byte"
 	case types.DecimalFamily:
-		return "apd.Decimal"
+		return "*apd.Decimal"
 	case types.IntFamily:
 		switch width {
 		case 16:
