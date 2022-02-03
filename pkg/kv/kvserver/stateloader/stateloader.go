@@ -193,7 +193,7 @@ func (rsl StateLoader) LoadMVCCStats(
 // taken by value.
 func (rsl StateLoader) SetRangeAppliedState(
 	ctx context.Context,
-	readWriter storage.ReadWriter,
+	writer storage.Writer,
 	appliedIndex, leaseAppliedIndex uint64,
 	newMS *enginepb.MVCCStats,
 	raftClosedTimestamp *hlc.Timestamp,
@@ -206,10 +206,16 @@ func (rsl StateLoader) SetRangeAppliedState(
 	if raftClosedTimestamp != nil && !raftClosedTimestamp.IsEmpty() {
 		as.RaftClosedTimestamp = raftClosedTimestamp
 	}
-	// The RangeAppliedStateKey is not included in stats. This is also reflected
-	// in C.MVCCComputeStats and ComputeStatsForRange.
-	ms := (*enginepb.MVCCStats)(nil)
-	return storage.MVCCPutProto(ctx, readWriter, ms, rsl.RangeAppliedStateKey(), hlc.Timestamp{}, nil, &as)
+	// "Blind" because ms == nil and timestamp.IsEmpty().
+	return storage.MVCCBlindPutProto(
+		ctx,
+		writer,
+		nil, /* ms */
+		rsl.RangeAppliedStateKey(),
+		hlc.Timestamp{}, /* timestamp */
+		&as,
+		nil, /* txn */
+	)
 }
 
 // SetMVCCStats overwrites the MVCC stats. This needs to perform a read on the
@@ -228,14 +234,14 @@ func (rsl StateLoader) SetMVCCStats(
 
 // SetClosedTimestamp overwrites the closed timestamp.
 func (rsl StateLoader) SetClosedTimestamp(
-	ctx context.Context, readWriter storage.ReadWriter, closedTS *hlc.Timestamp,
+	ctx context.Context, reader storage.Reader, writer storage.Writer, closedTS *hlc.Timestamp,
 ) error {
-	as, err := rsl.LoadRangeAppliedState(ctx, readWriter)
+	as, err := rsl.LoadRangeAppliedState(ctx, reader)
 	if err != nil {
 		return err
 	}
 	return rsl.SetRangeAppliedState(
-		ctx, readWriter, as.RaftAppliedIndex, as.LeaseAppliedIndex,
+		ctx, writer, as.RaftAppliedIndex, as.LeaseAppliedIndex,
 		as.RangeStats.ToStatsPtr(), closedTS)
 }
 
@@ -383,28 +389,28 @@ func (rsl StateLoader) SetHardState(
 // WriteInitialReplicaState and, on a split, perhaps the activity of an
 // uninitialized Raft group)
 func (rsl StateLoader) SynthesizeRaftState(
-	ctx context.Context, readWriter storage.ReadWriter,
+	ctx context.Context, reader storage.Reader, writer storage.Writer,
 ) error {
-	hs, err := rsl.LoadHardState(ctx, readWriter)
+	hs, err := rsl.LoadHardState(ctx, reader)
 	if err != nil {
 		return err
 	}
-	truncState, err := rsl.LoadRaftTruncatedState(ctx, readWriter)
+	truncState, err := rsl.LoadRaftTruncatedState(ctx, reader)
 	if err != nil {
 		return err
 	}
-	as, err := rsl.LoadRangeAppliedState(ctx, readWriter)
+	as, err := rsl.LoadRangeAppliedState(ctx, reader)
 	if err != nil {
 		return err
 	}
-	return rsl.SynthesizeHardState(ctx, readWriter, hs, truncState, as.RaftAppliedIndex)
+	return rsl.SynthesizeHardState(ctx, writer, hs, truncState, as.RaftAppliedIndex)
 }
 
 // SynthesizeHardState synthesizes an on-disk HardState from the given input,
 // taking care that a HardState compatible with the existing data is written.
 func (rsl StateLoader) SynthesizeHardState(
 	ctx context.Context,
-	readWriter storage.ReadWriter,
+	writer storage.Writer,
 	oldHS raftpb.HardState,
 	truncState roachpb.RaftTruncatedState,
 	raftAppliedIndex uint64,
@@ -431,6 +437,6 @@ func (rsl StateLoader) SynthesizeHardState(
 	if oldHS.Term == newHS.Term {
 		newHS.Vote = oldHS.Vote
 	}
-	err := rsl.SetHardState(ctx, readWriter, newHS)
+	err := rsl.SetHardState(ctx, writer, newHS)
 	return errors.Wrapf(err, "writing HardState %+v", &newHS)
 }

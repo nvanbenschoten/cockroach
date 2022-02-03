@@ -388,13 +388,18 @@ func (sm *replicaStateMachine) NewBatch(ephemeral bool) apply.Batch {
 	b := &sm.batch
 	b.r = r
 	b.sm = sm
-	b.batch = r.store.engine.NewBatch()
 	r.mu.RLock()
 	b.state = r.mu.state
 	b.state.Stats = &b.stats
 	*b.state.Stats = *r.mu.state.Stats
 	b.closedTimestampSetter = r.mu.closedTimestampSetter
+	hasRangefeed := r.rangefeedMu.proc != nil
 	r.mu.RUnlock()
+	if hasRangefeed {
+		b.batch = r.store.engine.NewBatch()
+	} else {
+		b.batch = r.store.engine.NewUnindexedBatch(false /* writeOnly */)
+	}
 	b.start = timeutil.Now()
 	return b
 }
@@ -684,7 +689,11 @@ func (b *replicaAppBatch) runPreApplyTriggersAfterStagingWriteBatch(
 		//
 		// Alternatively if we discover that the RHS has already been removed
 		// from this store, clean up its data.
-		splitPreApply(ctx, b.r, b.batch, res.Split.SplitTrigger, cmd.raftCmd.ClosedTimestamp)
+		indexedReader := b.r.store.engine.NewBatch()
+		if err := indexedReader.ApplyBatchRepr(b.batch.Repr(), false); err != nil {
+			return wrapWithNonDeterministicFailure(err, "unable to handle split")
+		}
+		splitPreApply(ctx, b.r, indexedReader, b.batch, res.Split.SplitTrigger, cmd.raftCmd.ClosedTimestamp)
 
 		// The rangefeed processor will no longer be provided logical ops for
 		// its entire range, so it needs to be shut down and all registrations

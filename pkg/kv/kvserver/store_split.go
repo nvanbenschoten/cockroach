@@ -34,7 +34,8 @@ import (
 func splitPreApply(
 	ctx context.Context,
 	r *Replica,
-	readWriter storage.ReadWriter,
+	reader storage.Reader,
+	writer storage.Writer,
 	split roachpb.SplitTrigger,
 	initClosedTS *hlc.Timestamp,
 ) {
@@ -89,18 +90,18 @@ func splitPreApply(
 				log.Fatalf(ctx, "unexpectedly found initialized newer RHS of split: %v", rightRepl.Desc())
 			}
 			var err error
-			hs, err = rightRepl.raftMu.stateLoader.LoadHardState(ctx, readWriter)
+			hs, err = rightRepl.raftMu.stateLoader.LoadHardState(ctx, reader)
 			if err != nil {
 				log.Fatalf(ctx, "failed to load hard state for removed rhs: %v", err)
 			}
 		}
 		const rangeIDLocalOnly = false
 		const mustUseClearRange = false
-		if err := clearRangeData(&split.RightDesc, readWriter, readWriter, rangeIDLocalOnly, mustUseClearRange); err != nil {
+		if err := clearRangeData(&split.RightDesc, reader, writer, rangeIDLocalOnly, mustUseClearRange); err != nil {
 			log.Fatalf(ctx, "failed to clear range data for removed rhs: %v", err)
 		}
 		if rightRepl != nil {
-			if err := rightRepl.raftMu.stateLoader.SetHardState(ctx, readWriter, hs); err != nil {
+			if err := rightRepl.raftMu.stateLoader.SetHardState(ctx, writer, hs); err != nil {
 				log.Fatalf(ctx, "failed to set hard state with 0 commit index for removed rhs: %v", err)
 			}
 		}
@@ -111,7 +112,7 @@ func splitPreApply(
 	// replica is initialized (combining it with existing or default
 	// Term and Vote). This is the common case.
 	rsl := stateloader.Make(split.RightDesc.RangeID)
-	if err := rsl.SynthesizeRaftState(ctx, readWriter); err != nil {
+	if err := rsl.SynthesizeRaftState(ctx, reader, writer); err != nil {
 		log.Fatalf(ctx, "%v", err)
 	}
 
@@ -127,7 +128,7 @@ func splitPreApply(
 		initClosedTS = &hlc.Timestamp{}
 	}
 	initClosedTS.Forward(r.GetClosedTimestamp(ctx))
-	if err := rsl.SetClosedTimestamp(ctx, readWriter, initClosedTS); err != nil {
+	if err := rsl.SetClosedTimestamp(ctx, reader, writer, initClosedTS); err != nil {
 		log.Fatalf(ctx, "%s", err)
 	}
 }

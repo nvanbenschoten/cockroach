@@ -108,7 +108,7 @@ func WriteInitialRangeState(
 	); err != nil {
 		return err
 	}
-	if err := Make(desc.RangeID).SynthesizeRaftState(ctx, readWriter); err != nil {
+	if err := Make(desc.RangeID).SynthesizeRaftState(ctx, readWriter, readWriter); err != nil {
 		return err
 	}
 	return nil
