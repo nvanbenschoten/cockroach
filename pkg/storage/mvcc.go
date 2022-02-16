@@ -15,6 +15,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"math/rand"
 	"runtime"
 	"sort"
 	"sync"
@@ -3056,7 +3057,7 @@ func mvccResolveWriteIntent(
 		// If we're moving the intent's timestamp, adjust stats and
 		// rewrite it.
 		var prevValSize int64
-		if timestampChanged {
+		if timestampChanged && (!commit || rand.Float64() > 0.25) {
 			oldKey := MVCCKey{Key: intent.Key, Timestamp: metaTimestamp}
 			newKey := MVCCKey{Key: intent.Key, Timestamp: newTimestamp}
 
