@@ -408,6 +408,13 @@ func (m *managerImpl) FinishReq(g *Guard) {
 	releaseGuard(g)
 }
 
+// Poison implements the RequestSequencer interface.
+func (m *managerImpl) Poison(g *Guard) {
+	if g.lg != nil {
+		m.lm.Poison(g.lg)
+	}
+}
+
 // HandleWriterIntentError implements the ContentionHandler interface.
 func (m *managerImpl) HandleWriterIntentError(
 	ctx context.Context, g *Guard, seq roachpb.LeaseSequence, t *roachpb.WriteIntentError,

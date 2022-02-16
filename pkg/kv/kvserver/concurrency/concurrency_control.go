@@ -194,6 +194,9 @@ type RequestSequencer interface {
 	// requests that are blocked on this one to proceed. The guard should not
 	// be used after being released.
 	FinishReq(*Guard)
+
+	// Poisons latches, causing any conflicting requests to be rejected.
+	Poison(*Guard)
 }
 
 // ContentionHandler is concerned with handling contention-related errors. This
@@ -468,6 +471,9 @@ type latchManager interface {
 
 	// Releases latches, relinquish its protection from conflicting requests.
 	Release(latchGuard)
+
+	// Poisons latches, causing any conflicting requests to be rejected.
+	Poison(latchGuard)
 
 	// Metrics returns information about the state of the latchManager.
 	Metrics() LatchMetrics

@@ -37,12 +37,16 @@ const (
 //
 type signal struct {
 	a int32
+	p int32
 	c unsafe.Pointer // chan struct{}, lazily initialized
 }
 
-func (s *signal) signal() {
+func (s *signal) signal(poison bool) {
+	if poison {
+		atomic.StoreInt32(&s.p, 1)
+	}
 	if !atomic.CompareAndSwapInt32(&s.a, noSig, sig) {
-		panic("signaled twice")
+		return // already signaled
 	}
 	// Close the channel if it was ever initialized.
 	if cPtr := atomic.LoadPointer(&s.c); cPtr != nil {
@@ -55,6 +59,10 @@ func (s *signal) signal() {
 
 func (s *signal) signaled() bool {
 	return atomic.LoadInt32(&s.a) > noSig
+}
+
+func (s *signal) poisoned() bool {
+	return atomic.LoadInt32(&s.p) != 0
 }
 
 func (s *signal) signalChan() <-chan struct{} {

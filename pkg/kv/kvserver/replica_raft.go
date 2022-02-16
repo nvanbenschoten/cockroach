@@ -1204,6 +1204,12 @@ func (r *Replica) refreshProposalsLocked(
 		// power the probe anyway). Over time, we anticipate there being multiple
 		// mechanisms which trip the breaker.
 		r.breaker.TripAsync()
+
+		for _, p := range r.mu.proposals {
+			if p.ec.g != nil {
+				p.ec.repl.concMgr.Poison(p.ec.g)
+			}
+		}
 	}
 
 	if log.V(1) && len(reproposals) > 0 {

@@ -498,6 +498,9 @@ func (m *Manager) iterAndWait(
 	for it.FirstOverlap(wait); it.Valid(); it.NextOverlap(wait) {
 		held := it.Cur()
 		if held.done.signaled() {
+			if held.done.poisoned() {
+				return errors.Errorf("poisoned ... put whatever error we want here")
+			}
 			continue
 		}
 		if ignore(wait.ts, held.ts) {
@@ -518,6 +521,9 @@ func (m *Manager) waitForSignal(
 	for {
 		select {
 		case <-held.done.signalChan():
+			if held.done.poisoned() {
+				return errors.Errorf("poisoned ... put whatever error we want here")
+			}
 			return nil
 		case <-t.C:
 			t.Read = true
@@ -545,7 +551,7 @@ func (m *Manager) waitForSignal(
 // dependent latch acquisition attempts can complete if not blocked on any other
 // owned latches.
 func (m *Manager) Release(lg *Guard) {
-	lg.done.signal()
+	lg.done.signal(false /* poison */)
 	if lg.snap != nil {
 		lg.snap.close()
 	}
@@ -553,6 +559,13 @@ func (m *Manager) Release(lg *Guard) {
 	m.mu.Lock()
 	m.removeLocked(lg)
 	m.mu.Unlock()
+}
+
+// Poison poisons the latches held by the provided Guard. After being called,
+// dependent latch acquisition attempts will be rejected. This will continue
+// until the Guard is eventually released.
+func (m *Manager) Poison(lg *Guard) {
+	lg.done.signal(true /* poison */)
 }
 
 // removeLocked removes the latches owned by the provided Guard from the
