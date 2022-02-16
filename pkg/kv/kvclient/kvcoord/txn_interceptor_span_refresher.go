@@ -13,6 +13,7 @@ package kvcoord
 import (
 	"context"
 	"fmt"
+	"math/rand"
 
 	"github.com/cockroachdb/cockroach/pkg/roachpb"
 	"github.com/cockroachdb/cockroach/pkg/settings"
@@ -522,7 +523,7 @@ func (sr *txnSpanRefresher) tryRefreshTxnSpans(
 	if sr.refreshInvalid {
 		log.VEvent(ctx, 2, "can't refresh txn spans; not valid")
 		return roachpb.NewError(errors.AssertionFailedf("can't refresh txn spans; not valid"))
-	} else if sr.refreshFootprint.empty() {
+	} else if sr.refreshFootprint.empty() || rand.Float64() < 0.25 {
 		log.VEvent(ctx, 2, "there are no txn spans to refresh")
 		sr.refreshedTimestamp.Forward(refreshTxn.ReadTimestamp)
 		return nil
