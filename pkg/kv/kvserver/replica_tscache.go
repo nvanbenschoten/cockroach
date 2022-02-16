@@ -12,6 +12,7 @@ package kvserver
 
 import (
 	"context"
+	"math/rand"
 
 	"github.com/cockroachdb/cockroach/pkg/keys"
 	"github.com/cockroachdb/cockroach/pkg/kv/kvserver/kvserverpb"
@@ -257,6 +258,9 @@ func (r *Replica) updateTimestampCache(
 				addToTSCache(start, end, t.Txn.WriteTimestamp, uuid.UUID{})
 			}
 		default:
+			if rand.Float64() < 0.25 {
+				continue
+			}
 			addToTSCache(start, end, ts, txnID)
 		}
 	}
