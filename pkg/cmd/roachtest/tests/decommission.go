@@ -25,6 +25,7 @@ import (
 	"github.com/cockroachdb/cockroach/pkg/cmd/roachtest/cluster"
 	"github.com/cockroachdb/cockroach/pkg/cmd/roachtest/option"
 	"github.com/cockroachdb/cockroach/pkg/cmd/roachtest/registry"
+	"github.com/cockroachdb/cockroach/pkg/cmd/roachtest/spec"
 	"github.com/cockroachdb/cockroach/pkg/cmd/roachtest/test"
 	"github.com/cockroachdb/cockroach/pkg/roachprod/install"
 	"github.com/cockroachdb/cockroach/pkg/testutils"
@@ -109,6 +110,17 @@ func registerDecommission(r registry.Registry) {
 			Cluster: r.MakeClusterSpec(numNodes),
 			Run: func(ctx context.Context, t test.Test, c cluster.Cluster) {
 				runDecommissionSlow(ctx, t, c)
+			},
+		})
+	}
+	{
+		numNodes := 32
+		r.Add(registry.TestSpec{
+			Name:    fmt.Sprintf("decommission/bench"),
+			Owner:   registry.OwnerKV,
+			Cluster: r.MakeClusterSpec(numNodes, spec.CPU(16), spec.SSD(8)),
+			Run: func(ctx context.Context, t test.Test, c cluster.Cluster) {
+				runDecommissionBench(ctx, t, c)
 			},
 		})
 	}
@@ -1180,6 +1192,44 @@ func runDecommissionSlow(ctx context.Context, t test.Test, c cluster.Cluster) {
 	},
 		3*time.Minute,
 	)
+}
+
+// runDecommissionBench decommissions a single node in a large cluster and times
+// how long it takes.
+func runDecommissionBench(ctx context.Context, t test.Test, c cluster.Cluster) {
+	c.Put(ctx, t.Cockroach(), "./cockroach", c.All())
+	c.Put(ctx, t.DeprecatedWorkload(), "./workload", c.All())
+
+	startOpts := option.DefaultStartOpts()
+	startOpts.RoachprodOpts.StoreCount = 8
+	c.Start(ctx, t.L(), startOpts, install.MakeClusterSettings(), c.Range(1, c.Spec().NodeCount-1))
+
+	run := func(sql string) { c.Run(ctx, c.Node(1), fmt.Sprintf(`./cockroach sql --insecure -e "%s"`, sql)) }
+	run(`SET CLUSTER SETTING kv.snapshot_rebalance.max_rate='256MiB'`)
+	run(`SET CLUSTER SETTING kv.snapshot_recovery.max_rate='256MiB'`)
+
+	runImportBankDataSplit(ctx, 16*rows2TiB, 0 /* ranges */, t, c)
+
+	before := timeutil.Now()
+	var m *errgroup.Group
+	m, ctx = errgroup.WithContext(ctx)
+	m.Go(func() error {
+		return c.RunE(ctx, c.Node(1), "./cockroach node decommission --insecure --wait=all 2")
+	})
+	m.Go(func() error {
+		return c.StartE(ctx, t.L(), startOpts, install.MakeClusterSettings(), c.Node(c.Spec().NodeCount))
+	})
+	if err := m.Wait(); err != nil {
+		t.Fatal(err)
+	}
+
+	duration := timeutil.Since(before)
+	t.Status(fmt.Sprintf("Decommision took %s", duration))
+	// Write the concurrency number into the stats.json file to be used by
+	// the roachperf.
+	c.Run(ctx, c.Node(1), "mkdir", t.PerfArtifactsDir())
+	cmd := fmt.Sprintf(`echo '{ "duration": %d }' > %s/stats.json`, duration, t.PerfArtifactsDir())
+	c.Run(ctx, c.Node(1), cmd)
 }
 
 // Header from the output of `cockroach node decommission`.
