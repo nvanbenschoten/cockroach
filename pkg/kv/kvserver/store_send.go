@@ -111,7 +111,7 @@ func (s *Store) Send(
 				// Update our clock with the outgoing response txn timestamp
 				// (if timestamp has been forwarded).
 				if ba.Timestamp.Less(br.Txn.WriteTimestamp) {
-					if clockTS, ok := br.Txn.WriteTimestamp.TryToClockTimestamp(); ok {
+					if clockTS, ok := br.Txn.WriteTimestamp.TryToClockTimestamp(); ok && false {
 						if err := s.cfg.Clock.UpdateAndCheckMaxOffset(ctx, clockTS); err != nil {
 							log.Fatalf(ctx, "response for req %+v", ba)
 						}
@@ -123,7 +123,7 @@ func (s *Store) Send(
 				// Update our clock with the outgoing response timestamp.
 				// (if timestamp has been forwarded).
 				if ba.Timestamp.Less(br.Timestamp) {
-					if clockTS, ok := br.Timestamp.TryToClockTimestamp(); ok {
+					if clockTS, ok := br.Timestamp.TryToClockTimestamp(); ok && false {
 						if err := s.cfg.Clock.UpdateAndCheckMaxOffset(ctx, clockTS); err != nil {
 							log.Fatalf(ctx, "response for req %+v", ba)
 						}
