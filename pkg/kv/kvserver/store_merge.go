@@ -175,7 +175,9 @@ func (s *Store) MergeRange(
 			// For an explanation about why we need to update out clock with the
 			// merge's freezeStart, see "Range merges" in pkg/util/hlc/doc.go. Also,
 			// see the comment on TestStoreRangeMergeTimestampCacheCausality.
-			s.Clock().Update(freezeStart)
+			if err := s.Clock().UpdateAndCheckMaxOffset(ctx, freezeStart); err != nil {
+				log.Fatalf(ctx, "merging range %v", err)
+			}
 
 			var sum rspb.ReadSummary
 			if rightReadSum != nil {

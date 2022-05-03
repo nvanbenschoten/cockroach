@@ -286,7 +286,9 @@ func (r *Replica) leasePostApplyLocked(
 		// that the leaseholder's clock always leads its lease's start time. For an
 		// explanation about why this is needed, see "Cooperative lease transfers"
 		// in pkg/util/hlc/doc.go.
-		r.Clock().Update(newLease.Start)
+		if err := r.Clock().UpdateAndCheckMaxOffset(ctx, newLease.Start); err != nil {
+			log.Fatalf(ctx, "applying lease: %v", err)
+		}
 
 		// If this replica is a new holder of the lease, update the timestamp
 		// cache. Note that clock offset scenarios are handled via a stasis
