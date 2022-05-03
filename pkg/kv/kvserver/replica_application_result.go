@@ -231,6 +231,12 @@ func (r *Replica) tryReproposeWithNewLeaseIndex(
 	// Some tests check for this log message in the trace.
 	log.VEventf(ctx, 2, "retry: proposalIllegalLeaseIndex")
 
+	r.mu.Lock()
+	if r.mu.state.Lease.Replica.ReplicaID == r.replicaID {
+		r.mu.proposalBuf.OnLeaseChangeLocked(true, r.mu.state.RaftClosedTimestamp, r.mu.state.LeaseAppliedIndex)
+	}
+	r.mu.Unlock()
+
 	pErr := r.propose(ctx, p, tok.Move(ctx))
 	if pErr != nil {
 		return pErr
