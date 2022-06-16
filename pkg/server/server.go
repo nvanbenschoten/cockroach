@@ -85,6 +85,8 @@ import (
 	"github.com/cockroachdb/errors"
 	"github.com/cockroachdb/redact"
 	sentry "github.com/getsentry/sentry-go"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/collectors"
 	"google.golang.org/grpc/codes"
 )
 
@@ -99,16 +101,18 @@ type Server struct {
 	rpcContext      *rpc.Context
 	engines         Engines
 	// The gRPC server on which the different RPC handlers will be registered.
-	grpc             *grpcServer
-	gossip           *gossip.Gossip
-	nodeDialer       *nodedialer.Dialer
-	nodeLiveness     *liveness.NodeLiveness
-	storePool        *kvserver.StorePool
-	tcsFactory       *kvcoord.TxnCoordSenderFactory
-	distSender       *kvcoord.DistSender
-	db               *kv.DB
-	node             *Node
-	registry         *metric.Registry
+	grpc         *grpcServer
+	gossip       *gossip.Gossip
+	nodeDialer   *nodedialer.Dialer
+	nodeLiveness *liveness.NodeLiveness
+	storePool    *kvserver.StorePool
+	tcsFactory   *kvcoord.TxnCoordSenderFactory
+	distSender   *kvcoord.DistSender
+	db           *kv.DB
+	node         *Node
+	registry     *metric.Registry
+	promRegistry *prometheus.Registry // XXX: document. Also use (server code).
+
 	recorder         *status.MetricsRecorder
 	runtime          *status.RuntimeStatSampler
 	ruleRegistry     *metric.RuleRegistry
@@ -182,6 +186,13 @@ func NewServer(cfg Config, stopper *stop.Stopper) (*Server, error) {
 	promRuleExporter := metric.NewPrometheusRuleExporter(ruleRegistry)
 	stopper.SetTracer(cfg.AmbientCtx.Tracer)
 	stopper.AddCloser(cfg.AmbientCtx.Tracer)
+
+	promRegistry := prometheus.NewRegistry() // XXX: Wrap this around a goruntimemetrics type or something, exporting *just* those stats.
+	if err := promRegistry.Register(collectors.NewGoCollector(
+		collectors.WithGoCollections(collectors.GoRuntimeMetricsCollection),
+	)); err != nil {
+		return nil, errors.Wrap(err, "failed to register prometheus go collector")
+	}
 
 	// Add a dynamic log tag value for the node ID.
 	//
@@ -756,6 +767,7 @@ func NewServer(cfg Config, stopper *stop.Stopper) (*Server, error) {
 		distSender:               distSender,
 		db:                       db,
 		registry:                 registry,
+		promRegistry:             promRegistry,
 		recorder:                 recorder,
 		sessionRegistry:          sessionRegistry,
 		flowScheduler:            flowScheduler,
@@ -808,6 +820,7 @@ func NewServer(cfg Config, stopper *stop.Stopper) (*Server, error) {
 		db:                     db,
 		node:                   node,
 		registry:               registry,
+		promRegistry:           promRegistry,
 		recorder:               recorder,
 		ruleRegistry:           ruleRegistry,
 		promRuleExporter:       promRuleExporter,
@@ -1352,6 +1365,7 @@ func (s *Server) PreStart(ctx context.Context) error {
 	// We can now add the node registry.
 	s.recorder.AddNode(
 		s.registry,
+		s.promRegistry,
 		s.node.Descriptor,
 		s.node.startedAt,
 		s.cfg.AdvertiseAddr,
@@ -1468,9 +1482,10 @@ func (s *Server) PreStart(ctx context.Context) error {
 	// endpoints served by gwMux by the HTTP cookie authentication
 	// check.
 	if err := s.http.setupRoutes(ctx,
-		s.authentication,       /* authnServer */
-		s.adminAuthzCheck,      /* adminAuthzCheck */
-		s.recorder,             /* metricSource */
+		s.authentication,  /* authnServer */
+		s.adminAuthzCheck, /* adminAuthzCheck */
+		s.recorder,        /* metricSource */
+		s.promRegistry,
 		s.runtime,              /* runtimeStatsSampler */
 		gwMux,                  /* handleRequestsUnauthenticated */
 		s.debug,                /* handleDebugUnauthenticated */

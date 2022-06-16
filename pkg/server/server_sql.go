@@ -110,6 +110,7 @@ import (
 	"github.com/cockroachdb/cockroach/pkg/util/uuid"
 	"github.com/cockroachdb/errors"
 	"github.com/marusama/semaphore"
+	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/grpc"
 )
 
@@ -265,6 +266,8 @@ type sqlServerArgs struct {
 
 	// Various components want to register themselves with metrics.
 	registry *metric.Registry
+
+	promRegistry *prometheus.Registry // XXX: document. Also use (sql server code).
 
 	// Recorder exposes metrics to the prometheus endpoint.
 	recorder *status.MetricsRecorder

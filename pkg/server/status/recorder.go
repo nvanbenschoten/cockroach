@@ -47,6 +47,8 @@ import (
 	"github.com/codahale/hdrhistogram"
 	humanize "github.com/dustin/go-humanize"
 	"github.com/elastic/gosigar"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/common/expfmt"
 )
 
 const (
@@ -121,6 +123,7 @@ type MetricsRecorder struct {
 		// nodeRegistry contains, as subregistries, the multiple component-specific
 		// registries which are recorded as "node level" metrics.
 		nodeRegistry *metric.Registry
+		promRegistry *prometheus.Registry
 		desc         roachpb.NodeDescriptor
 		startedAt    int64
 
@@ -169,6 +172,7 @@ func NewMetricsRecorder(
 // and start time.
 func (mr *MetricsRecorder) AddNode(
 	reg *metric.Registry,
+	promRegistry *prometheus.Registry,
 	desc roachpb.NodeDescriptor,
 	startedAt int64,
 	advertiseAddr, httpAddr, sqlAddr string,
@@ -176,6 +180,7 @@ func (mr *MetricsRecorder) AddNode(
 	mr.mu.Lock()
 	defer mr.mu.Unlock()
 	mr.mu.nodeRegistry = reg
+	mr.mu.promRegistry = promRegistry
 	mr.mu.desc = desc
 	mr.mu.startedAt = startedAt
 
@@ -261,14 +266,36 @@ func (mr *MetricsRecorder) PrintAsText(w io.Writer) error {
 	if err := mr.prometheusExporter.ScrapeAndPrintAsText(&buf, mr.ScrapeIntoPrometheus); err != nil {
 		return err
 	}
-	_, err := buf.WriteTo(w)
-	return err
+
+	// XXX: We're only printing this stuff to prometheus endpoint. This
+	// shouldn't be here; move it out to the caller.
+	mr.mu.RLock()
+	defer mr.mu.RUnlock()
+	mfs, err := mr.mu.promRegistry.Gather()
+	if err != nil {
+		return err
+	}
+	if _, err := buf.WriteTo(w); err != nil {
+		return err
+	}
+	enc := expfmt.NewEncoder(w, expfmt.FmtText)
+	for _, mf := range mfs {
+		mf.GetMetric()
+		if err := enc.Encode(mf); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // ExportToGraphite sends the current metric values to a Graphite server.
 // It creates a new PrometheusExporter each time to avoid needing to worry
 // about races with mr.promMu.prometheusExporter. We are not as worried
 // about the extra memory allocations.
+//
+// TODO(irfansharif): We're not exporting the go runtime metrics to graphite.
+// I'm not sure if we actually care about graphite support, should we just rip
+// it out?
 func (mr *MetricsRecorder) ExportToGraphite(
 	ctx context.Context, endpoint string, pm *metric.PrometheusExporter,
 ) error {

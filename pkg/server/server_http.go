@@ -29,6 +29,7 @@ import (
 	"github.com/cockroachdb/cockroach/pkg/util/netutil"
 	"github.com/cockroachdb/cockroach/pkg/util/stop"
 	"github.com/cockroachdb/errors"
+	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/grpc/metadata"
 )
 
@@ -88,6 +89,7 @@ func (s *httpServer) setupRoutes(
 	authnServer *authenticationServer,
 	adminAuthzCheck *adminPrivilegeChecker,
 	metricSource metricMarshaler,
+	registry *prometheus.Registry,
 	runtimeStatSampler *status.RuntimeStatSampler,
 	handleRequestsUnauthenticated http.Handler,
 	handleDebugUnauthenticated http.Handler,
@@ -153,7 +155,7 @@ func (s *httpServer) setupRoutes(
 	// (This simply mirrors /health and exists for backward compatibility.)
 	s.mux.Handle(adminHealth, handleRequestsUnauthenticated)
 	// The /_status/vars endpoint is not authenticated either. Useful for monitoring.
-	s.mux.Handle(statusVars, http.HandlerFunc(varsHandler{metricSource, s.cfg.Settings}.handleVars))
+	s.mux.Handle(statusVars, http.HandlerFunc(varsHandler{metricSource, s.cfg.Settings}.handleVars)) // XXX: This is the wiring. Should take prom vars directly.
 	// Same for /_status/load.
 	s.mux.Handle(loadStatusVars, http.HandlerFunc(makeStatusLoadHandler(ctx, runtimeStatSampler, metricSource)))
 

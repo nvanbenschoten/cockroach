@@ -1847,6 +1847,8 @@ func (h varsHandler) handleVars(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set(httputil.ContentTypeHeader, httputil.PlaintextContentType)
 	err := h.metricSource.PrintAsText(w)
+	// XXX: This is where we print our current set of CRDB internal metrics. Can
+	// we just print the client_golang shit as well?
 	if err != nil {
 		log.Errorf(ctx, "%v", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)

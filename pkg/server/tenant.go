@@ -275,10 +275,11 @@ func startTenantInternal(
 		authServer,      /* authnServer */
 		adminAuthzCheck, /* adminAuthzCheck */
 		args.recorder,   /* metricSource */
-		args.runtime,    /* runtimeStatSampler */
-		gwMux,           /* handleRequestsUnauthenticated */
-		debugServer,     /* handleDebugUnauthenticated */
-		nil,             /* apiServer */
+		args.promRegistry,
+		args.runtime, /* runtimeStatSampler */
+		gwMux,        /* handleRequestsUnauthenticated */
+		debugServer,  /* handleDebugUnauthenticated */
+		nil,          /* apiServer */
 	); err != nil {
 		return nil, nil, nil, "", "", err
 	}
@@ -294,6 +295,7 @@ func startTenantInternal(
 
 	args.recorder.AddNode(
 		args.registry,
+		args.promRegistry,
 		roachpb.NodeDescriptor{},
 		timeutil.Now().UnixNano(),
 		baseCfg.AdvertiseAddr,     // advertised addr

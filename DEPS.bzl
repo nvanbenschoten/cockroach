@@ -6599,10 +6599,10 @@ def go_deps():
         name = "com_github_prometheus_client_golang",
         build_file_proto_mode = "disable_global",
         importpath = "github.com/prometheus/client_golang",
-        sha256 = "9776139bdb0080e048ddad860ba49e9cca0f7b7736ab219ca0d69da4900d830d",
-        strip_prefix = "github.com/prometheus/client_golang@v1.12.0",
+        sha256 = "f53066330cfc7c42acde416247033715ea6a7c70ef47cd9ea9609139aa409b45",
+        strip_prefix = "github.com/prometheus/client_golang@v1.12.2",
         urls = [
-            "https://storage.googleapis.com/cockroach-godeps/gomod/github.com/prometheus/client_golang/com_github_prometheus_client_golang-v1.12.0.zip",
+            "https://storage.googleapis.com/cockroach-godeps/gomod/github.com/prometheus/client_golang/com_github_prometheus_client_golang-v1.12.2.zip",
         ],
     )
     go_repository(
