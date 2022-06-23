@@ -267,7 +267,7 @@ func (w *kv) Ops(
 	// Read statement
 	var buf strings.Builder
 	if w.shards == 0 {
-		buf.WriteString(`SELECT k, v FROM kv WHERE k IN (`)
+		buf.WriteString(`SELECT k, substr(v || v || v || v || v || v || v || v, 0, 2) FROM kv WHERE k IN (`)
 		for i := 0; i < w.batchSize; i++ {
 			if i > 0 {
 				buf.WriteString(", ")
@@ -510,14 +510,14 @@ type sequence struct {
 }
 
 func (s *sequence) write() int64 {
-	return (atomic.AddInt64(&s.val, 1) - 1) % s.config.cycleLength
+	return atomic.AddInt64(&s.val, 1) - 1
 }
 
 // read returns the last key index that has been written. Note that the returned
 // index might not actually have been written yet, so a read operation cannot
 // require that the key is present.
 func (s *sequence) read() int64 {
-	return atomic.LoadInt64(&s.val) % s.config.cycleLength
+	return atomic.LoadInt64(&s.val)
 }
 
 // keyGenerator generates read and write keys. Read keys may not yet exist and
@@ -594,7 +594,11 @@ func (g *sequentialGenerator) readKey() int64 {
 	if v == 0 {
 		return 0
 	}
-	return g.random.Int63n(v)
+	trail := v
+	if trail > g.seq.config.cycleLength {
+		trail = g.seq.config.cycleLength
+	}
+	return v - g.random.Int63n(trail)
 }
 
 func (g *sequentialGenerator) rand() *rand.Rand {
