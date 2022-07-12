@@ -199,9 +199,6 @@ func (r *Replica) disconnectReplicationRaftMuLocked(ctx context.Context) {
 	// believe we are the leaseholder and there are more requests waiting for
 	// quota than total quota then failure to close the proposal quota here could
 	// leave those requests stuck forever.
-	if pq := r.mu.proposalQuota; pq != nil {
-		pq.Close("destroyed")
-	}
 	r.mu.proposalBuf.FlushLockedWithoutProposing(ctx)
 	for _, p := range r.mu.proposals {
 		r.cleanupFailedProposalLocked(p)

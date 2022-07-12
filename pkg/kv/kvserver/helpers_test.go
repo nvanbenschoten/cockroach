@@ -279,13 +279,6 @@ func (r *Replica) InitQuotaPool(quota uint64) error {
 	if err != nil {
 		return err
 	}
-
-	r.mu.proposalQuotaBaseIndex = appliedIndex
-	if r.mu.proposalQuota != nil {
-		r.mu.proposalQuota.Close("re-creating")
-	}
-	r.mu.proposalQuota = quotapool.NewIntPool(r.rangeStr.String(), quota)
-	r.mu.quotaReleaseQueue = nil
 	return nil
 }
 
@@ -294,7 +287,7 @@ func (r *Replica) InitQuotaPool(quota uint64) error {
 func (r *Replica) QuotaAvailable() uint64 {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return r.mu.proposalQuota.ApproximateQuota()
+	return 0
 }
 
 // GetProposalQuota returns the Replica's internal proposal quota.
@@ -303,13 +296,13 @@ func (r *Replica) QuotaAvailable() uint64 {
 func (r *Replica) GetProposalQuota() *quotapool.IntPool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return r.mu.proposalQuota
+	return nil
 }
 
 func (r *Replica) QuotaReleaseQueueLen() int {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return len(r.mu.quotaReleaseQueue)
+	return 0
 }
 
 func (r *Replica) IsFollowerActiveSince(

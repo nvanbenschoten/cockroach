@@ -17,7 +17,6 @@ import (
 	"github.com/cockroachdb/cockroach/pkg/kv/kvserver/apply"
 	"github.com/cockroachdb/cockroach/pkg/util"
 	"github.com/cockroachdb/cockroach/pkg/util/log"
-	"github.com/cockroachdb/cockroach/pkg/util/quotapool"
 	"github.com/cockroachdb/cockroach/pkg/util/tracing"
 	"go.etcd.io/etcd/raft/v3/raftpb"
 )
@@ -90,13 +89,12 @@ func (d *replicaDecoder) retrieveLocalProposals(ctx context.Context) (anyLocal b
 		cmd.proposal = d.r.mu.proposals[cmd.idKey]
 		anyLocal = anyLocal || cmd.IsLocal()
 	}
-	if !anyLocal && d.r.mu.proposalQuota == nil {
+	if !anyLocal {
 		// Fast-path.
 		return false
 	}
 	for it.init(&d.cmdBuf); it.Valid(); it.Next() {
 		cmd := it.cur()
-		var toRelease *quotapool.IntAlloc
 		shouldRemove := cmd.IsLocal() &&
 			// If this entry does not have the most up-to-date view of the
 			// corresponding proposal's maximum lease index then the proposal
@@ -125,14 +123,6 @@ func (d *replicaDecoder) retrieveLocalProposals(ctx context.Context) (anyLocal b
 			// when reproposals from the same proposal end up in the same entry
 			// application batch.
 			delete(d.r.mu.proposals, cmd.idKey)
-			toRelease = cmd.proposal.quotaAlloc
-			cmd.proposal.quotaAlloc = nil
-		}
-		// At this point we're not guaranteed to have proposalQuota initialized,
-		// the same is true for quotaReleaseQueues. Only queue the proposal's
-		// quota for release if the proposalQuota is initialized.
-		if d.r.mu.proposalQuota != nil {
-			d.r.mu.quotaReleaseQueue = append(d.r.mu.quotaReleaseQueue, toRelease)
 		}
 	}
 	return anyLocal

@@ -482,10 +482,7 @@ func (r *Replica) hasPendingProposalsRLocked() bool {
 // would not be released while quiesced, and it might prevent the range from
 // unquiescing (leading to deadlock). See #46699.
 func (r *Replica) hasPendingProposalQuotaRLocked() bool {
-	if r.mu.proposalQuota == nil {
-		return true
-	}
-	return !r.mu.proposalQuota.Full()
+	return false
 }
 
 var errRemoved = errors.New("replica removed")
@@ -587,7 +584,6 @@ func (r *Replica) handleRaftReadyRaftMuLocked(
 	lastTerm := r.mu.lastTerm
 	raftLogSize := r.mu.raftLogSize
 	leaderID := r.mu.leaderID
-	lastLeaderID := leaderID
 	err := r.withRaftGroupLocked(true, func(raftGroup *raft.RawNode) (bool, error) {
 		numFlushed, err := r.mu.proposalBuf.FlushLockedWithRaftGroup(ctx, raftGroup)
 		if err != nil {
@@ -629,7 +625,7 @@ func (r *Replica) handleRaftReadyRaftMuLocked(
 		// leader replica, no Ready is emitted. But given that the third
 		// replica has caught up, we can release
 		// some quota back to the pool.
-		r.updateProposalQuotaRaftMuLocked(ctx, lastLeaderID)
+		//r.updateProposalQuotaRaftMuLocked(ctx, lastLeaderID)
 		return stats, "", nil
 	}
 
@@ -898,6 +894,12 @@ func (r *Replica) handleRaftReadyRaftMuLocked(
 		// Clear the remote proposal set. Would have been nil already if not
 		// previously the leader.
 		becameLeader = r.mu.leaderID == r.replicaID
+		if becameLeader {
+			r.mu.lastUpdateTimes = make(map[roachpb.ReplicaID]time.Time)
+			r.mu.lastUpdateTimes.updateOnBecomeLeader(r.mu.state.Desc.Replicas().Descriptors(), timeutil.Now())
+		} else {
+			r.mu.lastUpdateTimes = nil
+		}
 	}
 	r.mu.Unlock()
 
@@ -1000,7 +1002,7 @@ func (r *Replica) handleRaftReadyRaftMuLocked(
 	// raft group, this only happens if hasReady == true. If we don't release
 	// quota back at the end of handleRaftReadyRaftMuLocked, the next write will
 	// get blocked.
-	r.updateProposalQuotaRaftMuLocked(ctx, lastLeaderID)
+	//r.updateProposalQuotaRaftMuLocked(ctx, lastLeaderID)
 	return stats, "", nil
 }
 

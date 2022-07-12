@@ -45,7 +45,6 @@ import (
 	"github.com/cockroachdb/cockroach/pkg/util/log"
 	"github.com/cockroachdb/cockroach/pkg/util/mon"
 	"github.com/cockroachdb/cockroach/pkg/util/protoutil"
-	"github.com/cockroachdb/cockroach/pkg/util/quotapool"
 	"github.com/cockroachdb/cockroach/pkg/util/retry"
 	"github.com/cockroachdb/cockroach/pkg/util/stop"
 	"github.com/cockroachdb/cockroach/pkg/util/syncutil"
@@ -564,28 +563,6 @@ type Replica struct {
 
 		// Computed checksum at a snapshot UUID.
 		checksums map[uuid.UUID]replicaChecksum
-
-		// proposalQuota is the quota pool maintained by the lease holder where
-		// incoming writes acquire quota from a fixed quota pool before going
-		// through. If there is no quota available, the write is throttled
-		// until quota is made available to the pool.
-		// Acquired quota for a given command is only released when all the
-		// replicas have persisted the corresponding entry into their logs.
-		proposalQuota *quotapool.IntPool
-
-		// The base index is the index up to (including) which quota was already
-		// released. That is, the first element in quotaReleaseQueue below is
-		// released as the base index moves up by one, etc.
-		proposalQuotaBaseIndex uint64
-
-		// Once the leader observes a proposal come 'out of Raft', we add the size
-		// of the associated command to a queue of quotas we have yet to release
-		// back to the quota pool. At that point ownership of the quota is
-		// transferred from r.mu.proposals to this queue.
-		// We'll release the respective quota once all replicas have persisted the
-		// corresponding entry into their logs (or once we give up waiting on some
-		// replica because it looks like it's dead).
-		quotaReleaseQueue []*quotapool.IntAlloc
 
 		// Counts calls to Replica.tick()
 		ticks int
@@ -1256,16 +1233,6 @@ func (r *Replica) State(ctx context.Context) kvserverpb.RangeInfo {
 	ri.RaftLogSize = r.mu.raftLogSize
 	ri.RaftLogSizeTrusted = r.mu.raftLogSizeTrusted
 	ri.NumDropped = uint64(r.mu.droppedMessages)
-	if r.mu.proposalQuota != nil {
-		ri.ApproximateProposalQuota = int64(r.mu.proposalQuota.ApproximateQuota())
-		ri.ProposalQuotaBaseIndex = int64(r.mu.proposalQuotaBaseIndex)
-		ri.ProposalQuotaReleaseQueue = make([]int64, len(r.mu.quotaReleaseQueue))
-		for i, a := range r.mu.quotaReleaseQueue {
-			if a != nil {
-				ri.ProposalQuotaReleaseQueue[i] = int64(a.Acquired())
-			}
-		}
-	}
 	ri.RangeMaxBytes = r.mu.conf.RangeMaxBytes
 	if r.mu.tenantID != (roachpb.TenantID{}) {
 		ri.TenantID = r.mu.tenantID.ToUint64()
