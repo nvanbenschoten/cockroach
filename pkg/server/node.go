@@ -235,6 +235,8 @@ type Node struct {
 	suppressNodeStatus syncutil.AtomicBool
 
 	testingErrorEvent func(context.Context, *roachpb.BatchRequest, error)
+
+	ballast []byte
 }
 
 var _ roachpb.InternalServer = &Node{}
@@ -379,6 +381,7 @@ func NewNode(
 		tenantSettingsWatcher: tenantSettingsWatcher,
 		spanConfigAccessor:    spanConfigAccessor,
 		testingErrorEvent:     cfg.TestingKnobs.TestingResponseErrorEvent,
+		ballast:               make([]byte, 10<<30),
 	}
 	n.storeCfg.KVAdmissionController = n.admissionController
 	n.perReplicaServer = kvserver.MakeServer(&n.Descriptor, n.stores)
