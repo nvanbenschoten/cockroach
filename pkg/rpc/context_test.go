@@ -1890,7 +1890,7 @@ func TestRunHeartbeatSetsHeartbeatStateWhenExitingBeforeFirstHeartbeat(t *testin
 	}
 	remoteAddr := ln.Addr().String()
 
-	c := newConnectionToNodeID(stopper, 1)
+	c := newConnectionToNodeID(stopper, 1, 1)
 
 	redialChan := make(chan struct{})
 	close(redialChan)

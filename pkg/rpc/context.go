@@ -293,14 +293,19 @@ type Connection struct {
 	// the lifetime of a Connection object.
 	remoteNodeID roachpb.NodeID
 
+	class ConnectionClass
+
 	initOnce sync.Once
 }
 
-func newConnectionToNodeID(stopper *stop.Stopper, remoteNodeID roachpb.NodeID) *Connection {
+func newConnectionToNodeID(
+	stopper *stop.Stopper, remoteNodeID roachpb.NodeID, class ConnectionClass,
+) *Connection {
 	c := &Connection{
 		initialHeartbeatDone: make(chan struct{}),
 		stopper:              stopper,
 		remoteNodeID:         remoteNodeID,
+		class:                class,
 	}
 	c.heartbeatResult.Store(heartbeatResult{err: ErrNotHeartbeated})
 	return c
@@ -1331,7 +1336,7 @@ func (rpcCtx *Context) grpcDialNodeInternal(
 	thisConnKeys := []connKey{{target, remoteNodeID, class}}
 	value, ok := rpcCtx.conns.Load(thisConnKeys[0])
 	if !ok {
-		value, _ = rpcCtx.conns.LoadOrStore(thisConnKeys[0], newConnectionToNodeID(rpcCtx.Stopper, remoteNodeID))
+		value, _ = rpcCtx.conns.LoadOrStore(thisConnKeys[0], newConnectionToNodeID(rpcCtx.Stopper, remoteNodeID, class))
 		if remoteNodeID != 0 {
 			// If the first connection established at a target address is
 			// for a specific node ID, then we want to reuse that connection
@@ -1531,6 +1536,8 @@ func (rpcCtx *Context) runHeartbeat(
 				// Only update the clock offset measurement if we actually got a
 				// successful response from the server.
 				pingDuration := receiveTime.Sub(sendTime)
+				log.Infof(ctx, "NATHAN heartbeat ping time to %d for class %s: %s",
+					conn.remoteNodeID, conn.class, pingDuration)
 				maxOffset := rpcCtx.Clock.MaxOffset()
 				if pingDuration > maximumPingDurationMult*maxOffset {
 					request.Offset.Reset()
