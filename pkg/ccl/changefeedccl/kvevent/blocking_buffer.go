@@ -133,7 +133,7 @@ func (b *blockingBuffer) Get(ctx context.Context) (ev Event, err error) {
 		if got != nil {
 			b.metrics.BufferEntriesOut.Inc(1)
 			e := got.e
-			bufferEntryPool.Put(got)
+			freeBufferEntry(got)
 			return e, nil
 		}
 
@@ -166,7 +166,7 @@ func (b *blockingBuffer) enqueue(ctx context.Context, be *bufferEntry) (err erro
 	defer b.mu.Unlock()
 	defer func() {
 		if err != nil {
-			bufferEntryPool.Put(be)
+			freeBufferEntry(be)
 		}
 	}()
 
@@ -210,7 +210,7 @@ func (b *blockingBuffer) Add(ctx context.Context, e Event) error {
 	be := newBufferEntry(e)
 
 	if err := b.qp.Acquire(ctx, be); err != nil {
-		bufferEntryPool.Put(be)
+		freeBufferEntry(be)
 		return err
 	}
 	b.metrics.BufferEntriesMemAcquired.Inc(alloc)
@@ -287,7 +287,7 @@ func (b *blockingBuffer) CloseWithReason(ctx context.Context, reason error) erro
 	// Note: we do not need to release their resources since we are going to close
 	// bound account anyway.
 	for be := b.mu.queue.dequeue(); be != nil; be = b.mu.queue.dequeue() {
-		bufferEntryPool.Put(be)
+		freeBufferEntry(be)
 	}
 
 	return nil
@@ -338,6 +338,11 @@ func newBufferEntry(e Event) *bufferEntry {
 	be.e = e
 	be.next = nil
 	return be
+}
+
+func freeBufferEntry(be *bufferEntry) {
+	*be = bufferEntry{}
+	bufferEntryPool.Put(be)
 }
 
 var _ quotapool.Request = (*bufferEntry)(nil)
