@@ -204,6 +204,13 @@ func (rec SpanSetReplicaEvalContext) GetRangeInfo(ctx context.Context) roachpb.R
 	return rec.i.GetRangeInfo(ctx)
 }
 
+// ReplicaMayNeedSnapshot is part of the EvalContext interface.
+func (rec SpanSetReplicaEvalContext) ReplicaMayNeedSnapshot(
+	target roachpb.ReplicaDescriptor,
+) error {
+	return rec.i.ReplicaMayNeedSnapshot(target)
+}
+
 // GetCurrentReadSummary is part of the EvalContext interface.
 func (rec *SpanSetReplicaEvalContext) GetCurrentReadSummary(ctx context.Context) rspb.ReadSummary {
 	// To capture a read summary over the range, all keys must be latched for

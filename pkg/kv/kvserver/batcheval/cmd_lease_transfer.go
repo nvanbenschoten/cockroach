@@ -84,6 +84,11 @@ func TransferLease(
 		return newFailedLeaseTrigger(true /* isTransfer */), err
 	}
 
+	// Check again.
+	if err := cArgs.EvalCtx.ReplicaMayNeedSnapshot(newLease.Replica); err != nil {
+		return newFailedLeaseTrigger(true /* isTransfer */), err
+	}
+
 	// Stop using the current lease. All future calls to leaseStatus on this
 	// node with the current lease will now return a PROSCRIBED status. This
 	// includes calls to leaseStatus from the closed timestamp side-transport,

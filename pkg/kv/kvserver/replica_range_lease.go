@@ -985,6 +985,18 @@ func (r *Replica) AdminTransferLease(ctx context.Context, target roachpb.StoreID
 	}
 }
 
+func (r *Replica) ReplicaMayNeedSnapshot(target roachpb.ReplicaDescriptor) error {
+	r.mu.RLock()
+	raftStatus := r.raftStatusRLocked()
+	raftFirstIndex := r.raftFirstIndexRLocked()
+	r.mu.RUnlock()
+	snapStatus := raftutil.ReplicaMayNeedSnapshot(raftStatus, raftFirstIndex, target.ReplicaID)
+	if snapStatus != raftutil.NoSnapshotNeeded && !r.store.TestingKnobs().AllowLeaseTransfersWhenTargetMayNeedSnapshot {
+		return NewLeaseTransferRejectedBecauseTargetMayNeedSnapshotError(target, snapStatus)
+	}
+	return nil
+}
+
 // GetLease returns the lease and, if available, the proposed next lease.
 func (r *Replica) GetLease() (roachpb.Lease, roachpb.Lease) {
 	r.mu.RLock()
