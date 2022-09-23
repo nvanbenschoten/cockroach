@@ -20,6 +20,7 @@ import (
 	"io"
 	"math"
 	"net"
+	"runtime"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -208,6 +209,8 @@ func NewServerEx(rpcCtx *Context, opts ...ServerOption) (*grpc.Server, ServerInt
 		grpc.MaxConcurrentStreams(math.MaxInt32),
 		grpc.KeepaliveParams(serverKeepalive),
 		grpc.KeepaliveEnforcementPolicy(serverEnforcement),
+		// Configure stream workers.
+		grpc.NumStreamWorkers(uint32(runtime.GOMAXPROCS(0))),
 	}
 	if !rpcCtx.Config.Insecure {
 		tlsConfig, err := rpcCtx.GetServerTLSConfig()
