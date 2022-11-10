@@ -961,6 +961,10 @@ type Batch interface {
 	// engine. This is a noop unless the batch was created via NewBatch(). If
 	// sync is true, the batch is synchronously committed to disk.
 	Commit(sync bool) error
+	// CommitNoSyncWait TODO
+	CommitNoSyncWait() error
+	// SyncWait TODO
+	SyncWait() error
 	// Empty returns whether the batch has been written to or not.
 	Empty() bool
 	// Count returns the number of memtable-modifying operations in the batch.

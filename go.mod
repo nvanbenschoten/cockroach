@@ -111,7 +111,7 @@ require (
 	github.com/cockroachdb/go-test-teamcity v0.0.0-20191211140407-cff980ad0a55
 	github.com/cockroachdb/gostdlib v1.13.0
 	github.com/cockroachdb/logtags v0.0.0-20211118104740-dabe8e521a4f
-	github.com/cockroachdb/pebble v0.0.0-20221103174942-7486bbcf2861
+	github.com/cockroachdb/pebble v0.0.0-20221109022758-7b30bd86ff65
 	github.com/cockroachdb/redact v1.1.3
 	github.com/cockroachdb/returncheck v0.0.0-20200612231554-92cdbca611dd
 	github.com/cockroachdb/stress v0.0.0-20220803192808-1806698b1b7b
@@ -182,6 +182,7 @@ require (
 	github.com/petermattis/goid v0.0.0-20211229010228-4d14c490ee36
 	github.com/pierrre/geohash v1.0.0
 	github.com/pkg/browser v0.0.0-20180916011732-0a3d74bf9ce4
+	github.com/pkg/errors v0.9.1
 	github.com/pmezard/go-difflib v1.0.0
 	github.com/pressly/goose/v3 v3.5.3
 	github.com/prometheus/client_golang v1.12.0
@@ -327,7 +328,6 @@ require (
 	github.com/openzipkin/zipkin-go v0.2.5 // indirect
 	github.com/pelletier/go-toml v1.9.3 // indirect
 	github.com/pierrec/lz4 v2.6.0+incompatible // indirect
-	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pkg/profile v1.6.0 // indirect
 	github.com/power-devops/perfstat v0.0.0-20210106213030-5aafc221ea8c // indirect
 	github.com/pquerna/cachecontrol v0.0.0-20200921180117-858c6e7e6b7e // indirect
@@ -396,3 +396,7 @@ replace gopkg.in/yaml.v2 => github.com/cockroachdb/yaml v0.0.0-20210825132133-2d
 replace github.com/knz/go-libedit => github.com/otan-cockroach/go-libedit v1.10.2-0.20201030151939-7cced08450e7
 
 replace github.com/docker/docker => github.com/moby/moby v20.10.6+incompatible
+
+replace go.etcd.io/etcd/raft/v3 => github.com/nvanbenschoten/etcd/raft/v3 v3.0.0-20221102231627-fe4eb46f5c90
+
+replace github.com/cockroachdb/pebble => github.com/sumeerbhola/pebble v0.0.0-20221109234915-df9ce5fa155a

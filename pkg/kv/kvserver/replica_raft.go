@@ -703,11 +703,20 @@ func (r *Replica) handleRaftReadyRaftMuLocked(
 	var rd raft.Ready
 	r.mu.Lock()
 	lastIndex := r.mu.lastIndex // used for append below
-	lastTerm := r.mu.lastTerm
-	raftLogSize := r.mu.raftLogSize
 	leaderID := r.mu.leaderID
 	lastLeaderID := leaderID
 	err := r.withRaftGroupLocked(true, func(raftGroup *raft.RawNode) (bool, error) {
+		{
+			r.localMsgs.Lock()
+			localMsgs := r.localMsgs.active
+			r.localMsgs.active, r.localMsgs.recycled = r.localMsgs.recycled, r.localMsgs.active[:0]
+			r.localMsgs.Unlock()
+			for i, m := range localMsgs {
+				_ = raftGroup.Step(m)
+				localMsgs[i].Reset()
+			}
+		}
+
 		numFlushed, err := r.mu.proposalBuf.FlushLockedWithRaftGroup(ctx, raftGroup)
 		if err != nil {
 			return false, err
@@ -730,7 +739,8 @@ func (r *Replica) handleRaftReadyRaftMuLocked(
 		unquiesceAndWakeLeader := hasReady || numFlushed > 0 || len(r.mu.proposals) > 0
 		return unquiesceAndWakeLeader, nil
 	})
-	r.mu.applyingEntries = len(rd.CommittedEntries) > 0
+	msgStorageApply, msgs := takeMsgTo(rd.Messages, raft.LocalApplyThread)
+	r.mu.applyingEntries = msgStorageApply.To != 0
 	pausedFollowers := r.mu.pausedFollowers
 	r.mu.Unlock()
 	if errors.Is(err, errRemoved) {
@@ -770,7 +780,20 @@ func (r *Replica) handleRaftReadyRaftMuLocked(
 		if !r.store.TestingKnobs().DisableRefreshReasonNewLeader {
 			refreshReason = reasonNewLeader
 		}
-		leaderID = roachpb.ReplicaID(rd.SoftState.Lead)
+		// Update protected state - last index, last term, raft log size, and raft
+		// leader ID.
+		r.mu.Lock()
+		r.mu.leaderID = roachpb.ReplicaID(rd.SoftState.Lead)
+		// Clear the remote proposal set. Would have been nil already if not
+		// previously the leader.
+		becameLeader := r.mu.leaderID == r.replicaID
+		r.mu.Unlock()
+		if becameLeader && r.store.replicateQueue != nil {
+			// When becoming the leader, proactively add the replica to the replicate
+			// queue. We might have been handed leadership by a remote node which wanted
+			// to remove itself from the range.
+			r.store.replicateQueue.MaybeAddAsync(ctx, r, r.store.Clock().NowAsClockTimestamp())
+		}
 	}
 
 	if inSnap.Desc != nil {
@@ -787,6 +810,11 @@ func (r *Replica) handleRaftReadyRaftMuLocked(
 				log.Fatalf(ctx, "incoming snapshot id doesn't match raft snapshot id: %s != %s", snapUUID, inSnap.SnapUUID)
 			}
 
+			var msgStorageAppend raftpb.Message
+			msgStorageAppend, msgs = takeMsgTo(rd.Messages, raft.LocalAppendThread)
+			(*replicaRaftLog)(r).SendAppendResponseMsgs(ctx, msgStorageAppend.Responses)
+			r.store.raftLogWriter.Sync(r.RangeID)
+
 			// Applying this snapshot may require us to subsume one or more of our right
 			// neighbors. This occurs if this replica is informed about the merges via a
 			// Raft snapshot instead of a MsgApp containing the merge commits, e.g.,
@@ -802,15 +830,6 @@ func (r *Replica) handleRaftReadyRaftMuLocked(
 			}
 			stats.tSnapEnd = timeutil.Now()
 			stats.snap.applied = true
-
-			// r.mu.lastIndex, r.mu.lastTerm and r.mu.raftLogSize were updated in
-			// applySnapshot, but we also want to make sure we reflect these changes in
-			// the local variables we're tracking here.
-			r.mu.RLock()
-			lastIndex = r.mu.lastIndex
-			lastTerm = r.mu.lastTerm
-			raftLogSize = r.mu.raftLogSize
-			r.mu.RUnlock()
 
 			// We refresh pending commands after applying a snapshot because this
 			// replica may have been temporarily partitioned from the Raft group and
@@ -834,219 +853,43 @@ func (r *Replica) handleRaftReadyRaftMuLocked(
 		return stats, getNonDeterministicFailureExplanation(err), err
 	}
 
-	// If the ready struct includes entries that have been committed, these
-	// entries will be applied to the Replica's replicated state machine down
-	// below, after appending new entries to the raft log and sending messages
-	// to peers. However, the process of appending new entries to the raft log
-	// and then applying committed entries to the state machine can take some
-	// time - and these entries are already durably committed. If they have
-	// clients waiting on them, we'd like to acknowledge their success as soon
-	// as possible. To facilitate this, we take a quick pass over the committed
-	// entries and acknowledge as many as we can trivially prove will not be
-	// rejected beneath raft.
-	//
-	// Note that the CommittedEntries slice may contain entries that are also in
-	// the Entries slice (to be appended in this ready pass). This can happen when
-	// a follower is being caught up on committed commands. We could acknowledge
-	// these commands early even though they aren't durably in the local raft log
-	// yet (since they're committed via a quorum elsewhere), but we chose to be
-	// conservative and avoid it by passing the last Ready cycle's `lastIndex` for
-	// the maxIndex argument to AckCommittedEntriesBeforeApplication.
-	sm := r.getStateMachine()
-	dec := r.getDecoder()
-	appTask := apply.MakeTask(sm, dec)
-	appTask.SetMaxBatchSize(r.store.TestingKnobs().MaxApplicationBatchSize)
-	defer appTask.Close()
-	if err := appTask.Decode(ctx, rd.CommittedEntries); err != nil {
-		return stats, getNonDeterministicFailureExplanation(err), err
-	}
-	if knobs := r.store.TestingKnobs(); knobs == nil || !knobs.DisableCanAckBeforeApplication {
-		if err := appTask.AckCommittedEntriesBeforeApplication(ctx, lastIndex); err != nil {
-			return stats, getNonDeterministicFailureExplanation(err), err
-		}
-	}
-
-	// Separate the MsgApp messages from all other Raft message types so that we
-	// can take advantage of the optimization discussed in the Raft thesis under
-	// the section: `10.2.1 Writing to the leader’s disk in parallel`. The
-	// optimization suggests that instead of a leader writing new log entries to
-	// disk before replicating them to its followers, the leader can instead
-	// write the entries to disk in parallel with replicating to its followers
-	// and them writing to their disks.
-	//
-	// Here, we invoke this optimization by:
-	// 1. sending all MsgApps.
-	// 2. syncing all entries and Raft state to disk.
-	// 3. sending all other messages.
-	//
-	// Since this is all handled in handleRaftReadyRaftMuLocked, we're assured
-	// that even though we may sync new entries to disk after sending them in
-	// MsgApps to followers, we'll always have them synced to disk before we
-	// process followers' MsgAppResps for the corresponding entries because
-	// Ready processing is sequential (and because a restart of the leader would
-	// prevent the MsgAppResp from being handled by it). This is important
-	// because it makes sure that the leader always has all of the entries in
-	// the log for its term, which is required in etcd/raft for technical
-	// reasons[1].
-	//
-	// MsgApps are also used to inform followers of committed entries through
-	// the Commit index that they contain. Due to the optimization described
-	// above, a Commit index may be sent out to a follower before it is
-	// persisted on the leader. This is safe because the Commit index can be
-	// treated as volatile state, as is supported by raft.MustSync[2].
-	// Additionally, the Commit index can never refer to entries from the
-	// current Ready (due to the MsgAppResp argument above) except in
-	// single-node groups, in which as a result we have to be careful to not
-	// persist a Commit index without the entries its commit index might refer
-	// to (see the HardState update below for details).
-	//
-	// [1]: the Raft thesis states that this can be made safe:
-	//
-	// > The leader may even commit an entry before it has been written to its
-	// > own disk, if a majority of followers have written it to their disks;
-	// > this is still safe.
-	//
-	// [2]: Raft thesis section: `3.8 Persisted state and server restarts`:
-	//
-	// > Other state variables are safe to lose on a restart, as they can all be
-	// > recreated. The most interesting example is the commit index, which can
-	// > safely be reinitialized to zero on a restart.
-	//
-	// Note that this will change when joint quorums are implemented, at which
-	// point we have to introduce coupling between the Commit index and
-	// persisted config changes, and also require some commit indexes to be
-	// durably synced.
-	// See:
-	// https://github.com/etcd-io/etcd/issues/7625#issuecomment-489232411
-
-	msgApps, otherMsgs := splitMsgApps(rd.Messages)
-	r.traceMessageSends(msgApps, "sending msgApp")
-	r.sendRaftMessagesRaftMuLocked(ctx, msgApps, pausedFollowers)
-
-	// Use a more efficient write-only batch because we don't need to do any
-	// reads from the batch. Any reads are performed on the underlying DB.
-	batch := r.store.Engine().NewUnindexedBatch(false /* writeOnly */)
-	defer batch.Close()
-
-	prevLastIndex := lastIndex
-	if len(rd.Entries) > 0 {
-		stats.tAppendBegin = timeutil.Now()
-		// All of the entries are appended to distinct keys, returning a new
-		// last index.
-		thinEntries, numSideloaded, sideLoadedEntriesSize, otherEntriesSize, err := r.maybeSideloadEntriesRaftMuLocked(ctx, rd.Entries)
-		if err != nil {
-			const expl = "during sideloading"
-			return stats, expl, errors.Wrap(err, expl)
-		}
-		raftLogSize += sideLoadedEntriesSize
-		if lastIndex, lastTerm, raftLogSize, err = r.append(
-			ctx, batch, lastIndex, lastTerm, raftLogSize, thinEntries,
-		); err != nil {
-			const expl = "during append"
-			return stats, expl, errors.Wrap(err, expl)
-		}
-		stats.appendedRegularCount += len(thinEntries) - numSideloaded
-		stats.appendedRegularBytes += otherEntriesSize
-		stats.appendedSideloadedCount += numSideloaded
-		stats.appendedSideloadedBytes += sideLoadedEntriesSize
-		stats.tAppendEnd = timeutil.Now()
-	}
-
-	if !raft.IsEmptyHardState(rd.HardState) {
-		if !r.IsInitialized() && rd.HardState.Commit != 0 {
-			log.Fatalf(ctx, "setting non-zero HardState.Commit on uninitialized replica %s. HS=%+v", r, rd.HardState)
-		}
-		// NB: Note that without additional safeguards, it's incorrect to write
-		// the HardState before appending rd.Entries. When catching up, a follower
-		// will receive Entries that are immediately Committed in the same
-		// Ready. If we persist the HardState but happen to lose the Entries,
-		// assertions can be tripped.
-		//
-		// We have both in the same batch, so there's no problem. If that ever
-		// changes, we must write and sync the Entries before the HardState.
-		if err := r.raftMu.stateLoader.SetHardState(ctx, batch, rd.HardState); err != nil {
-			const expl = "during setHardState"
-			return stats, expl, errors.Wrap(err, expl)
-		}
-	}
-	// Synchronously commit the batch with the Raft log entries and Raft hard
-	// state as we're promising not to lose this data.
-	//
-	// Note that the data is visible to other goroutines before it is synced to
-	// disk. This is fine. The important constraints are that these syncs happen
-	// before Raft messages are sent and before the call to RawNode.Advance. Our
-	// regular locking is sufficient for this and if other goroutines can see the
-	// data early, that's fine. In particular, snapshots are not a problem (I
-	// think they're the only thing that might access log entries or HardState
-	// from other goroutines). Snapshots do not include either the HardState or
-	// uncommitted log entries, and even if they did include log entries that
-	// were not persisted to disk, it wouldn't be a problem because raft does not
-	// infer the that entries are persisted on the node that sends a snapshot.
-	stats.tPebbleCommitBegin = timeutil.Now()
-	stats.pebbleBatchBytes = int64(batch.Len())
-	sync := rd.MustSync && !disableSyncRaftLog.Get(&r.store.cfg.Settings.SV)
-	if err := batch.Commit(sync); err != nil {
-		const expl = "while committing batch"
-		return stats, expl, errors.Wrap(err, expl)
-	}
-	stats.sync = sync
-	stats.tPebbleCommitEnd = timeutil.Now()
-	if rd.MustSync {
-		r.store.metrics.RaftLogCommitLatency.RecordValue(
-			stats.tPebbleCommitEnd.Sub(stats.tPebbleCommitBegin).Nanoseconds())
-	}
-
-	if len(rd.Entries) > 0 {
-		// We may have just overwritten parts of the log which contain
-		// sideloaded SSTables from a previous term (and perhaps discarded some
-		// entries that we didn't overwrite). Remove any such leftover on-disk
-		// payloads (we can do that now because we've committed the deletion
-		// just above).
-		firstPurge := rd.Entries[0].Index // first new entry written
-		purgeTerm := rd.Entries[0].Term - 1
-		lastPurge := prevLastIndex // old end of the log, include in deletion
-		purgedSize, err := maybePurgeSideloaded(ctx, r.raftMu.sideloaded, firstPurge, lastPurge, purgeTerm)
-		if err != nil {
-			const expl = "while purging sideloaded storage"
-			return stats, expl, err
-		}
-		raftLogSize -= purgedSize
-		if raftLogSize < 0 {
-			// Might have gone negative if node was recently restarted.
-			raftLogSize = 0
-		}
-	}
-
-	// Update protected state - last index, last term, raft log size, and raft
-	// leader ID.
-	r.mu.Lock()
-	r.mu.lastIndex = lastIndex
-	r.mu.lastTerm = lastTerm
-	r.mu.raftLogSize = raftLogSize
-	var becameLeader bool
-	if r.mu.leaderID != leaderID {
-		r.mu.leaderID = leaderID
-		// Clear the remote proposal set. Would have been nil already if not
-		// previously the leader.
-		becameLeader = r.mu.leaderID == r.replicaID
-	}
-	r.mu.Unlock()
-
-	// When becoming the leader, proactively add the replica to the replicate
-	// queue. We might have been handed leadership by a remote node which wanted
-	// to remove itself from the range.
-	if becameLeader && r.store.replicateQueue != nil {
-		r.store.replicateQueue.MaybeAddAsync(ctx, r, r.store.Clock().NowAsClockTimestamp())
-	}
-
-	// Update raft log entry cache. We clear any older, uncommitted log entries
-	// and cache the latest ones.
-	r.store.raftEntryCache.Add(r.RangeID, rd.Entries, true /* truncate */)
-	r.sendRaftMessagesRaftMuLocked(ctx, otherMsgs, nil /* blocked */)
-	r.traceEntries(rd.CommittedEntries, "committed, before applying any entries")
+	r.sendRaftMessagesRaftMuLocked(ctx, msgs, pausedFollowers)
 
 	stats.tApplicationBegin = timeutil.Now()
-	if len(rd.CommittedEntries) > 0 {
+	if len(msgStorageApply.Entries) > 0 {
+		// If the ready struct includes entries that have been committed, these
+		// entries will be applied to the Replica's replicated state machine down
+		// below, after appending new entries to the raft log and sending messages
+		// to peers. However, the process of appending new entries to the raft log
+		// and then applying committed entries to the state machine can take some
+		// time - and these entries are already durably committed. If they have
+		// clients waiting on them, we'd like to acknowledge their success as soon
+		// as possible. To facilitate this, we take a quick pass over the committed
+		// entries and acknowledge as many as we can trivially prove will not be
+		// rejected beneath raft.
+		//
+		// Note that the CommittedEntries slice may contain entries that are also in
+		// the Entries slice (to be appended in this ready pass). This can happen when
+		// a follower is being caught up on committed commands. We could acknowledge
+		// these commands early even though they aren't durably in the local raft log
+		// yet (since they're committed via a quorum elsewhere), but we chose to be
+		// conservative and avoid it by passing the last Ready cycle's `lastIndex` for
+		// the maxIndex argument to AckCommittedEntriesBeforeApplication.
+		sm := r.getStateMachine()
+		dec := r.getDecoder()
+		appTask := apply.MakeTask(sm, dec)
+		appTask.SetMaxBatchSize(r.store.TestingKnobs().MaxApplicationBatchSize)
+		defer appTask.Close()
+		if err := appTask.Decode(ctx, msgStorageApply.Entries); err != nil {
+			return stats, getNonDeterministicFailureExplanation(err), err
+		}
+		if knobs := r.store.TestingKnobs(); knobs == nil || !knobs.DisableCanAckBeforeApplication {
+			if err := appTask.AckCommittedEntriesBeforeApplication(ctx, lastIndex); err != nil {
+				return stats, getNonDeterministicFailureExplanation(err), err
+			}
+		}
+
+		r.traceEntries(msgStorageApply.Entries, "committed, before applying any entries")
 		err := appTask.ApplyCommittedEntries(ctx)
 		stats.apply = sm.moveStats()
 		if errors.Is(err, apply.ErrRemoved) {
@@ -1079,11 +922,12 @@ func (r *Replica) handleRaftReadyRaftMuLocked(
 				refreshReason = reasonNewLeaderOrConfigChange
 			}
 		}
+		//(*replicaRaftLog)(r).SendAppendResponseMsgs(ctx, msgStorageApply.Responses)
 	}
 	stats.tApplicationEnd = timeutil.Now()
 	applicationElapsed := stats.tApplicationEnd.Sub(stats.tApplicationBegin).Nanoseconds()
 	r.store.metrics.RaftApplyCommittedLatency.RecordValue(applicationElapsed)
-	r.store.metrics.RaftCommandsApplied.Inc(int64(len(rd.CommittedEntries)))
+	r.store.metrics.RaftCommandsApplied.Inc(int64(len(msgStorageApply.Entries)))
 	if r.store.TestingKnobs().EnableUnconditionalRefreshesInRaftReady {
 		refreshReason = reasonNewLeaderOrConfigChange
 	}
@@ -1101,7 +945,14 @@ func (r *Replica) handleRaftReadyRaftMuLocked(
 
 	r.mu.Lock()
 	err = r.withRaftGroupLocked(true, func(raftGroup *raft.RawNode) (bool, error) {
-		raftGroup.Advance(rd)
+		if msgStorageApply.To != 0 {
+			for _, resp := range msgStorageApply.Responses {
+				if roachpb.ReplicaID(resp.To) != r.replicaID {
+					panic("misrouted MsgStorageApplyResp")
+				}
+				_ = raftGroup.Step(resp)
+			}
+		}
 		if stats.apply.numConfChangeEntries > 0 {
 			// If the raft leader got removed, campaign the first remaining voter.
 			//
@@ -1153,6 +1004,24 @@ func splitMsgApps(msgs []raftpb.Message) (msgApps, otherMsgs []raftpb.Message) {
 		}
 	}
 	return msgs[:splitIdx], msgs[splitIdx:]
+}
+
+func takeMsgTo(
+	msgs []raftpb.Message, target uint64,
+) (take raftpb.Message, otherMsgs []raftpb.Message) {
+	j := 0
+	for i, msg := range msgs {
+		if msg.To == target {
+			if take.To != 0 {
+				panic("two messages to take")
+			}
+			take = msg
+		} else {
+			msgs[i], msgs[j] = msgs[j], msgs[i]
+			j++
+		}
+	}
+	return take, msgs[:j:j]
 }
 
 // maybeFatalOnRaftReadyErr will fatal if err is neither nil nor
@@ -1481,75 +1350,85 @@ func (r *Replica) sendRaftMessagesRaftMuLocked(
 ) {
 	var lastAppResp raftpb.Message
 	for _, message := range messages {
-		_, drop := blocked[roachpb.ReplicaID(message.To)]
-		if drop {
-			r.store.Metrics().RaftPausedFollowerDroppedMsgs.Inc(1)
-		}
-		switch message.Type {
-		case raftpb.MsgApp:
-			if util.RaceEnabled {
-				// Iterate over the entries to assert that all sideloaded commands
-				// are already inlined. replicaRaftStorage.Entries already performs
-				// the sideload inlining for stable entries and raft.unstable always
-				// contain fat entries. Since these are the only two sources that
-				// raft.sendAppend gathers entries from to populate MsgApps, we
-				// should never see thin entries here.
-				//
-				// Also assert that the log term only ever increases (most of the
-				// time it stays constant, as term changes are rare), and that
-				// the index increases by exactly one with each entry.
-				//
-				// This assertion came out of #61990.
-				prevTerm := message.LogTerm // term of entry preceding the append
-				prevIndex := message.Index  // index of entry preceding the append
-				for j := range message.Entries {
-					ent := &message.Entries[j]
-					assertSideloadedRaftCommandInlined(ctx, ent)
+		switch message.To {
+		case raft.LocalAppendThread:
+			r.store.raftLogWriter.Append(ctx, r.RangeID, (*replicaRaftLog)(r), message)
+		case raft.LocalApplyThread:
+			panic("unhandled")
+		default:
+			var drop bool
+			if message.Type == raftpb.MsgApp {
+				_, drop = blocked[roachpb.ReplicaID(message.To)]
+				if drop {
+					r.store.Metrics().RaftPausedFollowerDroppedMsgs.Inc(1)
+				}
+			}
+			switch message.Type {
+			case raftpb.MsgApp:
+				if util.RaceEnabled {
+					// Iterate over the entries to assert that all sideloaded commands
+					// are already inlined. replicaRaftStorage.Entries already performs
+					// the sideload inlining for stable entries and raft.unstable always
+					// contain fat entries. Since these are the only two sources that
+					// raft.sendAppend gathers entries from to populate MsgApps, we
+					// should never see thin entries here.
+					//
+					// Also assert that the log term only ever increases (most of the
+					// time it stays constant, as term changes are rare), and that
+					// the index increases by exactly one with each entry.
+					//
+					// This assertion came out of #61990.
+					prevTerm := message.LogTerm // term of entry preceding the append
+					prevIndex := message.Index  // index of entry preceding the append
+					for j := range message.Entries {
+						ent := &message.Entries[j]
+						assertSideloadedRaftCommandInlined(ctx, ent)
 
-					if prevIndex+1 != ent.Index {
-						log.Fatalf(ctx,
-							"index gap in outgoing MsgApp: idx %d followed by %d",
-							prevIndex, ent.Index,
-						)
+						if prevIndex+1 != ent.Index {
+							log.Fatalf(ctx,
+								"index gap in outgoing MsgApp: idx %d followed by %d",
+								prevIndex, ent.Index,
+							)
+						}
+						prevIndex = ent.Index
+						if prevTerm > ent.Term {
+							log.Fatalf(ctx,
+								"term regression in outgoing MsgApp: idx %d at term=%d "+
+									"appended with logterm=%d",
+								ent.Index, ent.Term, message.LogTerm,
+							)
+						}
+						prevTerm = ent.Term
 					}
-					prevIndex = ent.Index
-					if prevTerm > ent.Term {
-						log.Fatalf(ctx,
-							"term regression in outgoing MsgApp: idx %d at term=%d "+
-								"appended with logterm=%d",
-							ent.Index, ent.Term, message.LogTerm,
-						)
-					}
-					prevTerm = ent.Term
+				}
+
+			case raftpb.MsgAppResp:
+				// A successful (non-reject) MsgAppResp contains one piece of
+				// information: the highest log index. Raft currently queues up
+				// one MsgAppResp per incoming MsgApp, and we may process
+				// multiple messages in one handleRaftReady call (because
+				// multiple messages may arrive while we're blocked syncing to
+				// disk). If we get redundant MsgAppResps, drop all but the
+				// last (we've seen that too many MsgAppResps can overflow
+				// message queues on the receiving side).
+				//
+				// Note that this reorders the chosen MsgAppResp relative to
+				// other messages (including any MsgAppResps with the Reject flag),
+				// but raft is fine with this reordering.
+				//
+				// TODO(bdarnell): Consider pushing this optimization into etcd/raft.
+				// Similar optimizations may be possible for other message types,
+				// although MsgAppResp is the only one that has been seen as a
+				// problem in practice.
+				if !message.Reject && message.Index > lastAppResp.Index {
+					lastAppResp = message
+					drop = true
 				}
 			}
 
-		case raftpb.MsgAppResp:
-			// A successful (non-reject) MsgAppResp contains one piece of
-			// information: the highest log index. Raft currently queues up
-			// one MsgAppResp per incoming MsgApp, and we may process
-			// multiple messages in one handleRaftReady call (because
-			// multiple messages may arrive while we're blocked syncing to
-			// disk). If we get redundant MsgAppResps, drop all but the
-			// last (we've seen that too many MsgAppResps can overflow
-			// message queues on the receiving side).
-			//
-			// Note that this reorders the chosen MsgAppResp relative to
-			// other messages (including any MsgAppResps with the Reject flag),
-			// but raft is fine with this reordering.
-			//
-			// TODO(bdarnell): Consider pushing this optimization into etcd/raft.
-			// Similar optimizations may be possible for other message types,
-			// although MsgAppResp is the only one that has been seen as a
-			// problem in practice.
-			if !message.Reject && message.Index > lastAppResp.Index {
-				lastAppResp = message
-				drop = true
+			if !drop {
+				r.sendRaftMessageRaftMuLocked(ctx, message)
 			}
-		}
-
-		if !drop {
-			r.sendRaftMessageRaftMuLocked(ctx, message)
 		}
 	}
 	if lastAppResp.Index > 0 {

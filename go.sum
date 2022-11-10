@@ -456,8 +456,6 @@ github.com/cockroachdb/gostdlib v1.13.0/go.mod h1:eXX95p9QDrYwJfJ6AgeN9QnRa/lqqi
 github.com/cockroachdb/logtags v0.0.0-20190617123548-eb05cc24525f/go.mod h1:i/u985jwjWRlyHXQbwatDASoW0RMlZ/3i9yJHE2xLkI=
 github.com/cockroachdb/logtags v0.0.0-20211118104740-dabe8e521a4f h1:6jduT9Hfc0njg5jJ1DdKCFPdMBrp/mdZfCpa5h+WM74=
 github.com/cockroachdb/logtags v0.0.0-20211118104740-dabe8e521a4f/go.mod h1:Vz9DsVWQQhf3vs21MhPMZpMGSht7O/2vFW2xusFUVOs=
-github.com/cockroachdb/pebble v0.0.0-20221103174942-7486bbcf2861 h1:YarvrMA6pv032mYkBakTCkzqKpatcAZrdIknHJv+yVg=
-github.com/cockroachdb/pebble v0.0.0-20221103174942-7486bbcf2861/go.mod h1:qf9bLis2yy1XyNYD01wvIHPabuC1STzQsvGibYVsom4=
 github.com/cockroachdb/redact v1.1.3 h1:AKZds10rFSIj7qADf0g46UixK8NNLwWTNdCIGS5wfSQ=
 github.com/cockroachdb/redact v1.1.3/go.mod h1:BVNblN9mBWFyMyqK1k3AAiSxhvhfK2oOZZ2lK+dpvRg=
 github.com/cockroachdb/returncheck v0.0.0-20200612231554-92cdbca611dd h1:KFOt5I9nEKZgCnOSmy8r4Oykh8BYQO8bFOTgHDS8YZA=
@@ -1730,6 +1728,8 @@ github.com/nightlyone/lockfile v1.0.0 h1:RHep2cFKK4PonZJDdEl4GmkabuhbsRMgk/k3uAm
 github.com/nightlyone/lockfile v1.0.0/go.mod h1:rywoIealpdNse2r832aiD9jRk8ErCatROs6LzC841CI=
 github.com/nishanths/predeclared v0.0.0-20200524104333-86fad755b4d3/go.mod h1:nt3d53pc1VYcphSCIaYAJtnPYnr3Zyn8fMq2wvPGPso=
 github.com/nkovacs/streamquote v0.0.0-20170412213628-49af9bddb229/go.mod h1:0aYXnNPJ8l7uZxf45rWW1a/uME32OF0rhiYGNQ2oF2E=
+github.com/nvanbenschoten/etcd/raft/v3 v3.0.0-20221102231627-fe4eb46f5c90 h1:qAljZ9K4PDppVi81f9EPzGqsPACWvj+WpFf3gjxrgqc=
+github.com/nvanbenschoten/etcd/raft/v3 v3.0.0-20221102231627-fe4eb46f5c90/go.mod h1:tW2/2laPtjMV+ITtHu87FnnnxeGn62sjDTlwB1+Gg08=
 github.com/nxadm/tail v1.4.4/go.mod h1:kenIhsEOeOJmVchQTgglprH7qJGnHDVpk1VPCcaMI8A=
 github.com/oklog/oklog v0.3.2/go.mod h1:FCV+B7mhrz4o+ueLpx+KqkyXRGMWOYEvfiXtdGtbWGs=
 github.com/oklog/run v1.0.0/go.mod h1:dlhp/R75TPv97u0XWUtDeV/lRKWPKSdTuV0TZvrmrQA=
@@ -2102,6 +2102,8 @@ github.com/stretchr/testify v1.8.0 h1:pSgiaMZlXftHpm5L7V1+rVB+AZJydKsMxsQBIJw4PK
 github.com/stretchr/testify v1.8.0/go.mod h1:yNjHg4UonilssWZ8iaSj1OCr/vHnekPRkoO+kdMU+MU=
 github.com/subosito/gotenv v1.2.0 h1:Slr1R9HxAlEKefgq5jn9U+DnETlIUa6HfgEzj0g5d7s=
 github.com/subosito/gotenv v1.2.0/go.mod h1:N0PQaV/YGNqwC0u51sEeR/aUtSLEXKX9iv69rRypqCw=
+github.com/sumeerbhola/pebble v0.0.0-20221109234915-df9ce5fa155a h1:alzE3KFNRt20diqkOJ3a54Bf53jwBCwts0chNJyTBK0=
+github.com/sumeerbhola/pebble v0.0.0-20221109234915-df9ce5fa155a/go.mod h1:qf9bLis2yy1XyNYD01wvIHPabuC1STzQsvGibYVsom4=
 github.com/syndtr/gocapability v0.0.0-20170704070218-db04d3cc01c8/go.mod h1:hkRG7XYTFWNJGYcbNJQlaLq0fg1yr4J4t/NcTQtrfww=
 github.com/syndtr/gocapability v0.0.0-20180916011248-d98352740cb2/go.mod h1:hkRG7XYTFWNJGYcbNJQlaLq0fg1yr4J4t/NcTQtrfww=
 github.com/syndtr/gocapability v0.0.0-20200815063812-42c35b437635/go.mod h1:hkRG7XYTFWNJGYcbNJQlaLq0fg1yr4J4t/NcTQtrfww=
@@ -2232,8 +2234,6 @@ go.etcd.io/etcd/api/v3 v3.6.0-alpha.0/go.mod h1:z13pg39zewDLZeXIKeM0xELOeFKcqjLo
 go.etcd.io/etcd/client/pkg/v3 v3.5.0/go.mod h1:IJHfcCEKxYu1Os13ZdwCwIUTUVGYTSAM3YSwc9/Ac1g=
 go.etcd.io/etcd/client/pkg/v3 v3.6.0-alpha.0 h1:2UyRzFWbZZzgu/xzxoRukgixvafiJtGyxO+3IKUyJ6c=
 go.etcd.io/etcd/client/v2 v2.305.0/go.mod h1:h9puh54ZTgAKtEbut2oe9P4L/oqKCVB6xsXlzd7alYQ=
-go.etcd.io/etcd/raft/v3 v3.6.0-alpha.0.0.20221009201006-d19116e6ee66 h1:jvWNsQyNPwM6OQiN7Z+d7SOxok/+69GEnpas1RFc/r0=
-go.etcd.io/etcd/raft/v3 v3.6.0-alpha.0.0.20221009201006-d19116e6ee66/go.mod h1:tW2/2laPtjMV+ITtHu87FnnnxeGn62sjDTlwB1+Gg08=
 go.mongodb.org/mongo-driver v1.0.3/go.mod h1:u7ryQJ+DOzQmeO7zB6MHyr8jkEQvC8vH7qLUO4lqsUM=
 go.mongodb.org/mongo-driver v1.1.1/go.mod h1:u7ryQJ+DOzQmeO7zB6MHyr8jkEQvC8vH7qLUO4lqsUM=
 go.mongodb.org/mongo-driver v1.1.2/go.mod h1:u7ryQJ+DOzQmeO7zB6MHyr8jkEQvC8vH7qLUO4lqsUM=

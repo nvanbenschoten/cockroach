@@ -54,6 +54,7 @@ import (
 	"github.com/cockroachdb/redact"
 	"github.com/kr/pretty"
 	"go.etcd.io/etcd/raft/v3"
+	"go.etcd.io/etcd/raft/v3/raftpb"
 )
 
 const (
@@ -327,6 +328,13 @@ type Replica struct {
 		// range descriptor. When it is temporarily dropped and recreated, the
 		// newly recreated replica will have a complete range descriptor.
 		lastToReplica, lastFromReplica roachpb.ReplicaDescriptor
+
+		logWriterStateLoader stateloader.StateLoader
+	}
+
+	localMsgs struct {
+		syncutil.Mutex
+		active, recycled []raftpb.Message
 	}
 
 	// Contains the lease history when enabled.
