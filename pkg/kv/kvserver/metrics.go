@@ -831,6 +831,21 @@ being received, or at performance issues at the storage layer.
 		Measurement: "Latency",
 		Unit:        metric.Unit_NANOSECONDS,
 	}
+	metaRaftLogCommitLatencySync = metric.Metadata{
+		Name: "raft.process.logcommit.latency_sync",
+		Help: `Latency histogram for committing Raft log entries to stable storage
+
+This measures the latency of durably committing a group of newly received Raft
+entries as well as the HardState entry to disk. This excludes any data
+processing, i.e. we measure purely the commit latency of the resulting Engine
+write. Homogeneous bands of p50-p99 latencies (in the presence of regular Raft
+traffic), make it likely that the storage layer is healthy. Spikes in the
+latency bands can either hint at the presence of large sets of Raft entries
+being received, or at performance issues at the storage layer.
+`,
+		Measurement: "Latency",
+		Unit:        metric.Unit_NANOSECONDS,
+	}
 	metaRaftCommandCommitLatency = metric.Metadata{
 		Name: "raft.process.commandcommit.latency",
 		Help: `Latency histogram for applying a batch of Raft commands to the state machine.
@@ -1837,6 +1852,7 @@ type StoreMetrics struct {
 	RaftTickingDurationNanos  *metric.Counter
 	RaftCommandsApplied       *metric.Counter
 	RaftLogCommitLatency      *metric.Histogram
+	RaftLogCommitLatencySync  *metric.Histogram
 	RaftCommandCommitLatency  *metric.Histogram
 	RaftHandleReadyLatency    *metric.Histogram
 	RaftApplyCommittedLatency *metric.Histogram
@@ -2356,6 +2372,9 @@ func newStoreMetrics(histogramWindow time.Duration) *StoreMetrics {
 		RaftCommandsApplied:      metric.NewCounter(metaRaftCommandsApplied),
 		RaftLogCommitLatency: metric.NewHistogram(
 			metaRaftLogCommitLatency, histogramWindow, metric.IOLatencyBuckets,
+		),
+		RaftLogCommitLatencySync: metric.NewHistogram(
+			metaRaftLogCommitLatencySync, histogramWindow, metric.IOLatencyBuckets,
 		),
 		RaftCommandCommitLatency: metric.NewHistogram(
 			metaRaftCommandCommitLatency, histogramWindow, metric.IOLatencyBuckets,

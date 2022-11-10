@@ -36,11 +36,12 @@ import (
 // log writes without waiting for their completion. Instead, completion is
 // signalled using a callback interface.
 type Writer struct {
-	eng     storage.Engine
-	cache   RaftEntryCache
-	latency *metric.Histogram
-	shards  []writerShard
-	stopped atomic.Bool
+	eng         storage.Engine
+	cache       RaftEntryCache
+	e2eLatency  *metric.Histogram
+	syncLatency *metric.Histogram
+	shards      []writerShard
+	stopped     atomic.Bool
 }
 
 // writerShard is responsible for a subset of ranges, sharded by range ID.
@@ -79,15 +80,19 @@ type syncWaiter interface {
 type syncBatch struct {
 	wg     syncWaiter
 	events []event
+	start  time.Time
 }
 
-func NewWriter(eng storage.Engine, cache RaftEntryCache, latency *metric.Histogram) *Writer {
+func NewWriter(
+	eng storage.Engine, cache RaftEntryCache, e2eLatency, syncLatency *metric.Histogram,
+) *Writer {
 	const shards = 4
 	w := &Writer{
-		eng:     eng,
-		cache:   cache,
-		latency: latency,
-		shards:  make([]writerShard, shards),
+		eng:         eng,
+		cache:       cache,
+		e2eLatency:  e2eLatency,
+		syncLatency: syncLatency,
+		shards:      make([]writerShard, shards),
 	}
 	for i := range w.shards {
 		s := &w.shards[i]
@@ -361,7 +366,7 @@ func (s *writerShard) processPreAppend(
 func (s *writerShard) pushSyncBatch(wg syncWaiter, events []event) {
 	s.syncQueueMu.Lock()
 	wasEmpty := len(s.syncQueue) == 0
-	s.syncQueue = append(s.syncQueue, syncBatch{wg, events})
+	s.syncQueue = append(s.syncQueue, syncBatch{wg, events, timeutil.Now()})
 	s.syncQueueMu.Unlock()
 	if wasEmpty {
 		s.syncQueueCond.Signal()
@@ -395,6 +400,8 @@ func (s *writerShard) publisherLoop(ctx context.Context) {
 			log.Fatalf(ctx, "%+v", err)
 		}
 		sync.wg.Close()
+		durSync := timeutil.Since(sync.start)
+		s.w.syncLatency.RecordValue(durSync.Nanoseconds())
 
 		for _, ev := range sync.events {
 			switch {
@@ -402,7 +409,7 @@ func (s *writerShard) publisherLoop(ctx context.Context) {
 				close(ev.syncC)
 			case ev.app.rr != nil:
 				dur := timeutil.Since(ev.app.start)
-				s.w.latency.RecordValue(dur.Nanoseconds())
+				s.w.e2eLatency.RecordValue(dur.Nanoseconds())
 				ev.app.rr.SendAppendResponseMsgs(ctx, ev.app.msg.Responses)
 			default:
 				panic("unexpected")

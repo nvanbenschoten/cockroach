@@ -1264,7 +1264,8 @@ func NewStore(
 	s.raftEntryCache = raftentry.NewCache(cfg.RaftEntryCacheSize)
 	s.metrics.registry.AddMetricStruct(s.raftEntryCache.Metrics())
 
-	s.raftLogWriter = raftlog.NewWriter(s.engine, s.raftEntryCache, s.metrics.RaftLogCommitLatency)
+	s.raftLogWriter = raftlog.NewWriter(
+		s.engine, s.raftEntryCache, s.metrics.RaftLogCommitLatency, s.metrics.RaftLogCommitLatencySync)
 
 	s.coalescedMu.Lock()
 	s.coalescedMu.heartbeats = map[roachpb.StoreIdent][]kvserverpb.RaftHeartbeat{}
