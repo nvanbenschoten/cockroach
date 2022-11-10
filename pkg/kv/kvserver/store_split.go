@@ -98,6 +98,7 @@ func splitPreApply(
 			if rightRepl.IsInitialized() {
 				log.Fatalf(ctx, "unexpectedly found initialized newer RHS of split: %v", rightRepl.Desc())
 			}
+			r.store.raftLogWriter.Sync(rightRepl.RangeID)
 			var err error
 			hs, err = rightRepl.raftMu.stateLoader.LoadHardState(ctx, readWriter)
 			if err != nil {
@@ -127,6 +128,8 @@ func splitPreApply(
 		}
 		return
 	}
+
+	r.store.raftLogWriter.Sync(rightRepl.RangeID)
 
 	// Update the raft HardState with the new Commit value now that the
 	// replica is initialized (combining it with existing or default
