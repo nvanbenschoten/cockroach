@@ -59,6 +59,7 @@ func registerKV(r registry.Registry) {
 		globalMVCCRangeTombstone bool
 		concMultiplier           int
 		ssds                     int
+		maxRate                  int
 		raid0                    bool
 		duration                 time.Duration
 		tracing                  bool // `trace.debug.enable`
@@ -114,11 +115,17 @@ func registerKV(r registry.Registry) {
 			}
 			concurrency := ifLocal(c, "", " --concurrency="+fmt.Sprint(nodes*concurrencyMultiplier))
 
+			var maxRate string
+			if opts.maxRate != 0 {
+				concurrency = " --concurrency=1024"
+				maxRate = fmt.Sprintf(" --max-rate=%d", opts.maxRate)
+			}
+
 			splits := " --splits=" + strconv.Itoa(computeNumSplits(opts))
 			if opts.duration == 0 {
-				opts.duration = 30 * time.Minute
+				opts.duration = 10 * time.Minute
 			}
-			duration := " --duration=" + ifLocal(c, "10s", opts.duration.String())
+			duration := " --ramp=1m --duration=" + ifLocal(c, "10s", opts.duration.String())
 			var readPercent string
 			if opts.spanReads {
 				// SFU makes sense only if we repeat writes to the same key. Here
@@ -131,6 +138,7 @@ func registerKV(r registry.Registry) {
 				readPercent = fmt.Sprintf(" --read-percent=%d", opts.readPercent)
 			}
 			histograms := " --histograms=" + t.PerfArtifactsDir() + "/stats.json"
+			histograms = ""
 			var batchSize string
 			if opts.batchSize > 0 {
 				batchSize = fmt.Sprintf(" --batch=%d", opts.batchSize)
@@ -154,7 +162,7 @@ func registerKV(r registry.Registry) {
 			}
 
 			cmd := fmt.Sprintf("./workload run kv --tolerate-errors --init"+
-				histograms+concurrency+splits+duration+readPercent+batchSize+blockSize+sequential+envFlags+
+				histograms+concurrency+splits+duration+maxRate+readPercent+batchSize+blockSize+sequential+envFlags+
 				" {pgurl:1-%d}", nodes)
 			c.Run(ctx, c.Node(nodes+1), cmd)
 			return nil
@@ -163,68 +171,79 @@ func registerKV(r registry.Registry) {
 	}
 
 	for _, opts := range []kvOptions{
-		// Standard configs.
-		{nodes: 1, cpus: 8, readPercent: 0},
-		// CPU overload test, to stress admission control.
-		{nodes: 1, cpus: 8, readPercent: 50, concMultiplier: 8192},
-		// IO write overload test, to stress admission control.
-		{nodes: 1, cpus: 8, readPercent: 0, concMultiplier: 4096, blockSize: 1 << 16 /* 64 KB */},
-		{nodes: 1, cpus: 8, readPercent: 95},
-		{nodes: 1, cpus: 32, readPercent: 0},
-		{nodes: 1, cpus: 32, readPercent: 95},
-		{nodes: 3, cpus: 8, readPercent: 0},
-		{nodes: 3, cpus: 8, readPercent: 95},
-		{nodes: 3, cpus: 8, readPercent: 95, tracing: true, owner: registry.OwnerObsInf},
-		{nodes: 3, cpus: 8, readPercent: 0, splits: -1 /* no splits */},
-		{nodes: 3, cpus: 8, readPercent: 95, splits: -1 /* no splits */},
-		{nodes: 3, cpus: 32, readPercent: 0},
-		{nodes: 3, cpus: 32, readPercent: 95},
-		{nodes: 3, cpus: 32, readPercent: 0, splits: -1 /* no splits */},
-		{nodes: 3, cpus: 32, readPercent: 95, splits: -1 /* no splits */},
-		{nodes: 3, cpus: 32, readPercent: 0, globalMVCCRangeTombstone: true},
-		{nodes: 3, cpus: 32, readPercent: 95, globalMVCCRangeTombstone: true},
+		{nodes: 3, cpus: 32, readPercent: 0, blockSize: 64, splits: -1, maxRate: 1 << 9},
+		{nodes: 3, cpus: 32, readPercent: 0, blockSize: 64, splits: -1, maxRate: 1 << 10},
+		{nodes: 3, cpus: 32, readPercent: 0, blockSize: 64, splits: -1, maxRate: 1 << 11},
+		{nodes: 3, cpus: 32, readPercent: 0, blockSize: 64, splits: -1, maxRate: 1 << 12},
+		{nodes: 3, cpus: 32, readPercent: 0, blockSize: 64, splits: -1, maxRate: 1 << 13},
+		{nodes: 3, cpus: 32, readPercent: 0, blockSize: 64, splits: -1, maxRate: 1 << 14},
+		{nodes: 3, cpus: 32, readPercent: 0, blockSize: 64, splits: -1, maxRate: 1 << 15},
+		{nodes: 3, cpus: 32, readPercent: 0, blockSize: 64, splits: -1, maxRate: 1 << 16},
+		{nodes: 3, cpus: 32, readPercent: 0, blockSize: 64, splits: -1, maxRate: 1 << 17},
+		{nodes: 3, cpus: 32, readPercent: 0, blockSize: 64, splits: -1, maxRate: 1 << 18},
 
-		// Configs with large block sizes.
-		{nodes: 3, cpus: 8, readPercent: 0, blockSize: 1 << 12 /* 4 KB */},
-		{nodes: 3, cpus: 8, readPercent: 95, blockSize: 1 << 12 /* 4 KB */},
-		{nodes: 3, cpus: 32, readPercent: 0, blockSize: 1 << 12 /* 4 KB */},
-		{nodes: 3, cpus: 32, readPercent: 95, blockSize: 1 << 12 /* 4 KB */},
-		{nodes: 3, cpus: 8, readPercent: 0, blockSize: 1 << 16 /* 64 KB */},
-		{nodes: 3, cpus: 8, readPercent: 95, blockSize: 1 << 16 /* 64 KB */},
-		{nodes: 3, cpus: 32, readPercent: 0, blockSize: 1 << 16 /* 64 KB */},
-		{nodes: 3, cpus: 32, readPercent: 95, blockSize: 1 << 16 /* 64 KB */},
-
-		// Configs with large batch sizes.
-		{nodes: 3, cpus: 8, readPercent: 0, batchSize: 16},
-		{nodes: 3, cpus: 8, readPercent: 95, batchSize: 16},
-
-		// Configs with large nodes.
-		{nodes: 3, cpus: 96, readPercent: 0},
-		{nodes: 3, cpus: 96, readPercent: 95},
-		{nodes: 4, cpus: 96, readPercent: 50, batchSize: 64},
-
-		// Configs for comparing single store and multi store clusters.
-		{nodes: 4, cpus: 8, readPercent: 95},
-		{nodes: 4, cpus: 8, readPercent: 95, ssds: 8},
-		{nodes: 4, cpus: 8, readPercent: 95, ssds: 8, raid0: true},
-
-		// Configs with encryption.
-		{nodes: 1, cpus: 8, readPercent: 0, encryption: true},
-		{nodes: 1, cpus: 8, readPercent: 95, encryption: true},
-		{nodes: 3, cpus: 8, readPercent: 0, encryption: true},
-		{nodes: 3, cpus: 8, readPercent: 95, encryption: true},
-
-		// Configs with a sequential access pattern.
-		{nodes: 3, cpus: 32, readPercent: 0, sequential: true},
-		{nodes: 3, cpus: 32, readPercent: 95, sequential: true},
-
-		// Configs with reads, that are of limited spans, along with SFU writes.
-		{nodes: 1, cpus: 8, readPercent: 95, spanReads: true, splits: -1 /* no splits */, disableLoadSplits: true, sequential: true},
-		{nodes: 1, cpus: 32, readPercent: 95, spanReads: true, splits: -1 /* no splits */, disableLoadSplits: true, sequential: true},
-
-		// Weekly larger scale configurations.
-		{nodes: 32, cpus: 8, readPercent: 0, tags: []string{"weekly"}, duration: time.Hour},
-		{nodes: 32, cpus: 8, readPercent: 95, tags: []string{"weekly"}, duration: time.Hour},
+		//// Standard configs.
+		//{nodes: 1, cpus: 8, readPercent: 0},
+		//// CPU overload test, to stress admission control.
+		//{nodes: 1, cpus: 8, readPercent: 50, concMultiplier: 8192},
+		//// IO write overload test, to stress admission control.
+		//{nodes: 1, cpus: 8, readPercent: 0, concMultiplier: 4096, blockSize: 1 << 16 /* 64 KB */},
+		//{nodes: 1, cpus: 8, readPercent: 95},
+		//{nodes: 1, cpus: 32, readPercent: 0},
+		//{nodes: 1, cpus: 32, readPercent: 95},
+		//{nodes: 3, cpus: 8, readPercent: 0},
+		//{nodes: 3, cpus: 8, readPercent: 95},
+		//{nodes: 3, cpus: 8, readPercent: 95, tracing: true, owner: registry.OwnerObsInf},
+		//{nodes: 3, cpus: 8, readPercent: 0, splits: -1 /* no splits */},
+		//{nodes: 3, cpus: 8, readPercent: 95, splits: -1 /* no splits */},
+		//{nodes: 3, cpus: 32, readPercent: 0},
+		//{nodes: 3, cpus: 32, readPercent: 95},
+		//{nodes: 3, cpus: 32, readPercent: 0, splits: -1 /* no splits */},
+		//{nodes: 3, cpus: 32, readPercent: 95, splits: -1 /* no splits */},
+		//{nodes: 3, cpus: 32, readPercent: 0, globalMVCCRangeTombstone: true},
+		//{nodes: 3, cpus: 32, readPercent: 95, globalMVCCRangeTombstone: true},
+		//
+		//// Configs with large block sizes.
+		//{nodes: 3, cpus: 8, readPercent: 0, blockSize: 1 << 12 /* 4 KB */},
+		//{nodes: 3, cpus: 8, readPercent: 95, blockSize: 1 << 12 /* 4 KB */},
+		//{nodes: 3, cpus: 32, readPercent: 0, blockSize: 1 << 12 /* 4 KB */},
+		//{nodes: 3, cpus: 32, readPercent: 95, blockSize: 1 << 12 /* 4 KB */},
+		//{nodes: 3, cpus: 8, readPercent: 0, blockSize: 1 << 16 /* 64 KB */},
+		//{nodes: 3, cpus: 8, readPercent: 95, blockSize: 1 << 16 /* 64 KB */},
+		//{nodes: 3, cpus: 32, readPercent: 0, blockSize: 1 << 16 /* 64 KB */},
+		//{nodes: 3, cpus: 32, readPercent: 95, blockSize: 1 << 16 /* 64 KB */},
+		//
+		//// Configs with large batch sizes.
+		//{nodes: 3, cpus: 8, readPercent: 0, batchSize: 16},
+		//{nodes: 3, cpus: 8, readPercent: 95, batchSize: 16},
+		//
+		//// Configs with large nodes.
+		//{nodes: 3, cpus: 96, readPercent: 0},
+		//{nodes: 3, cpus: 96, readPercent: 95},
+		//{nodes: 4, cpus: 96, readPercent: 50, batchSize: 64},
+		//
+		//// Configs for comparing single store and multi store clusters.
+		//{nodes: 4, cpus: 8, readPercent: 95},
+		//{nodes: 4, cpus: 8, readPercent: 95, ssds: 8},
+		//{nodes: 4, cpus: 8, readPercent: 95, ssds: 8, raid0: true},
+		//
+		//// Configs with encryption.
+		//{nodes: 1, cpus: 8, readPercent: 0, encryption: true},
+		//{nodes: 1, cpus: 8, readPercent: 95, encryption: true},
+		//{nodes: 3, cpus: 8, readPercent: 0, encryption: true},
+		//{nodes: 3, cpus: 8, readPercent: 95, encryption: true},
+		//
+		//// Configs with a sequential access pattern.
+		//{nodes: 3, cpus: 32, readPercent: 0, sequential: true},
+		//{nodes: 3, cpus: 32, readPercent: 95, sequential: true},
+		//
+		//// Configs with reads, that are of limited spans, along with SFU writes.
+		//{nodes: 1, cpus: 8, readPercent: 95, spanReads: true, splits: -1 /* no splits */, disableLoadSplits: true, sequential: true},
+		//{nodes: 1, cpus: 32, readPercent: 95, spanReads: true, splits: -1 /* no splits */, disableLoadSplits: true, sequential: true},
+		//
+		//// Weekly larger scale configurations.
+		//{nodes: 32, cpus: 8, readPercent: 0, tags: []string{"weekly"}, duration: time.Hour},
+		//{nodes: 32, cpus: 8, readPercent: 95, tags: []string{"weekly"}, duration: time.Hour},
 	} {
 		opts := opts
 
@@ -259,6 +278,9 @@ func registerKV(r registry.Registry) {
 		}
 		if opts.concMultiplier != 0 { // support legacy test name which didn't include this multiplier
 			nameParts = append(nameParts, fmt.Sprintf("conc=%d", opts.concMultiplier))
+		}
+		if opts.maxRate != 0 { // support legacy test name which didn't include this multiplier
+			nameParts = append(nameParts, fmt.Sprintf("maxrate=%d", opts.maxRate))
 		}
 		if opts.ssds > 1 {
 			nameParts = append(nameParts, fmt.Sprintf("ssds=%d", opts.ssds))
