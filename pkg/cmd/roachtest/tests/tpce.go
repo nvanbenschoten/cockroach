@@ -86,7 +86,7 @@ func registerTPCE(r registry.Registry) {
 
 			t.Status("preparing workload")
 			c.Run(ctx, loadNode, fmt.Sprintf("%s --customers=%d --racks=%d --init %s",
-				dockerRun, opts.customers, racks, roachNodeIPFlags[0]))
+				dockerRun, opts.customers, racks, strings.Join(roachNodeIPFlags, " ")))
 
 			t.Status("running workload")
 			duration := 2 * time.Hour
@@ -108,7 +108,7 @@ func registerTPCE(r registry.Registry) {
 
 	for _, opts := range []tpceOptions{
 		// Nightly, small scale configurations.
-		{customers: 5_000, nodes: 3, cpus: 4, ssds: 1},
+		{customers: 25_000, nodes: 3, cpus: 16, ssds: 1},
 		// Weekly, large scale configurations.
 		{customers: 100_000, nodes: 5, cpus: 32, ssds: 2, tags: []string{"weekly"}, timeout: 36 * time.Hour},
 	} {
