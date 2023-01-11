@@ -72,18 +72,15 @@ func ShouldPushImmediately(req *roachpb.PushTxnRequest) bool {
 	if req.Force {
 		return true
 	}
-	if !(req.PushType == roachpb.PUSH_ABORT || req.PushType == roachpb.PUSH_TIMESTAMP) {
-		return true
-	}
-	if CanPushWithPriority(req.PusherTxn.Priority, req.PusheeTxn.Priority) {
+	if CanPushWithPriority(req.PushType, req.PusherTxn.Priority, req.PusheeTxn.Priority) {
 		return true
 	}
 	return false
 }
 
-// CanPushWithPriority returns true if the given pusher can push the pushee
-// based on its priority.
-func CanPushWithPriority(pusher, pushee enginepb.TxnPriority) bool {
+// CanPushWithPriority returns true if the pusher can perform the specified push
+// type on the pushee, based on the two transactions' priorities.
+func CanPushWithPriority(pushType roachpb.PushTxnType, pusher, pushee enginepb.TxnPriority) bool {
 	// Normalize the transaction priorities so that normal user priorities are
 	// considered equal for the purposes of pushing.
 	normalize := func(p enginepb.TxnPriority) enginepb.TxnPriority {
@@ -95,7 +92,16 @@ func CanPushWithPriority(pusher, pushee enginepb.TxnPriority) bool {
 		}
 	}
 	pusher, pushee = normalize(pusher), normalize(pushee)
-	return pusher > pushee
+	switch pushType {
+	case roachpb.PUSH_TIMESTAMP:
+		return pusher >= pushee
+	case roachpb.PUSH_ABORT:
+		return pusher > pushee
+	case roachpb.PUSH_TOUCH:
+		return true
+	default:
+		panic("unreachable")
+	}
 }
 
 // isPushed returns whether the PushTxn request has already been

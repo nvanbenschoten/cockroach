@@ -724,7 +724,7 @@ func (c *cluster) PushTransaction(
 			return pusheeTxn, nil
 		case pushType == roachpb.PUSH_TOUCH:
 			pusherWins = false
-		case txnwait.CanPushWithPriority(pusherPriority, pusheeTxn.Priority):
+		case txnwait.CanPushWithPriority(pushType, pusherPriority, pusheeTxn.Priority):
 			pusherWins = true
 		default:
 			pusherWins = false

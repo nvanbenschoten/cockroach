@@ -254,7 +254,7 @@ func PushTxn(
 		// If just attempting to cleanup old or already-committed txns,
 		// pusher always fails.
 		pusherWins = false
-	case txnwait.CanPushWithPriority(args.PusherTxn.Priority, reply.PusheeTxn.Priority):
+	case txnwait.CanPushWithPriority(pushType, args.PusherTxn.Priority, reply.PusheeTxn.Priority):
 		reason = "pusher has priority"
 		pusherWins = true
 	case args.Force:

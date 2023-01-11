@@ -1232,6 +1232,13 @@ func newWriteIntentErr(
 }
 
 func canPushWithPriority(req Request, s waitingState) bool {
+	var pushType roachpb.PushTxnType
+	switch s.guardAccess {
+	case spanset.SpanReadOnly:
+		pushType = roachpb.PUSH_TIMESTAMP
+	case spanset.SpanReadWrite:
+		pushType = roachpb.PUSH_ABORT
+	}
 	var pusher, pushee enginepb.TxnPriority
 	if req.Txn != nil {
 		pusher = req.Txn.Priority
@@ -1243,7 +1250,7 @@ func canPushWithPriority(req Request, s waitingState) bool {
 		return false
 	}
 	pushee = s.txn.Priority
-	return txnwait.CanPushWithPriority(pusher, pushee)
+	return txnwait.CanPushWithPriority(pushType, pusher, pushee)
 }
 
 func minDuration(a, b time.Duration) time.Duration {

@@ -39,8 +39,8 @@ func TestShouldPushImmediately(t *testing.T) {
 	testCases := []struct {
 		force      bool
 		typ        roachpb.PushTxnType
-		pusherPri  enginepb.TxnPriority
-		pusheePri  enginepb.TxnPriority
+		pusher     enginepb.TxnPriority
+		pushee     enginepb.TxnPriority
 		shouldPush bool
 	}{
 		{false, roachpb.PUSH_ABORT, min, min, false},
@@ -59,22 +59,22 @@ func TestShouldPushImmediately(t *testing.T) {
 		{false, roachpb.PUSH_ABORT, max, mid1, true},
 		{false, roachpb.PUSH_ABORT, max, mid2, true},
 		{false, roachpb.PUSH_ABORT, max, max, false},
-		{false, roachpb.PUSH_TIMESTAMP, min, min, false},
+		{false, roachpb.PUSH_TIMESTAMP, min, min, true},
 		{false, roachpb.PUSH_TIMESTAMP, min, mid1, false},
 		{false, roachpb.PUSH_TIMESTAMP, min, mid2, false},
 		{false, roachpb.PUSH_TIMESTAMP, min, max, false},
 		{false, roachpb.PUSH_TIMESTAMP, mid1, min, true},
-		{false, roachpb.PUSH_TIMESTAMP, mid1, mid1, false},
-		{false, roachpb.PUSH_TIMESTAMP, mid1, mid2, false},
+		{false, roachpb.PUSH_TIMESTAMP, mid1, mid1, true},
+		{false, roachpb.PUSH_TIMESTAMP, mid1, mid2, true},
 		{false, roachpb.PUSH_TIMESTAMP, mid1, max, false},
 		{false, roachpb.PUSH_TIMESTAMP, mid2, min, true},
-		{false, roachpb.PUSH_TIMESTAMP, mid2, mid1, false},
-		{false, roachpb.PUSH_TIMESTAMP, mid2, mid2, false},
+		{false, roachpb.PUSH_TIMESTAMP, mid2, mid1, true},
+		{false, roachpb.PUSH_TIMESTAMP, mid2, mid2, true},
 		{false, roachpb.PUSH_TIMESTAMP, mid2, max, false},
 		{false, roachpb.PUSH_TIMESTAMP, max, min, true},
 		{false, roachpb.PUSH_TIMESTAMP, max, mid1, true},
 		{false, roachpb.PUSH_TIMESTAMP, max, mid2, true},
-		{false, roachpb.PUSH_TIMESTAMP, max, max, false},
+		{false, roachpb.PUSH_TIMESTAMP, max, max, true},
 		{false, roachpb.PUSH_TOUCH, min, min, true},
 		{false, roachpb.PUSH_TOUCH, min, mid1, true},
 		{false, roachpb.PUSH_TOUCH, min, mid2, true},
@@ -142,17 +142,19 @@ func TestShouldPushImmediately(t *testing.T) {
 		{true, roachpb.PUSH_TOUCH, max, max, true},
 	}
 	for _, test := range testCases {
-		t.Run("", func(t *testing.T) {
+		name := fmt.Sprintf("force=%t/type=%s/pusher=%d/pushee=%d",
+			test.force, test.typ, test.pusher, test.pushee)
+		t.Run(name, func(t *testing.T) {
 			req := roachpb.PushTxnRequest{
 				Force:    test.force,
 				PushType: test.typ,
 				PusherTxn: roachpb.Transaction{
 					TxnMeta: enginepb.TxnMeta{
-						Priority: test.pusherPri,
+						Priority: test.pusher,
 					},
 				},
 				PusheeTxn: enginepb.TxnMeta{
-					Priority: test.pusheePri,
+					Priority: test.pushee,
 				},
 			}
 			shouldPush := ShouldPushImmediately(&req)
@@ -169,31 +171,65 @@ func TestCanPushWithPriority(t *testing.T) {
 	mid1 := enginepb.TxnPriority(1)
 	mid2 := enginepb.TxnPriority(2)
 	testCases := []struct {
+		typ    roachpb.PushTxnType
 		pusher enginepb.TxnPriority
 		pushee enginepb.TxnPriority
 		exp    bool
 	}{
-		{min, min, false},
-		{min, mid1, false},
-		{min, mid2, false},
-		{min, max, false},
-		{mid1, min, true},
-		{mid1, mid1, false},
-		{mid1, mid2, false},
-		{mid1, max, false},
-		{mid2, min, true},
-		{mid2, mid1, false},
-		{mid2, mid2, false},
-		{mid2, max, false},
-		{max, min, true},
-		{max, mid1, true},
-		{max, mid2, true},
-		{max, max, false},
+		{roachpb.PUSH_ABORT, min, min, false},
+		{roachpb.PUSH_ABORT, min, mid1, false},
+		{roachpb.PUSH_ABORT, min, mid2, false},
+		{roachpb.PUSH_ABORT, min, max, false},
+		{roachpb.PUSH_ABORT, mid1, min, true},
+		{roachpb.PUSH_ABORT, mid1, mid1, false},
+		{roachpb.PUSH_ABORT, mid1, mid2, false},
+		{roachpb.PUSH_ABORT, mid1, max, false},
+		{roachpb.PUSH_ABORT, mid2, min, true},
+		{roachpb.PUSH_ABORT, mid2, mid1, false},
+		{roachpb.PUSH_ABORT, mid2, mid2, false},
+		{roachpb.PUSH_ABORT, mid2, max, false},
+		{roachpb.PUSH_ABORT, max, min, true},
+		{roachpb.PUSH_ABORT, max, mid1, true},
+		{roachpb.PUSH_ABORT, max, mid2, true},
+		{roachpb.PUSH_ABORT, max, max, false},
+		{roachpb.PUSH_TIMESTAMP, min, min, true},
+		{roachpb.PUSH_TIMESTAMP, min, mid1, false},
+		{roachpb.PUSH_TIMESTAMP, min, mid2, false},
+		{roachpb.PUSH_TIMESTAMP, min, max, false},
+		{roachpb.PUSH_TIMESTAMP, mid1, min, true},
+		{roachpb.PUSH_TIMESTAMP, mid1, mid1, true},
+		{roachpb.PUSH_TIMESTAMP, mid1, mid2, true},
+		{roachpb.PUSH_TIMESTAMP, mid1, max, false},
+		{roachpb.PUSH_TIMESTAMP, mid2, min, true},
+		{roachpb.PUSH_TIMESTAMP, mid2, mid1, true},
+		{roachpb.PUSH_TIMESTAMP, mid2, mid2, true},
+		{roachpb.PUSH_TIMESTAMP, mid2, max, false},
+		{roachpb.PUSH_TIMESTAMP, max, min, true},
+		{roachpb.PUSH_TIMESTAMP, max, mid1, true},
+		{roachpb.PUSH_TIMESTAMP, max, mid2, true},
+		{roachpb.PUSH_TIMESTAMP, max, max, true},
+		{roachpb.PUSH_TOUCH, min, min, true},
+		{roachpb.PUSH_TOUCH, min, mid1, true},
+		{roachpb.PUSH_TOUCH, min, mid2, true},
+		{roachpb.PUSH_TOUCH, min, max, true},
+		{roachpb.PUSH_TOUCH, mid1, min, true},
+		{roachpb.PUSH_TOUCH, mid1, mid1, true},
+		{roachpb.PUSH_TOUCH, mid1, mid2, true},
+		{roachpb.PUSH_TOUCH, mid1, max, true},
+		{roachpb.PUSH_TOUCH, mid2, min, true},
+		{roachpb.PUSH_TOUCH, mid2, mid1, true},
+		{roachpb.PUSH_TOUCH, mid2, mid2, true},
+		{roachpb.PUSH_TOUCH, mid2, max, true},
+		{roachpb.PUSH_TOUCH, max, min, true},
+		{roachpb.PUSH_TOUCH, max, mid1, true},
+		{roachpb.PUSH_TOUCH, max, mid2, true},
+		{roachpb.PUSH_TOUCH, max, max, true},
 	}
 	for _, test := range testCases {
-		name := fmt.Sprintf("pusher=%d/pushee=%d", test.pusher, test.pushee)
+		name := fmt.Sprintf("type=%s/pusher=%d/pushee=%d",
+			test.typ, test.pusher, test.pushee)
 		t.Run(name, func(t *testing.T) {
-			canPush := CanPushWithPriority(test.pusher, test.pushee)
+			canPush := CanPushWithPriority(test.typ, test.pusher, test.pushee)
 			require.Equal(t, test.exp, canPush)
 		})
 	}

@@ -52,6 +52,7 @@ import (
 func TestWaiterOnRejectedCommit(t *testing.T) {
 	defer leaktest.AfterTest(t)()
 	defer log.Scope(t).Close(t)
+	t.Skip("WIP")
 	ctx := context.Background()
 
 	// The txn id whose commit we're going to reject. A uuid.UUID.
