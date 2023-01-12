@@ -39,7 +39,7 @@ func Get(
 		FailOnMoreRecent:      args.KeyLocking != lock.None,
 		Uncertainty:           cArgs.Uncertainty,
 		MemoryAccount:         cArgs.EvalCtx.GetResponseMemoryAccount(),
-		LockTable:             cArgs.Concurrency,
+		LockTable:             cArgs.LockTableView(),
 		DontInterleaveIntents: cArgs.DontInterleaveIntents,
 		MaxKeys:               cArgs.Header.MaxSpanRequestKeys,
 		TargetBytes:           cArgs.Header.TargetBytes,

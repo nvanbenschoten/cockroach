@@ -433,6 +433,13 @@ func (m *managerImpl) FinishReq(g *Guard) {
 	releaseGuard(g)
 }
 
+// DropLatches implements the RequestSequencer interface.
+func (m *managerImpl) DropLatches(g *Guard) {
+	if lg := g.moveLatchGuard(); lg != nil {
+		m.lm.Release(lg)
+	}
+}
+
 // HandleWriterIntentError implements the ContentionHandler interface.
 func (m *managerImpl) HandleWriterIntentError(
 	ctx context.Context, g *Guard, seq roachpb.LeaseSequence, t *roachpb.WriteIntentError,
@@ -684,15 +691,21 @@ func (g *Guard) HoldingLatches() bool {
 // request is supposed to hold latches while evaluating in the first place.
 func (g *Guard) AssertLatches() {
 	if !shouldIgnoreLatches(g.Req) && !shouldWaitOnLatchesWithoutAcquiring(g.Req) && !g.HoldingLatches() {
-		panic("expected latches held, found none")
+		panic(fmt.Sprintf("expected latches held when evaluating %s", g.requestSummary()))
 	}
 }
 
 // AssertNoLatches asserts that the guard is non-nil and not holding latches.
 func (g *Guard) AssertNoLatches() {
 	if g.HoldingLatches() {
-		panic("unexpected latches held")
+		panic(fmt.Sprintf("unexpected latches held when evaluating %s", g.requestSummary()))
 	}
+}
+
+// requestSummary returns a summary of the requests in the Guard's batch.
+func (g *Guard) requestSummary() string {
+	br := roachpb.BatchRequest{Requests: g.Req.Requests}
+	return br.Summary()
 }
 
 // IsolatedAtLaterTimestamps returns whether the request holding the guard would
@@ -762,6 +775,13 @@ func (g *Guard) IsKeyLockedByConflictingTxn(
 	key roachpb.Key, strength lock.Strength,
 ) (bool, *enginepb.TxnMeta) {
 	return g.ltg.IsKeyLockedByConflictingTxn(key, strength)
+}
+
+func (g *Guard) IsKnownPendingTxn(id uuid.UUID, ts hlc.Timestamp) bool {
+	if g.ltg == nil {
+		return false
+	}
+	return g.ltg.IsKnownPendingTxn(id, ts)
 }
 
 func (g *Guard) moveLatchGuard() latchGuard {

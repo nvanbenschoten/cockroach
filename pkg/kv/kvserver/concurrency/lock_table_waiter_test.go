@@ -33,6 +33,7 @@ import (
 	"github.com/cockroachdb/cockroach/pkg/util/timeutil"
 	"github.com/cockroachdb/cockroach/pkg/util/tracing"
 	"github.com/cockroachdb/cockroach/pkg/util/tracing/tracingpb"
+	"github.com/cockroachdb/cockroach/pkg/util/uuid"
 	"github.com/stretchr/testify/require"
 )
 
@@ -80,6 +81,8 @@ func (g *mockLockTableGuard) CurState() waitingState {
 	}
 	return s
 }
+func (g *mockLockTableGuard) TransactionIsPending(*roachpb.Transaction) {
+}
 func (g *mockLockTableGuard) ResolveBeforeScanning() []roachpb.LockUpdate {
 	return g.toResolve
 }
@@ -90,6 +93,9 @@ func (g *mockLockTableGuard) IsKeyLockedByConflictingTxn(
 	roachpb.Key, lock.Strength,
 ) (bool, *enginepb.TxnMeta) {
 	panic("unimplemented")
+}
+func (g *mockLockTableGuard) IsKnownPendingTxn(uuid.UUID, hlc.Timestamp) bool {
+	return false
 }
 func (g *mockLockTableGuard) notify() { g.signal <- struct{}{} }
 

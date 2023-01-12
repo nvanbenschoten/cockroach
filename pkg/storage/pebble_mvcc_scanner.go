@@ -899,13 +899,12 @@ func (p *pebbleMVCCScanner) getOne(ctx context.Context) (ok, added bool) {
 	// our read timestamp (to avoid erroneously picking up future committed
 	// values); this timestamp is prevTS.
 	prevTS := p.ts
-	if metaTS.LessEq(p.ts) {
-		prevTS = metaTS.Prev()
-	}
+	prevTS.Backward(metaTS.Prev())
 
 	ownIntent := p.txn != nil && p.meta.Txn.ID.Equal(p.txn.ID)
 	if !ownIntent {
-		conflictingIntent := metaTS.LessEq(p.ts) || p.failOnMoreRecent
+		knownPending := p.lockTable != nil && p.lockTable.IsKnownPendingTxn(p.meta.Txn.ID, p.ts)
+		conflictingIntent := p.failOnMoreRecent || (metaTS.LessEq(p.ts) && !knownPending)
 		if !conflictingIntent {
 			// 8. The key contains an intent, but we're reading below the intent.
 			// Seek to the desired version, checking for uncertainty if necessary.
@@ -918,9 +917,13 @@ func (p *pebbleMVCCScanner) getOne(ctx context.Context) (ok, added bool) {
 				// Or there could be a different, uncertain committed value in the
 				// window. To detect either case, seek to and past the uncertainty
 				// interval's global limit and check uncertainty as we scan.
-				return p.seekVersion(ctx, p.uncertainty.GlobalLimit, true)
+				seekTS := p.uncertainty.GlobalLimit
+				if knownPending {
+					seekTS.Backward(metaTS.Prev())
+				}
+				return p.seekVersion(ctx, seekTS, true)
 			}
-			return p.seekVersion(ctx, p.ts, false)
+			return p.seekVersion(ctx, prevTS, false)
 		}
 
 		if p.inconsistent {

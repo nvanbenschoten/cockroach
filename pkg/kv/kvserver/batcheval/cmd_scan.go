@@ -52,7 +52,7 @@ func Scan(
 		FailOnMoreRecent:      args.KeyLocking != lock.None,
 		Reverse:               false,
 		MemoryAccount:         cArgs.EvalCtx.GetResponseMemoryAccount(),
-		LockTable:             cArgs.Concurrency,
+		LockTable:             cArgs.LockTableView(),
 		DontInterleaveIntents: cArgs.DontInterleaveIntents,
 	}
 

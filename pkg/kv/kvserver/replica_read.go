@@ -115,8 +115,9 @@ func (r *Replica) executeReadOnlyBatch(
 			r.store.metrics.ReplicaReadBatchWithoutInterleavingIter.Inc(1)
 			evalPath = readOnlyWithoutInterleavedIntents
 		}
-		r.updateTimestampCacheAndDropLatches(ctx, g, ba, nil /* br */, nil /* pErr */, st)
-		g = nil
+		// TODO: intent iter dropped early != latches dropped early.
+		r.updateTimestampCacheAfterRead(ctx, ba, nil /* br */, nil /* pErr */, st)
+		r.concMgr.DropLatches(g)
 	}
 
 	var result result.Result
@@ -125,7 +126,7 @@ func (r *Replica) executeReadOnlyBatch(
 	// If the request hit a server-side concurrency retry error, immediately
 	// propagate the error. Don't assume ownership of the concurrency guard.
 	if isConcurrencyRetryError(pErr) {
-		if g != nil && g.EvalKind == concurrency.OptimisticEval {
+		if g.EvalKind == concurrency.OptimisticEval {
 			// Since this request was not holding latches, it could have raced with
 			// intent resolution. So we can't trust it to add discovered locks, if
 			// there is a latch conflict. This means that a discovered lock plus a
@@ -146,7 +147,7 @@ func (r *Replica) executeReadOnlyBatch(
 		return nil, g, nil, pErr
 	}
 
-	if g != nil && g.EvalKind == concurrency.OptimisticEval {
+	if g.EvalKind == concurrency.OptimisticEval {
 		if pErr == nil {
 			// Gather the spans that were read -- we distinguish the spans in the
 			// request from the spans that were actually read, using resume spans in
@@ -178,10 +179,12 @@ func (r *Replica) executeReadOnlyBatch(
 	if pErr == nil {
 		pErr = r.handleReadOnlyLocalEvalResult(ctx, ba, result.Local)
 	}
-	if g != nil {
+	if g.HoldingLatches() {
 		// If we didn't already drop latches earlier, do so now.
-		r.updateTimestampCacheAndDropLatches(ctx, g, ba, br, pErr, st)
-		g = nil
+		r.updateTimestampCacheAfterRead(ctx, ba, br, pErr, st)
+	}
+	if g != nil {
+		r.concMgr.FinishReq(g)
 	}
 
 	// Semi-synchronously process any intents that need resolving here in
@@ -234,15 +237,14 @@ func (r *Replica) executeReadOnlyBatch(
 // - For optimistic evaluation, used for limited scans, the update to the
 // timestamp cache limits itself to the spans that were read, by using the
 // ResumeSpans.
-func (r *Replica) updateTimestampCacheAndDropLatches(
+func (r *Replica) updateTimestampCacheAfterRead(
 	ctx context.Context,
-	g *concurrency.Guard,
 	ba *roachpb.BatchRequest,
 	br *roachpb.BatchResponse,
 	pErr *roachpb.Error,
 	st kvserverpb.LeaseStatus,
 ) {
-	ec := endCmds{repl: r, g: g, st: st}
+	ec := endCmds{repl: r, st: st}
 	ec.done(ctx, ba, br, pErr)
 }
 
@@ -308,7 +310,7 @@ func (r *Replica) canDropLatchesBeforeEval(
 			txnID = ba.Txn.ID
 		}
 		needsIntentInterleavingForThisRequest, err := storage.ScanConflictingIntentsForDroppingLatchesEarly(
-			ctx, rw, txnID, ba.Header.Timestamp, start, end, seq, &intents, maxIntents,
+			ctx, rw, g, txnID, ba.Header.Timestamp, start, end, seq, &intents, maxIntents,
 		)
 		if err != nil {
 			return false /* ok */, true /* stillNeedsIntentInterleaving */, roachpb.NewError(

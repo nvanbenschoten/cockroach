@@ -1743,6 +1743,7 @@ func assertMVCCIteratorInvariants(iter MVCCIterator) error {
 func ScanConflictingIntentsForDroppingLatchesEarly(
 	ctx context.Context,
 	reader Reader,
+	lockTable LockTableView,
 	txnID uuid.UUID,
 	ts hlc.Timestamp,
 	start, end roachpb.Key,
@@ -1797,6 +1798,10 @@ func ScanConflictingIntentsForDroppingLatchesEarly(
 			if seq <= meta.Txn.Sequence || ts.LessEq(meta.Timestamp.ToTimestamp()) {
 				needIntentHistory = true
 			}
+			continue
+		}
+		if lockTable.IsKnownPendingTxn(meta.Txn.ID, ts) {
+			needIntentHistory = true
 			continue
 		}
 		if conflictingIntent := meta.Timestamp.ToTimestamp().LessEq(ts); !conflictingIntent {

@@ -402,6 +402,11 @@ type lockTableGuardImpl struct {
 	//   why lockState.notRemovable behaves like a reference count.
 	notRemovableLock *lockState
 
+	// pendingTxnCache is a cache that tracks transactions that were pushed and
+	// found to be pending. The map carries the earliest timestamp that the
+	// transaction can commit at.
+	pendingTxnCache map[uuid.UUID]hlc.Timestamp
+
 	// A request whose startWait is set to true in ScanAndEnqueue is actively
 	// waiting at a particular key. This is the first key encountered when
 	// iterating through spans that it needs to wait at. A future event (lock
@@ -543,6 +548,16 @@ func (g *lockTableGuardImpl) updateStateLocked(newState waitingState) {
 	}
 }
 
+func (g *lockTableGuardImpl) TransactionIsPending(txn *roachpb.Transaction) {
+	if g.pendingTxnCache == nil {
+		g.pendingTxnCache = make(map[uuid.UUID]hlc.Timestamp)
+	}
+	ts, ok := g.pendingTxnCache[txn.ID]
+	if !ok || ts.Less(txn.WriteTimestamp) {
+		g.pendingTxnCache[txn.ID] = txn.WriteTimestamp
+	}
+}
+
 func (g *lockTableGuardImpl) CheckOptimisticNoConflicts(spanSet *spanset.SpanSet) (ok bool) {
 	if g.waitPolicy == lock.WaitPolicy_SkipLocked {
 		// If the request is using a SkipLocked wait policy, lock conflicts are
@@ -624,6 +639,11 @@ func (g *lockTableGuardImpl) IsKeyLockedByConflictingTxn(
 	}
 	// "If the key is locked, the lock holder is also returned."
 	return true, txn
+}
+
+func (g *lockTableGuardImpl) IsKnownPendingTxn(id uuid.UUID, ts hlc.Timestamp) bool {
+	minCommitTS, ok := g.pendingTxnCache[id]
+	return ok && ts.Less(minCommitTS)
 }
 
 func (g *lockTableGuardImpl) notify() {
@@ -1596,11 +1616,19 @@ func (l *lockState) tryActiveWait(
 				replicatedLockFinalizedTxn = finalizedTxn
 			}
 		}
+		pendingTxnMinCommitTS, ok := g.pendingTxnCache[lockHolderTxn.ID]
+		if ok {
+			lockHolderTS.Forward(pendingTxnMinCommitTS)
+		}
 	}
 
 	if sa == spanset.SpanReadOnly {
 		if lockHolderTxn == nil {
 			// Reads only care about locker, not a reservation.
+			return false, false
+		}
+		if l.holder.holder[lock.Replicated].txn == nil {
+			// Reads only care about durable intents, not unreplicated locks.
 			return false, false
 		}
 		// Locked by some other txn.

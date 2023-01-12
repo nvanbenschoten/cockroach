@@ -51,7 +51,7 @@ func ReverseScan(
 		FailOnMoreRecent:      args.KeyLocking != lock.None,
 		Reverse:               true,
 		MemoryAccount:         cArgs.EvalCtx.GetResponseMemoryAccount(),
-		LockTable:             cArgs.Concurrency,
+		LockTable:             cArgs.LockTableView(),
 		DontInterleaveIntents: cArgs.DontInterleaveIntents,
 	}
 

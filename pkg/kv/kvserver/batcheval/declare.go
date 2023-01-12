@@ -20,6 +20,7 @@ import (
 	"github.com/cockroachdb/cockroach/pkg/kv/kvserver/spanset"
 	"github.com/cockroachdb/cockroach/pkg/kv/kvserver/uncertainty"
 	"github.com/cockroachdb/cockroach/pkg/roachpb"
+	"github.com/cockroachdb/cockroach/pkg/storage"
 	"github.com/cockroachdb/cockroach/pkg/storage/enginepb"
 	"github.com/cockroachdb/cockroach/pkg/util/hlc"
 )
@@ -125,4 +126,13 @@ type CommandArgs struct {
 	Concurrency           *concurrency.Guard
 	Uncertainty           uncertainty.Interval
 	DontInterleaveIntents bool
+}
+
+// LockTableView returns the CommandArgs view of the lock table, if any.
+func (cArgs *CommandArgs) LockTableView() storage.LockTableView {
+	// TODO: is nil check needed?
+	if cArgs.Concurrency == nil {
+		return nil
+	}
+	return cArgs.Concurrency
 }

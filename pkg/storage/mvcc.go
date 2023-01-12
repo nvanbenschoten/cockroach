@@ -43,6 +43,7 @@ import (
 	"github.com/cockroachdb/cockroach/pkg/util/timeutil"
 	"github.com/cockroachdb/cockroach/pkg/util/tracing"
 	"github.com/cockroachdb/cockroach/pkg/util/tracing/tracingpb"
+	"github.com/cockroachdb/cockroach/pkg/util/uuid"
 	"github.com/cockroachdb/errors"
 	"github.com/cockroachdb/pebble"
 )
@@ -876,6 +877,8 @@ type LockTableView interface {
 	// used by requests in conjunction with the SkipLocked wait policy to
 	// determine which keys they should skip over during evaluation.
 	IsKeyLockedByConflictingTxn(roachpb.Key, lock.Strength) (bool, *enginepb.TxnMeta)
+	// TODO
+	IsKnownPendingTxn(uuid.UUID, hlc.Timestamp) bool
 }
 
 // MVCCGetOptions bundles options for the MVCCGet family of functions.

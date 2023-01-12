@@ -204,6 +204,8 @@ type RequestSequencer interface {
 	// requests that are blocked on this one to proceed. The guard should not
 	// be used after being released.
 	FinishReq(*Guard)
+
+	DropLatches(*Guard)
 }
 
 // ContentionHandler is concerned with handling contention-related errors. This
@@ -750,6 +752,16 @@ type lockTableGuard interface {
 
 	// CurState returns the latest waiting state.
 	CurState() waitingState
+
+	// TransactionIsPending informs the lock table guard that the specified
+	// transaction has been pushed and that it is still pending. This is used by
+	// the lock table to avoid waiting on intents that are known to not be
+	// uncertain and are known to not be committed at or below a given request's
+	// read timestamp.
+	TransactionIsPending(*roachpb.Transaction)
+
+	// IsKnownPendingTxn ...
+	IsKnownPendingTxn(uuid.UUID, hlc.Timestamp) bool
 
 	// ResolveBeforeScanning lists the locks to resolve before scanning again.
 	// This must be called after:
