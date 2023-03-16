@@ -1476,7 +1476,13 @@ type replicaSyncCallback Replica
 
 func (r *replicaSyncCallback) OnLogSync(ctx context.Context, msgs []raftpb.Message) {
 	// Send MsgStorageAppend's responses.
+	before := timeutil.Now()
 	(*Replica)(r).sendRaftMessages(ctx, msgs, nil /* blocked */)
+	dur := timeutil.Since(before).Nanoseconds()
+	if dur > (200 * time.Microsecond).Nanoseconds() {
+		log.Infof(ctx, "long OnLogSync: msgs=%+v, repl=%v, desc=%+v", msgs, r.replicaID, (*Replica)(r).Desc())
+	}
+	r.store.metrics.RaftSchedulerLatency.RecordValue(dur)
 }
 
 func (r *Replica) sendRaftMessages(

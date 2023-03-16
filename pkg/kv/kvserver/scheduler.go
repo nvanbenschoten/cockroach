@@ -302,7 +302,8 @@ func (s *raftScheduler) worker(ctx context.Context) {
 
 		// Record the scheduling latency for the range.
 		lat := nowNanos() - state.begin
-		s.latency.RecordValue(lat)
+		//s.latency.RecordValue(lat)
+		_ = lat
 
 		// Process requests first. This avoids a scenario where a tick and a
 		// "quiesce" message are processed in the same iteration and intervening
