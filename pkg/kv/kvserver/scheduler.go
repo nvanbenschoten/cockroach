@@ -23,7 +23,6 @@ import (
 	"github.com/cockroachdb/cockroach/pkg/util/log"
 	"github.com/cockroachdb/cockroach/pkg/util/metric"
 	"github.com/cockroachdb/cockroach/pkg/util/stop"
-	"github.com/cockroachdb/cockroach/pkg/util/syncutil"
 	"github.com/cockroachdb/cockroach/pkg/util/timeutil"
 )
 
@@ -187,7 +186,7 @@ type raftScheduler struct {
 	maxTicks       int
 
 	mu struct {
-		syncutil.Mutex
+		timingMutex
 		cond    *sync.Cond
 		queue   rangeIDQueue
 		state   map[roachpb.RangeID]raftScheduleState
@@ -211,7 +210,7 @@ func newRaftScheduler(
 		numWorkers:     numWorkers,
 		maxTicks:       maxTicks,
 	}
-	s.mu.cond = sync.NewCond(&s.mu.Mutex)
+	s.mu.cond = sync.NewCond(&s.mu.timingMutex)
 	s.mu.state = make(map[roachpb.RangeID]raftScheduleState)
 	return s
 }
@@ -474,4 +473,22 @@ func (s *raftScheduler) EnqueueRaftTicks(ids ...roachpb.RangeID) {
 
 func nowNanos() int64 {
 	return timeutil.Now().UnixNano()
+}
+
+type timingMutex struct {
+	mu    sync.Mutex
+	start time.Time
+}
+
+func (r *timingMutex) Lock() {
+	r.mu.Lock()
+	r.start = time.Now()
+}
+
+func (r *timingMutex) Unlock() {
+	dur := timeutil.Since(r.start)
+	r.mu.Unlock()
+	if dur > 200*time.Microsecond {
+		log.Infof(context.Background(), "long timingMutex hold:\n%s", string(debug.Stack()))
+	}
 }
