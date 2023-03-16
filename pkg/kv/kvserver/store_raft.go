@@ -260,6 +260,7 @@ func (s *Store) uncoalesceBeats(
 			toEnqueue = append(toEnqueue, beat.RangeID)
 		}
 	}
+	profileCaller(1)
 	s.scheduler.EnqueueRaftRequests(toEnqueue...)
 }
 
@@ -282,6 +283,7 @@ func (s *Store) HandleRaftRequest(
 	}
 	enqueue := s.HandleRaftUncoalescedRequest(ctx, req, respStream)
 	if enqueue {
+		profileCaller(0)
 		s.scheduler.EnqueueRaftRequest(req.RangeID)
 	}
 	return nil
@@ -566,6 +568,7 @@ func (s *Store) HandleRaftResponse(
 // enqueueRaftUpdateCheck asynchronously registers the given range ID to be
 // checked for raft updates when the processRaft goroutine is idle.
 func (s *Store) enqueueRaftUpdateCheck(rangeID roachpb.RangeID) {
+	profileCaller(1)
 	s.scheduler.EnqueueRaftReady(rangeID)
 }
 
@@ -775,6 +778,7 @@ func (s *Store) raftTickLoop(ctx context.Context) {
 			}
 			s.unquiescedReplicas.Unlock()
 
+			profileCaller(0)
 			s.scheduler.EnqueueRaftTicks(rangeIDs...)
 			s.metrics.RaftTicks.Inc(1)
 

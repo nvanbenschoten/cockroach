@@ -14,6 +14,7 @@ import (
 	"container/list"
 	"context"
 	"fmt"
+	"runtime"
 	"runtime/debug"
 	"sync"
 
@@ -453,4 +454,11 @@ func (s *raftScheduler) EnqueueRaftTicks(ids ...roachpb.RangeID) {
 
 func nowNanos() int64 {
 	return timeutil.Now().UnixNano()
+}
+
+func profileCaller(skip int) {
+	_, file, line, ok := runtime.Caller(skip + 1)
+	if ok {
+		fmt.Printf("SCHED_PROF: %s:%d\n", file, line)
+	}
 }
