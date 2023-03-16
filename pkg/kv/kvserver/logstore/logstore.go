@@ -259,7 +259,7 @@ func (s *LogStore) storeEntriesAndCommitBatch(
 			metrics:        s.Metrics,
 			logCommitBegin: stats.PebbleBegin,
 		}
-		s.SyncWaiter.enqueue(ctx, batch, waiterCallback)
+		s.SyncWaiter.enqueue(ctx, batch, waiterCallback, int(s.RangeID))
 		// Do not Close batch on return. Will be Closed by SyncWaiterLoop.
 		batch = nil
 	} else {

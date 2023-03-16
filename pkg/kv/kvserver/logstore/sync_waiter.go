@@ -45,7 +45,7 @@ type syncWaiterCallback interface {
 // Invariant: The callbacks are notified in the order that they were enqueued
 // and without concurrency.
 type SyncWaiterLoop struct {
-	q       chan syncBatch
+	q       [8]chan syncBatch
 	stopped chan struct{}
 
 	logEveryEnqueueBlocked log.EveryN
@@ -58,40 +58,46 @@ type syncBatch struct {
 
 // NewSyncWaiterLoop constructs a SyncWaiterLoop. It must be Started before use.
 func NewSyncWaiterLoop() *SyncWaiterLoop {
-	return &SyncWaiterLoop{
+	w := &SyncWaiterLoop{
+		stopped:                make(chan struct{}),
+		logEveryEnqueueBlocked: log.Every(1 * time.Second),
+	}
+	for i := range w.q {
 		// We size the waiter loop's queue to twice the size of Pebble's sync
 		// concurrency, which is the maximum number of pending syncWaiter's that
 		// pebble allows. Doubling the size gives us headroom to prevent the sync
 		// waiter loop from blocking on calls to enqueue, even if consumption from
 		// the queue is delayed. If the pipeline is going to block, we'd prefer for
 		// it to do so during the call to batch.CommitNoSyncWait.
-		q:                      make(chan syncBatch, 2*record.SyncConcurrency),
-		stopped:                make(chan struct{}),
-		logEveryEnqueueBlocked: log.Every(1 * time.Second),
+		w.q[i] = make(chan syncBatch, 2*record.SyncConcurrency)
 	}
+	return w
 }
 
 // Start launches the loop.
 func (w *SyncWaiterLoop) Start(ctx context.Context, stopper *stop.Stopper) {
-	_ = stopper.RunAsyncTaskEx(ctx,
-		stop.TaskOpts{
-			TaskName: "raft-logstore-sync-waiter-loop",
-			// This task doesn't reference a parent because it runs for the server's
-			// lifetime.
-			SpanOpt: stop.SterileRootSpan,
-		},
-		func(ctx context.Context) {
-			w.waitLoop(ctx, stopper)
-		})
+	for i := range w.q {
+		i := i
+		_ = stopper.RunAsyncTaskEx(ctx,
+			stop.TaskOpts{
+				TaskName: "raft-logstore-sync-waiter-loop",
+				// This task doesn't reference a parent because it runs for the server's
+				// lifetime.
+				SpanOpt: stop.SterileRootSpan,
+			},
+			func(ctx context.Context) {
+				w.waitLoop(ctx, stopper, i)
+			})
+	}
 }
 
 // waitLoop pulls off the SyncWaiterLoop's queue. For each syncWaiter, it waits
 // for the sync to complete and then calls the associated callback.
-func (w *SyncWaiterLoop) waitLoop(ctx context.Context, stopper *stop.Stopper) {
+func (w *SyncWaiterLoop) waitLoop(ctx context.Context, stopper *stop.Stopper, i int) {
 	defer close(w.stopped)
 	for {
 		select {
-		case w := <-w.q:
+		case w := <-w.q[i]:
 			if err := w.wg.SyncWait(); err != nil {
 				log.Fatalf(ctx, "SyncWait error: %+v", err)
 			}
@@ -112,10 +118,13 @@ func (w *SyncWaiterLoop) waitLoop(ctx context.Context, stopper *stop.Stopper) {
 //
 // If the SyncWaiterLoop has already been stopped, the callback will never be
 // called.
-func (w *SyncWaiterLoop) enqueue(ctx context.Context, wg syncWaiter, cb syncWaiterCallback) {
+func (w *SyncWaiterLoop) enqueue(
+	ctx context.Context, wg syncWaiter, cb syncWaiterCallback, shard int,
+) {
 	b := syncBatch{wg, cb}
+	q := w.q[shard%len(w.q)]
 	select {
-	case w.q <- b:
+	case q <- b:
 	case <-w.stopped:
 	default:
 		if w.logEveryEnqueueBlocked.ShouldLog() {
@@ -126,7 +135,7 @@ func (w *SyncWaiterLoop) enqueue(ctx context.Context, wg syncWaiter, cb syncWait
 			log.VWarningf(ctx, 1, "SyncWaiterLoop.enqueue blocking due to insufficient channel capacity")
 		}
 		select {
-		case w.q <- b:
+		case q <- b:
 		case <-w.stopped:
 		}
 	}

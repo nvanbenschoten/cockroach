@@ -33,7 +33,7 @@ func TestSyncWaiterLoop(t *testing.T) {
 	c := make(chan struct{})
 	wg1 := make(chanSyncWaiter)
 	cb1 := funcSyncWaiterCallback(func() { close(c) })
-	w.enqueue(ctx, wg1, cb1)
+	w.enqueue(ctx, wg1, cb1, 0)
 
 	// Callback is not called before SyncWait completes.
 	select {
@@ -52,7 +52,7 @@ func TestSyncWaiterLoop(t *testing.T) {
 	wg2 := make(chanSyncWaiter)
 	cb2 := funcSyncWaiterCallback(func() { t.Fatalf("callback unexpectedly called") })
 	for i := 0; i < 2*cap(w.q); i++ {
-		w.enqueue(ctx, wg2, cb2)
+		w.enqueue(ctx, wg2, cb2, 0)
 	}
 
 	// Callback should not be called, even after SyncWait completes.
@@ -78,7 +78,7 @@ func BenchmarkSyncWaiterLoop(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		w.enqueue(ctx, wg, cb)
+		w.enqueue(ctx, wg, cb, 0)
 		wg <- struct{}{}
 		<-c
 	}

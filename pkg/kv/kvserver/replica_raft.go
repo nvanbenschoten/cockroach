@@ -1476,6 +1476,7 @@ type replicaSyncCallback Replica
 
 func (r *replicaSyncCallback) OnLogSync(ctx context.Context, msgs []raftpb.Message) {
 	// Send MsgStorageAppend's responses.
+	// TODO: measure this latency. Don't block!
 	(*Replica)(r).sendRaftMessages(ctx, msgs, nil /* blocked */)
 }
 
