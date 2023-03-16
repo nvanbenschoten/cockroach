@@ -1068,6 +1068,7 @@ func (r *Replica) handleRaftReadyRaftMuLocked(
 		// the group's committed entries were paginated due to size limitations
 		// and we didn't apply all of them in this pass.
 		if raftGroup.HasReady() {
+			profileCaller(0)
 			r.store.enqueueRaftUpdateCheck(r.RangeID)
 		}
 		return true, nil
@@ -1603,6 +1604,7 @@ func (r *Replica) sendLocalRaftMsg(msg raftpb.Message) {
 	r.localMsgs.active = append(r.localMsgs.active, msg)
 	r.localMsgs.Unlock()
 	if wasEmpty {
+		profileCaller(2)
 		r.store.enqueueRaftUpdateCheck(r.RangeID)
 	}
 }
@@ -2115,6 +2117,7 @@ func (r *Replica) campaignLocked(ctx context.Context) {
 	if err := r.mu.internalRaftGroup.Campaign(); err != nil {
 		log.VEventf(ctx, 1, "failed to campaign: %s", err)
 	}
+	profileCaller(0)
 	r.store.enqueueRaftUpdateCheck(r.RangeID)
 }
 

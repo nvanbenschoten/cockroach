@@ -1160,6 +1160,7 @@ func (rp *replicaProposer) leaseAppliedIndex() uint64 {
 }
 
 func (rp *replicaProposer) enqueueUpdateCheck() {
+	profileCaller(1)
 	rp.store.enqueueRaftUpdateCheck(rp.RangeID)
 }
 

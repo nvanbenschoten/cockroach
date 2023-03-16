@@ -568,7 +568,6 @@ func (s *Store) HandleRaftResponse(
 // enqueueRaftUpdateCheck asynchronously registers the given range ID to be
 // checked for raft updates when the processRaft goroutine is idle.
 func (s *Store) enqueueRaftUpdateCheck(rangeID roachpb.RangeID) {
-	profileCaller(1)
 	s.scheduler.EnqueueRaftReady(rangeID)
 }
 

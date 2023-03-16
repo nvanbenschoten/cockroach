@@ -212,6 +212,7 @@ func splitPostApply(
 			// the split (the new range) for Raft processing so that the corresponding
 			// Raft group is created. This shouldn't be necessary for correctness, but
 			// some tests rely on this (e.g. server.TestNodeStatusWritten).
+			profileCaller(0)
 			r.store.enqueueRaftUpdateCheck(rightReplOrNil.RangeID)
 		}
 	}
