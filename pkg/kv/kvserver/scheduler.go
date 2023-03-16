@@ -241,15 +241,19 @@ type raftScheduler struct {
 	numWorkers     int
 	maxTicks       int
 
-	mu struct {
-		syncutil.Mutex
-		cond    *sync.Cond
-		queue   rangeIDQueue
-		state   map[roachpb.RangeID]raftScheduleState
-		stopped bool
-	}
+	shards []raftSchedulerShard
 
 	done sync.WaitGroup
+}
+
+type raftSchedulerShard struct {
+	syncutil.Mutex
+	cond       *sync.Cond
+	queue      rangeIDQueue
+	state      map[roachpb.RangeID]raftScheduleState
+	stopped    bool
+	numWorkers int
+	maxTicks   int
 }
 
 func newRaftScheduler(
@@ -259,15 +263,24 @@ func newRaftScheduler(
 	numWorkers int,
 	maxTicks int,
 ) *raftScheduler {
+	numShards := numWorkers / 16
+	if numShards < 1 {
+		numShards = 1
+	}
 	s := &raftScheduler{
 		ambientContext: ambient,
 		processor:      processor,
 		latency:        metrics.RaftSchedulerLatency,
 		numWorkers:     numWorkers,
 		maxTicks:       maxTicks,
+		shards:         make([]raftSchedulerShard, numShards),
 	}
-	s.mu.cond = sync.NewCond(&s.mu.Mutex)
-	s.mu.state = make(map[roachpb.RangeID]raftScheduleState)
+	for i := range s.shards {
+		s.shards[i].cond = sync.NewCond(&s.shards[i].Mutex)
+		s.shards[i].state = make(map[roachpb.RangeID]raftScheduleState)
+		s.shards[i].numWorkers = numWorkers / len(s.shards)
+		s.shards[i].maxTicks = maxTicks
+	}
 	return s
 }
 
@@ -275,10 +288,12 @@ func (s *raftScheduler) Start(stopper *stop.Stopper) {
 	ctx := s.ambientContext.AnnotateCtx(context.Background())
 	waitQuiesce := func(context.Context) {
 		<-stopper.ShouldQuiesce()
-		s.mu.Lock()
-		s.mu.stopped = true
-		s.mu.Unlock()
-		s.mu.cond.Broadcast()
+		for i := range s.shards {
+			s.shards[i].Lock()
+			s.shards[i].stopped = true
+			s.shards[i].Unlock()
+			s.shards[i].cond.Broadcast()
+		}
 	}
 	if err := stopper.RunAsyncTaskEx(ctx,
 		stop.TaskOpts{
@@ -293,6 +308,7 @@ func (s *raftScheduler) Start(stopper *stop.Stopper) {
 
 	s.done.Add(s.numWorkers)
 	for i := 0; i < s.numWorkers; i++ {
+		shard := i % len(s.shards)
 		if err := stopper.RunAsyncTaskEx(ctx,
 			stop.TaskOpts{
 				TaskName: "raft-worker",
@@ -300,7 +316,9 @@ func (s *raftScheduler) Start(stopper *stop.Stopper) {
 				// lifetime.
 				SpanOpt: stop.SterileRootSpan,
 			},
-			s.worker); err != nil {
+			func(ctx context.Context) {
+				s.worker(ctx, shard)
+			}); err != nil {
 			s.done.Done()
 		}
 	}
@@ -313,18 +331,20 @@ func (s *raftScheduler) Wait(context.Context) {
 // SetPriorityID configures the single range that the scheduler will prioritize
 // above others. Once set, callers are not permitted to change this value.
 func (s *raftScheduler) SetPriorityID(id roachpb.RangeID) {
-	s.mu.Lock()
-	s.mu.queue.SetPriorityID(id)
-	s.mu.Unlock()
+	for i := range s.shards {
+		s.shards[i].Lock()
+		s.shards[i].queue.SetPriorityID(id)
+		s.shards[i].Unlock()
+	}
 }
 
 func (s *raftScheduler) PriorityID() roachpb.RangeID {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.mu.queue.priorityID
+	s.shards[0].Lock()
+	defer s.shards[0].Unlock()
+	return s.shards[0].queue.priorityID
 }
 
-func (s *raftScheduler) worker(ctx context.Context) {
+func (s *raftScheduler) worker(ctx context.Context, shard int) {
 	defer s.done.Done()
 
 	// We use a sync.Cond for worker notification instead of a buffered
@@ -334,27 +354,27 @@ func (s *raftScheduler) worker(ctx context.Context) {
 	// signaling a sync.Cond is significantly faster than selecting and sending
 	// on a buffered channel.
 
-	s.mu.Lock()
+	s.shards[shard].Lock()
 	for {
 		var id roachpb.RangeID
 		for {
-			if s.mu.stopped {
-				s.mu.Unlock()
+			if s.shards[shard].stopped {
+				s.shards[shard].Unlock()
 				return
 			}
 			var ok bool
-			if id, ok = s.mu.queue.PopFront(); ok {
+			if id, ok = s.shards[shard].queue.PopFront(); ok {
 				break
 			}
-			s.mu.cond.Wait()
+			s.shards[shard].cond.Wait()
 		}
 
 		// Grab and clear the existing state for the range ID. Note that we leave
 		// the range ID marked as "queued" so that a concurrent Enqueue* will not
 		// queue the range ID again.
-		state := s.mu.state[id]
-		s.mu.state[id] = raftScheduleState{flags: stateQueued}
-		s.mu.Unlock()
+		state := s.shards[shard].state[id]
+		s.shards[shard].state[id] = raftScheduleState{flags: stateQueued}
+		s.shards[shard].Unlock()
 
 		// Record the scheduling latency for the range.
 		lat := nowNanos() - state.begin
@@ -389,12 +409,12 @@ func (s *raftScheduler) worker(ctx context.Context) {
 			s.processor.processReady(id)
 		}
 
-		s.mu.Lock()
-		state = s.mu.state[id]
+		s.shards[shard].Lock()
+		state = s.shards[shard].state[id]
 		if state.flags == stateQueued {
 			// No further processing required by the range ID, clear it from the
 			// state map.
-			delete(s.mu.state, id)
+			delete(s.shards[shard].state, id)
 		} else {
 			// There was a concurrent call to one of the Enqueue* methods. Queue
 			// the range ID for further processing.
@@ -417,17 +437,17 @@ func (s *raftScheduler) worker(ctx context.Context) {
 			//   and the worker does not go back to sleep between the current
 			//   iteration and the next iteration, so no change to num_signals
 			//   is needed.
-			s.mu.queue.Push(id)
+			s.shards[shard].queue.Push(id)
 		}
 	}
 }
 
-func (s *raftScheduler) enqueue1Locked(
+func (s *raftSchedulerShard) enqueue1Locked(
 	addFlags raftScheduleFlags, id roachpb.RangeID, now int64,
 ) int {
 	ticks := int((addFlags & stateRaftTick) / stateRaftTick) // 0 or 1
 
-	prevState := s.mu.state[id]
+	prevState := s.state[id]
 	if prevState.flags&addFlags == addFlags && ticks == 0 {
 		return 0
 	}
@@ -441,70 +461,78 @@ func (s *raftScheduler) enqueue1Locked(
 	if newState.flags&stateQueued == 0 {
 		newState.flags |= stateQueued
 		queued++
-		s.mu.queue.Push(id)
+		s.queue.Push(id)
 	}
 	if newState.begin == 0 {
 		newState.begin = now
 	}
-	s.mu.state[id] = newState
+	s.state[id] = newState
 	return queued
 }
 
-func (s *raftScheduler) enqueue1(addFlags raftScheduleFlags, id roachpb.RangeID) int {
+func (s *raftScheduler) enqueue1(addFlags raftScheduleFlags, id roachpb.RangeID) {
 	now := nowNanos()
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.enqueue1Locked(addFlags, id, now)
+	shard := &s.shards[int(id)%len(s.shards)]
+	shard.Lock()
+	n := shard.enqueue1Locked(addFlags, id, now)
+	shard.Unlock()
+	shard.signal(n)
 }
 
-func (s *raftScheduler) enqueueN(addFlags raftScheduleFlags, ids ...roachpb.RangeID) int {
+func (s *raftScheduler) enqueueN(addFlags raftScheduleFlags, ids ...roachpb.RangeID) {
 	// Enqueue the ids in chunks to avoid hold raftScheduler.mu for too long.
 	const enqueueChunkSize = 128
 
 	// Avoid locking for 0 new ranges.
 	if len(ids) == 0 {
-		return 0
+		return
 	}
 
-	now := nowNanos()
-	s.mu.Lock()
-	var count int
-	for i, id := range ids {
-		count += s.enqueue1Locked(addFlags, id, now)
-		if (i+1)%enqueueChunkSize == 0 {
-			s.mu.Unlock()
-			now = nowNanos()
-			s.mu.Lock()
+	for i := range s.shards {
+		shard := &s.shards[i]
+		now := nowNanos()
+		shard.Lock()
+		var count int
+		for j, id := range ids {
+			if int(id)%len(s.shards) != i {
+				continue
+			}
+			count += shard.enqueue1Locked(addFlags, id, now)
+			if (j+1)%enqueueChunkSize == 0 {
+				shard.Unlock()
+				now = nowNanos()
+				shard.Lock()
+			}
 		}
+		shard.Unlock()
+		shard.signal(count)
 	}
-	s.mu.Unlock()
-	return count
 }
 
-func (s *raftScheduler) signal(count int) {
+func (s *raftSchedulerShard) signal(count int) {
 	if count >= s.numWorkers {
-		s.mu.cond.Broadcast()
+		s.cond.Broadcast()
 	} else {
 		for i := 0; i < count; i++ {
-			s.mu.cond.Signal()
+			s.cond.Signal()
 		}
 	}
 }
 
 func (s *raftScheduler) EnqueueRaftReady(id roachpb.RangeID) {
-	s.signal(s.enqueue1(stateRaftReady, id))
+	s.enqueue1(stateRaftReady, id)
 }
 
 func (s *raftScheduler) EnqueueRaftRequest(id roachpb.RangeID) {
-	s.signal(s.enqueue1(stateRaftRequest, id))
+	s.enqueue1(stateRaftRequest, id)
 }
 
 func (s *raftScheduler) EnqueueRaftRequests(ids ...roachpb.RangeID) {
-	s.signal(s.enqueueN(stateRaftRequest, ids...))
+	s.enqueueN(stateRaftRequest, ids...)
 }
 
 func (s *raftScheduler) EnqueueRaftTicks(ids ...roachpb.RangeID) {
-	s.signal(s.enqueueN(stateRaftTick, ids...))
+	s.enqueueN(stateRaftTick, ids...)
 }
 
 func nowNanos() int64 {
