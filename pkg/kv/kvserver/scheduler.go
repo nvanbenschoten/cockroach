@@ -397,10 +397,18 @@ func (s *raftScheduler) enqueue1Locked(
 }
 
 func (s *raftScheduler) enqueue1(addFlags raftScheduleFlags, id roachpb.RangeID) int {
-	now := nowNanos()
+	beforeLock := timeutil.Now()
 	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.enqueue1Locked(addFlags, id, now)
+	beforeEnq := timeutil.Now()
+	n := s.enqueue1Locked(addFlags, id, beforeLock.UnixNano())
+	s.mu.Unlock()
+	after := timeutil.Now()
+	dur1 := after.Sub(beforeLock)
+	dur2 := after.Sub(beforeEnq)
+	if dur1 > 200*time.Microsecond {
+		log.Infof(context.Background(), "long call dur1=%s, dur2=%s sendLocalRaftMsg EnqueueRaftReady enqueue1: enqueue1Locked", dur1, dur2)
+	}
+	return n
 }
 
 func (s *raftScheduler) enqueueN(addFlags raftScheduleFlags, ids ...roachpb.RangeID) int {
