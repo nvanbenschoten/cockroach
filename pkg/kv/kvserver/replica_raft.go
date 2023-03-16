@@ -1613,12 +1613,7 @@ func (r *Replica) sendLocalRaftMsg(msg raftpb.Message) {
 	r.localMsgs.active = append(r.localMsgs.active, msg)
 	r.localMsgs.Unlock()
 	if wasEmpty {
-		before := timeutil.Now()
 		r.store.enqueueRaftUpdateCheck(r.RangeID)
-		dur := timeutil.Since(before).Nanoseconds()
-		if dur > (200 * time.Microsecond).Nanoseconds() {
-			log.Infof(context.Background(), "long call sendLocalRaftMsg enqueueRaftUpdateCheck")
-		}
 	}
 }
 

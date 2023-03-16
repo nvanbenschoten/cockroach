@@ -445,18 +445,7 @@ func (s *raftScheduler) signal(count int) {
 }
 
 func (s *raftScheduler) EnqueueRaftReady(id roachpb.RangeID) {
-	before := timeutil.Now()
-	n := s.enqueue1(stateRaftReady, id)
-	dur := timeutil.Since(before)
-	if dur > 200*time.Microsecond {
-		log.Infof(context.Background(), "long call %s sendLocalRaftMsg EnqueueRaftReady enqueue1", dur)
-	}
-	before = timeutil.Now()
-	s.signal(n)
-	dur = timeutil.Since(before)
-	if dur > 200*time.Microsecond {
-		log.Infof(context.Background(), "long call %s sendLocalRaftMsg EnqueueRaftReady signal", dur)
-	}
+	s.signal(s.enqueue1(stateRaftReady, id))
 }
 
 func (s *raftScheduler) EnqueueRaftRequest(id roachpb.RangeID) {
@@ -488,7 +477,7 @@ func (r *timingMutex) Lock() {
 func (r *timingMutex) Unlock() {
 	dur := timeutil.Since(r.start)
 	r.mu.Unlock()
-	if dur > 200*time.Microsecond {
+	if dur > 100*time.Microsecond {
 		log.Infof(context.Background(), "long timingMutex hold:\n%s", string(debug.Stack()))
 	}
 }
