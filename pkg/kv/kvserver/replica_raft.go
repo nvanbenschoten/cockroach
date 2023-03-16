@@ -1480,7 +1480,7 @@ func (r *replicaSyncCallback) OnLogSync(ctx context.Context, msgs []raftpb.Messa
 	(*Replica)(r).sendRaftMessages(ctx, msgs, nil /* blocked */)
 	dur := timeutil.Since(before).Nanoseconds()
 	if dur > (200 * time.Microsecond).Nanoseconds() {
-		log.Infof(ctx, "long OnLogSync %s: msgs=%+v, repl=%v, desc=%+v", dur, msgs, r.replicaID, (*Replica)(r).Desc())
+		log.Infof(ctx, "long OnLogSync %s: msgs=%+v, repl=%v, desc=%+v", time.Duration(dur), msgs, r.replicaID, (*Replica)(r).Desc())
 	}
 	r.store.metrics.RaftSchedulerLatency.RecordValue(dur)
 }
@@ -1608,12 +1608,22 @@ func (r *Replica) sendLocalRaftMsg(msg raftpb.Message) {
 	if msg.To != uint64(r.ReplicaID()) {
 		panic("incorrect message target")
 	}
+	before := timeutil.Now()
 	r.localMsgs.Lock()
 	wasEmpty := len(r.localMsgs.active) == 0
 	r.localMsgs.active = append(r.localMsgs.active, msg)
 	r.localMsgs.Unlock()
+	dur := timeutil.Since(before).Nanoseconds()
+	if dur > (200 * time.Microsecond).Nanoseconds() {
+		log.Infof(context.Background(), "long call sendLocalRaftMsg add to active")
+	}
 	if wasEmpty {
+		before = timeutil.Now()
 		r.store.enqueueRaftUpdateCheck(r.RangeID)
+		dur = timeutil.Since(before).Nanoseconds()
+		if dur > (200 * time.Microsecond).Nanoseconds() {
+			log.Infof(context.Background(), "long call sendLocalRaftMsg enqueueRaftUpdateCheck")
+		}
 	}
 }
 
