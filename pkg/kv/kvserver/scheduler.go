@@ -11,7 +11,6 @@
 package kvserver
 
 import (
-	"container/list"
 	"context"
 	"fmt"
 	"runtime/debug"
@@ -30,8 +29,9 @@ const rangeIDChunkSize = 1000
 
 type rangeIDChunk struct {
 	// Valid contents are buf[rd:wr], read at buf[rd], write at buf[wr].
-	buf    [rangeIDChunkSize]roachpb.RangeID
-	rd, wr int
+	buf        [rangeIDChunkSize]roachpb.RangeID
+	rd, wr     int
+	next, prev *rangeIDChunk // owned by rangeIDChunkList
 }
 
 func (c *rangeIDChunk) PushBack(id roachpb.RangeID) bool {
@@ -60,6 +60,57 @@ func (c *rangeIDChunk) Len() int {
 	return c.wr - c.rd
 }
 
+func (c *rangeIDChunk) Reset() {
+	// c.buf does not need to be cleared.
+	c.rd, c.wr = 0, 0
+	// c.next and c.prev reset by rangeIDChunkList.Remove.
+}
+
+type rangeIDChunkList struct {
+	root rangeIDChunk
+	len  int
+}
+
+func (cl *rangeIDChunkList) Front() *rangeIDChunk {
+	if cl.len == 0 {
+		return nil
+	}
+	return cl.root.next
+}
+
+func (cl *rangeIDChunkList) Back() *rangeIDChunk {
+	if cl.len == 0 {
+		return nil
+	}
+	return cl.root.prev
+}
+
+func (cl *rangeIDChunkList) lazyInit() {
+	if cl.root.next == nil {
+		cl.root.next = &cl.root
+		cl.root.prev = &cl.root
+	}
+}
+
+func (cl *rangeIDChunkList) PushBack(c *rangeIDChunk) {
+	cl.lazyInit()
+	at := cl.root.prev
+	n := at.next
+	at.next = c
+	c.prev = at
+	c.next = n
+	n.prev = c
+	cl.len++
+}
+
+func (cl *rangeIDChunkList) Remove(c *rangeIDChunk) {
+	c.prev.next = c.next
+	c.next.prev = c.prev
+	c.next = nil // avoid memory leaks
+	c.prev = nil // avoid memory leaks
+	cl.len--
+}
+
 // rangeIDQueue is a chunked queue of range IDs. Instead of a separate list
 // element for every range ID, it uses a rangeIDChunk to hold many range IDs,
 // amortizing the allocation/GC cost. Using a chunk queue avoids any copying
@@ -74,7 +125,8 @@ type rangeIDQueue struct {
 	len int
 
 	// Default priority.
-	chunks list.List
+	chunks   rangeIDChunkList
+	recycled *rangeIDChunk
 
 	// High priority.
 	priorityID     roachpb.RangeID
@@ -88,13 +140,20 @@ func (q *rangeIDQueue) Push(id roachpb.RangeID) {
 		q.priorityQueued = true
 		return
 	}
-	if q.chunks.Len() == 0 || q.back().WriteCap() == 0 {
-		q.chunks.PushBack(&rangeIDChunk{})
+	back := q.chunks.Back()
+	if back == nil || back.WriteCap() == 0 {
+		back = q.recycled
+		if back != nil {
+			q.recycled = nil
+		} else {
+			back = new(rangeIDChunk)
+		}
+		q.chunks.PushBack(back)
 	}
-	if !q.back().PushBack(id) {
+	if !back.PushBack(id) {
 		panic(fmt.Sprintf(
 			"unable to push rangeID to chunk: len=%d, cap=%d",
-			q.back().Len(), q.back().WriteCap()))
+			back.Len(), back.WriteCap()))
 	}
 }
 
@@ -107,14 +166,15 @@ func (q *rangeIDQueue) PopFront() (roachpb.RangeID, bool) {
 		q.priorityQueued = false
 		return q.priorityID, true
 	}
-	frontElem := q.chunks.Front()
-	front := frontElem.Value.(*rangeIDChunk)
+	front := q.chunks.Front()
 	id, ok := front.PopFront()
 	if !ok {
 		panic("encountered empty chunk")
 	}
 	if front.Len() == 0 && front.WriteCap() == 0 {
-		q.chunks.Remove(frontElem)
+		q.chunks.Remove(front)
+		front.Reset()
+		q.recycled = front
 	}
 	return id, true
 }
@@ -131,10 +191,6 @@ func (q *rangeIDQueue) SetPriorityID(id roachpb.RangeID) {
 	}
 	q.priorityStack = debug.Stack()
 	q.priorityID = id
-}
-
-func (q *rangeIDQueue) back() *rangeIDChunk {
-	return q.chunks.Back().Value.(*rangeIDChunk)
 }
 
 type raftProcessor interface {

@@ -84,6 +84,13 @@ func TestRangeIDChunk(t *testing.T) {
 	}
 }
 
+func TestRangeIDChunkList(t *testing.T) {
+	defer leaktest.AfterTest(t)()
+	defer log.Scope(t).Close(t)
+
+	// TODO
+}
+
 func TestRangeIDQueue(t *testing.T) {
 	defer leaktest.AfterTest(t)()
 	defer log.Scope(t).Close(t)
