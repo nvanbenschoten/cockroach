@@ -1608,19 +1608,14 @@ func (r *Replica) sendLocalRaftMsg(msg raftpb.Message) {
 	if msg.To != uint64(r.ReplicaID()) {
 		panic("incorrect message target")
 	}
-	before := timeutil.Now()
 	r.localMsgs.Lock()
 	wasEmpty := len(r.localMsgs.active) == 0
 	r.localMsgs.active = append(r.localMsgs.active, msg)
 	r.localMsgs.Unlock()
-	dur := timeutil.Since(before).Nanoseconds()
-	if dur > (200 * time.Microsecond).Nanoseconds() {
-		log.Infof(context.Background(), "long call sendLocalRaftMsg add to active")
-	}
 	if wasEmpty {
-		before = timeutil.Now()
+		before := timeutil.Now()
 		r.store.enqueueRaftUpdateCheck(r.RangeID)
-		dur = timeutil.Since(before).Nanoseconds()
+		dur := timeutil.Since(before).Nanoseconds()
 		if dur > (200 * time.Microsecond).Nanoseconds() {
 			log.Infof(context.Background(), "long call sendLocalRaftMsg enqueueRaftUpdateCheck")
 		}

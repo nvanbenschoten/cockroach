@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"runtime/debug"
 	"sync"
+	"time"
 
 	"github.com/cockroachdb/cockroach/pkg/roachpb"
 	"github.com/cockroachdb/cockroach/pkg/util"
@@ -437,7 +438,18 @@ func (s *raftScheduler) signal(count int) {
 }
 
 func (s *raftScheduler) EnqueueRaftReady(id roachpb.RangeID) {
-	s.signal(s.enqueue1(stateRaftReady, id))
+	before := timeutil.Now()
+	n := s.enqueue1(stateRaftReady, id)
+	dur := timeutil.Since(before)
+	if dur > 200*time.Microsecond {
+		log.Infof(context.Background(), "long call %s sendLocalRaftMsg EnqueueRaftReady enqueue1", dur)
+	}
+	before = timeutil.Now()
+	s.signal(n)
+	dur = timeutil.Since(before)
+	if dur > 200*time.Microsecond {
+		log.Infof(context.Background(), "long call %s sendLocalRaftMsg EnqueueRaftReady signal", dur)
+	}
 }
 
 func (s *raftScheduler) EnqueueRaftRequest(id roachpb.RangeID) {
