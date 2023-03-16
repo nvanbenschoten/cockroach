@@ -1480,7 +1480,7 @@ func (r *replicaSyncCallback) OnLogSync(ctx context.Context, msgs []raftpb.Messa
 	(*Replica)(r).sendRaftMessages(ctx, msgs, nil /* blocked */)
 	dur := timeutil.Since(before).Nanoseconds()
 	if dur > (200 * time.Microsecond).Nanoseconds() {
-		log.Infof(ctx, "long OnLogSync: msgs=%+v, repl=%v, desc=%+v", msgs, r.replicaID, (*Replica)(r).Desc())
+		log.Infof(ctx, "long OnLogSync %s: msgs=%+v, repl=%v, desc=%+v", dur, msgs, r.replicaID, (*Replica)(r).Desc())
 	}
 	r.store.metrics.RaftSchedulerLatency.RecordValue(dur)
 }
@@ -1509,7 +1509,12 @@ func (r *Replica) sendRaftMessages(
 			// replicaSyncCallback.OnLogSync. For other local storage work (log
 			// application and snapshot application), these messages come from
 			// Replica.handleRaftReadyRaftMuLocked.
+			before := timeutil.Now()
 			r.sendLocalRaftMsg(message)
+			dur := timeutil.Since(before).Nanoseconds()
+			if dur > (200 * time.Microsecond).Nanoseconds() {
+				log.Infof(ctx, "long call sendLocalRaftMsg")
+			}
 		default:
 			_, drop := blocked[roachpb.ReplicaID(message.To)]
 			if drop {
@@ -1579,12 +1584,22 @@ func (r *Replica) sendRaftMessages(
 			}
 
 			if !drop {
+				before := timeutil.Now()
 				r.sendRaftMessage(ctx, message)
+				dur := timeutil.Since(before).Nanoseconds()
+				if dur > (200 * time.Microsecond).Nanoseconds() {
+					log.Infof(ctx, "long call sendRaftMessage 1")
+				}
 			}
 		}
 	}
 	if lastAppResp.Index > 0 {
+		before := timeutil.Now()
 		r.sendRaftMessage(ctx, lastAppResp)
+		dur := timeutil.Since(before).Nanoseconds()
+		if dur > (200 * time.Microsecond).Nanoseconds() {
+			log.Infof(ctx, "long call sendRaftMessage 2")
+		}
 	}
 }
 
