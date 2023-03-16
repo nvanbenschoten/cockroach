@@ -413,7 +413,7 @@ func (s *raftScheduler) enqueue1(addFlags raftScheduleFlags, id roachpb.RangeID)
 
 func (s *raftScheduler) enqueueN(addFlags raftScheduleFlags, ids ...roachpb.RangeID) int {
 	// Enqueue the ids in chunks to avoid hold raftScheduler.mu for too long.
-	const enqueueChunkSize = 128
+	const enqueueChunkSize = 16
 
 	// Avoid locking for 0 new ranges.
 	if len(ids) == 0 {
