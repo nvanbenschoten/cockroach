@@ -519,6 +519,7 @@ func (w *lockTableWaiterImpl) pushLockTxn(
 
 	pusheeTxn, err := w.ir.PushTransaction(ctx, ws.txn, h, pushType)
 	if err != nil {
+		log.VEventf(ctx, 2, "pushing txn %s failed: %v", ws.txn.ID.Short(), err)
 		// If pushing with an Error WaitPolicy and the push fails, then the lock
 		// holder is still active. Transform the error into a WriteIntentError.
 		if _, ok := err.GetDetail().(*kvpb.TransactionPushError); ok && req.WaitPolicy == lock.WaitPolicy_Error {
@@ -526,6 +527,7 @@ func (w *lockTableWaiterImpl) pushLockTxn(
 		}
 		return err
 	}
+	log.VEventf(ctx, 2, "pushing txn %s succeeded: %v", ws.txn.ID.Short(), pusheeTxn)
 
 	// If the transaction is finalized, add it to the finalizedTxnCache. This
 	// avoids needing to push it again if we find another one of its locks and
@@ -653,6 +655,7 @@ func (w *lockTableWaiterImpl) pushLockTxn(
 		resolve.ClockWhilePending = beforePushObs
 	}
 	opts := intentresolver.ResolveOptions{Poison: true}
+	log.VEventf(ctx, 2, "resolving txn %s: %+v", ws.txn.ID.Short(), resolve)
 	return w.ir.ResolveIntent(ctx, resolve, opts)
 }
 
