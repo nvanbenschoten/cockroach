@@ -160,7 +160,7 @@ func (w *lockTableWaiterImpl) WaitOn(
 		case <-newStateC:
 			timerC = nil
 			state := guard.CurState()
-			log.Eventf(ctx, "lock wait-queue event: %s", state)
+			log.VEventf(ctx, 3, "lock wait-queue event: %s", state)
 			tracer.notify(ctx, state)
 			switch state.kind {
 			case waitFor, waitForDistinguished:
@@ -231,7 +231,7 @@ func (w *lockTableWaiterImpl) WaitOn(
 				// If the request doesn't want to perform a delayed push for any
 				// reason, continue waiting without a timer.
 				if !(livenessPush || deadlockPush || timeoutPush || priorityPush) {
-					log.Eventf(ctx, "not pushing")
+					log.VEventf(ctx, 3, "not pushing")
 					continue
 				}
 
@@ -262,7 +262,7 @@ func (w *lockTableWaiterImpl) WaitOn(
 					delay = 0
 				}
 
-				log.Eventf(ctx, "pushing after %s for: "+
+				log.VEventf(ctx, 3, "pushing after %s for: "+
 					"liveness detection = %t, deadlock detection = %t, "+
 					"timeout enforcement = %t, priority enforcement = %t",
 					delay, livenessPush, deadlockPush, timeoutPush, priorityPush)

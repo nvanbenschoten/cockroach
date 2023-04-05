@@ -513,6 +513,7 @@ func (m *managerImpl) HandleTransactionPushError(
 
 // OnLockAcquired implements the LockManager interface.
 func (m *managerImpl) OnLockAcquired(ctx context.Context, acq *roachpb.LockAcquisition) {
+	log.VEventf(ctx, 1, "txn %s acquired lock @ %s", acq.Txn.ID.Short(), acq.Key)
 	if err := m.lt.AcquireLock(&acq.Txn, acq.Key, lock.Exclusive, acq.Durability); err != nil {
 		log.Fatalf(ctx, "%v", err)
 	}
@@ -520,6 +521,18 @@ func (m *managerImpl) OnLockAcquired(ctx context.Context, acq *roachpb.LockAcqui
 
 // OnLockUpdated implements the LockManager interface.
 func (m *managerImpl) OnLockUpdated(ctx context.Context, up *roachpb.LockUpdate) {
+	var verb string
+	switch up.Status {
+	case roachpb.COMMITTED:
+		verb = "committing"
+	case roachpb.ABORTED:
+		verb = "aborting"
+	case roachpb.PENDING:
+		verb = "increasing timestamp of"
+	default:
+		log.Fatalf(ctx, "unknown txn status: %s", up.Status)
+	}
+	log.VEventf(ctx, 1, "txn %s %s lock @ %s", up.Txn.ID.Short(), verb, up.Key)
 	if err := m.lt.UpdateLocks(up); err != nil {
 		log.Fatalf(ctx, "%v", err)
 	}
