@@ -41,6 +41,7 @@ import (
 	"github.com/cockroachdb/cockroach/pkg/storage"
 	"github.com/cockroachdb/cockroach/pkg/storage/enginepb"
 	"github.com/cockroachdb/cockroach/pkg/util"
+	"github.com/cockroachdb/cockroach/pkg/util/envutil"
 	"github.com/cockroachdb/cockroach/pkg/util/grunning"
 	"github.com/cockroachdb/cockroach/pkg/util/hlc"
 	"github.com/cockroachdb/cockroach/pkg/util/log"
@@ -80,9 +81,10 @@ const (
 
 	replicaChangeTxnGetDescOpName    = "change-replica-get-desc"
 	replicaChangeTxnUpdateDescOpName = "change-replica-update-desc"
-
-	defaultReplicaRaftMuWarnThreshold = 500 * time.Millisecond
 )
+
+var defaultReplicaRaftMuWarnThreshold = envutil.EnvOrDefaultDuration(
+	"COCKROACH_REPLICA_RAFT_MU_WARN_THRESHOLD", 500*time.Millisecond)
 
 // StrictGCEnforcement controls whether requests are rejected based on the GC
 // threshold and the current GC TTL (true) or just based on the GC threshold
