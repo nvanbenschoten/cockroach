@@ -1081,6 +1081,12 @@ func (stats BatchCommitStats) SafeFormat(p redact.SafePrinter, _ rune) {
 	if stats.CommitWaitRotateWaitDuration > 100*time.Microsecond {
 		p.Printf(" commit-write-rotate-wait %s", stats.CommitWaitRotateWaitDuration)
 	}
+	if stats.MemTableRotationDuration > 100*time.Microsecond {
+		p.Printf(" commit-write-mem-table-rotate-wait %s", stats.MemTableRotationDuration)
+	}
+	if stats.MemTableRotationCount > 0 {
+		p.Printf(" commit-write-mem-table-rotate-count %d", stats.MemTableRotationCount)
+	}
 	if stats.ApplyWaitDuration > 100*time.Microsecond {
 		p.Printf(" apply-wait %s", stats.ApplyWaitDuration)
 	}

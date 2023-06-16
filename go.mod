@@ -441,4 +441,4 @@ replace github.com/docker/docker => github.com/moby/moby v20.10.6+incompatible
 
 replace golang.org/x/time => github.com/cockroachdb/x-time v0.3.1-0.20230525123634-71747adb5d5c
 
-replace github.com/cockroachdb/pebble => github.com/nvanbenschoten/pebble v0.0.0-20230616153212-d0123d134345
+replace github.com/cockroachdb/pebble => github.com/nvanbenschoten/pebble v0.0.0-20230616155301-1fc1c8b5b0f0
