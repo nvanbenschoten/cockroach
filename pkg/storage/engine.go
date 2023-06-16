@@ -1069,6 +1069,9 @@ func (stats BatchCommitStats) SafeFormat(p redact.SafePrinter, _ rune) {
 	if stats.PrepareLockWaitDuration > 100*time.Microsecond {
 		p.Printf(" prepare-lock-wait %s", stats.PrepareLockWaitDuration)
 	}
+	if stats.PrepareEnqueueWaitDuration > 100*time.Microsecond {
+		p.Printf(" prepare-enqueue-wait %s", stats.PrepareEnqueueWaitDuration)
+	}
 	if stats.PrepareWriteWaitDuration > 100*time.Microsecond {
 		p.Printf(" prepare-write-wait %s", stats.PrepareWriteWaitDuration)
 	}
