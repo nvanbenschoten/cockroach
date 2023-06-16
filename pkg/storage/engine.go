@@ -1044,7 +1044,7 @@ type BatchCommitStats struct {
 // SafeFormat implements redact.SafeFormatter. It does not print the total
 // duration.
 func (stats BatchCommitStats) SafeFormat(p redact.SafePrinter, _ rune) {
-	p.Printf("commit-wait %s", stats.CommitWaitDuration)
+	p.Printf("total %s", stats.TotalDuration)
 	if stats.WALQueueWaitDuration > 0 {
 		p.Printf(" wal-q %s", stats.WALQueueWaitDuration)
 	}
@@ -1059,6 +1059,21 @@ func (stats BatchCommitStats) SafeFormat(p redact.SafePrinter, _ rune) {
 	}
 	if stats.SemaphoreWaitDuration > 0 {
 		p.Printf(" sem %s", stats.SemaphoreWaitDuration)
+	}
+	if stats.CommitWaitDuration > 0 {
+		p.Printf("commit-wait %s", stats.CommitWaitDuration)
+	}
+	if stats.PrepareWaitDuration > 100*time.Microsecond {
+		p.Printf("prepare-wait %s", stats.PrepareWaitDuration)
+	}
+	if stats.ApplyWaitDuration > 100*time.Microsecond {
+		p.Printf("apply-wait %s", stats.ApplyWaitDuration)
+	}
+	if stats.PublishWaitDuration > 100*time.Microsecond {
+		p.Printf("publish-wait %s", stats.PublishWaitDuration)
+	}
+	if stats.CommitQueueSemWaitDuration > 100*time.Microsecond {
+		p.Printf("commit-queue-sem-wait %s", stats.CommitQueueSemWaitDuration)
 	}
 }
 
