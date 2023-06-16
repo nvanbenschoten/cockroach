@@ -1075,6 +1075,12 @@ func (stats BatchCommitStats) SafeFormat(p redact.SafePrinter, _ rune) {
 	if stats.PrepareWriteWaitDuration > 100*time.Microsecond {
 		p.Printf(" prepare-write-wait %s", stats.PrepareWriteWaitDuration)
 	}
+	if stats.CommitWaitLockWaitDuration > 100*time.Microsecond {
+		p.Printf(" commit-write-lock-wait %s", stats.CommitWaitLockWaitDuration)
+	}
+	if stats.CommitWaitRotateWaitDuration > 100*time.Microsecond {
+		p.Printf(" commit-write-rotate-wait %s", stats.CommitWaitRotateWaitDuration)
+	}
 	if stats.ApplyWaitDuration > 100*time.Microsecond {
 		p.Printf(" apply-wait %s", stats.ApplyWaitDuration)
 	}

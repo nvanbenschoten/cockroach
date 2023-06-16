@@ -1797,8 +1797,8 @@ github.com/nightlyone/lockfile v1.0.0 h1:RHep2cFKK4PonZJDdEl4GmkabuhbsRMgk/k3uAm
 github.com/nightlyone/lockfile v1.0.0/go.mod h1:rywoIealpdNse2r832aiD9jRk8ErCatROs6LzC841CI=
 github.com/nishanths/predeclared v0.0.0-20200524104333-86fad755b4d3/go.mod h1:nt3d53pc1VYcphSCIaYAJtnPYnr3Zyn8fMq2wvPGPso=
 github.com/nkovacs/streamquote v0.0.0-20170412213628-49af9bddb229/go.mod h1:0aYXnNPJ8l7uZxf45rWW1a/uME32OF0rhiYGNQ2oF2E=
-github.com/nvanbenschoten/pebble v0.0.0-20230616141622-f33cbc83afe6 h1:lKnZEk6A0rnxF0/dYp2Q+79b0brucg+z/cuf7UlCe64=
-github.com/nvanbenschoten/pebble v0.0.0-20230616141622-f33cbc83afe6/go.mod h1:ZoLpjYdSY0BC1it7VZT20L4tm0OhBawe5awAtC0S5Vk=
+github.com/nvanbenschoten/pebble v0.0.0-20230616150508-fca322504e2c h1:97STLG1BVdAok6EgMPs+uIcQuXpttZkPRDPkiEwSsLE=
+github.com/nvanbenschoten/pebble v0.0.0-20230616150508-fca322504e2c/go.mod h1:ZoLpjYdSY0BC1it7VZT20L4tm0OhBawe5awAtC0S5Vk=
 github.com/nxadm/tail v1.4.4/go.mod h1:kenIhsEOeOJmVchQTgglprH7qJGnHDVpk1VPCcaMI8A=
 github.com/oklog/oklog v0.3.2/go.mod h1:FCV+B7mhrz4o+ueLpx+KqkyXRGMWOYEvfiXtdGtbWGs=
 github.com/oklog/run v1.0.0/go.mod h1:dlhp/R75TPv97u0XWUtDeV/lRKWPKSdTuV0TZvrmrQA=
