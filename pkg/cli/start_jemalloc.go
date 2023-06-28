@@ -43,6 +43,11 @@ package cli
 //   return enabled;
 // }
 //
+// int set_tcache_max() {
+//   size_t tcacheMax = 1<<17; // 128 KiB
+//   return je_mallctl("opt.tcache_max", NULL, NULL, &tcacheMax, sizeof(tcacheMax));
+// }
+//
 // // Write a heap profile to "filename". Returns true on success, false on error.
 // int dump_heap_profile(const char *filename) {
 //   return je_mallctl("prof.dump", NULL, NULL, &filename, sizeof(const char *));
@@ -59,6 +64,9 @@ import (
 func init() {
 	if C.is_profiling_enabled() {
 		profiler.SetJemallocHeapDumpFn(writeJemallocProfile)
+	}
+	if errCode := C.set_tcache_max(); errCode != 0 {
+		panic(fmt.Errorf("error code %d", errCode))
 	}
 }
 
