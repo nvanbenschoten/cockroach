@@ -817,7 +817,7 @@ DISTDIR_FILES = {
     "https://storage.googleapis.com/cockroach-godeps/gomod/github.com/nightlyone/lockfile/com_github_nightlyone_lockfile-v1.0.0.zip": "0abd22d55b704c18426167732414806b2a70d99bce65fa9f943cb88c185689ad",
     "https://storage.googleapis.com/cockroach-godeps/gomod/github.com/nishanths/predeclared/com_github_nishanths_predeclared-v0.0.0-20200524104333-86fad755b4d3.zip": "f3a40ab7d3e0570570e7bc41a6cc7b08b3e23df5ef5f08553ef622a3752d6e03",
     "https://storage.googleapis.com/cockroach-godeps/gomod/github.com/nkovacs/streamquote/com_github_nkovacs_streamquote-v0.0.0-20170412213628-49af9bddb229.zip": "679a789b4b1409ea81054cb12e5f8441199f5fb17d4a2d3510c51f3aa5f3f0cc",
-    "https://storage.googleapis.com/cockroach-godeps/gomod/github.com/nvanbenschoten/pebble/com_github_nvanbenschoten_pebble-v0.0.0-20230706020435-6acfa5522f9f.zip": "964a7433545b9eb905eab54d16af07433ef16310be65b82dd91c854017dd6d3f",
+    "https://storage.googleapis.com/cockroach-godeps/gomod/github.com/nvanbenschoten/pebble/com_github_nvanbenschoten_pebble-v0.0.0-20230706024602-67048fa8e7b9.zip": "924b56ebb4a075c28fa88d11fe925c1d08d01d618bc666c4eeef4b6f589010e6",
     "https://storage.googleapis.com/cockroach-godeps/gomod/github.com/nxadm/tail/com_github_nxadm_tail-v1.4.4.zip": "c9bb9d05b3afd1bacc35e7d305a22b07cd7db38f5fabd4ccd95a9227c5709890",
     "https://storage.googleapis.com/cockroach-godeps/gomod/github.com/oklog/oklog/com_github_oklog_oklog-v0.3.2.zip": "b37d032de5b0dd5e96063c06b77fcb29a692a07bd52a4d99a361f2fef68822ec",
     "https://storage.googleapis.com/cockroach-godeps/gomod/github.com/oklog/run/com_github_oklog_run-v1.1.0.zip": "d6f69fc71aa155043f926c2a98fc1e5b3a8ebab422f2f36d785cfba38a7ebee4",
