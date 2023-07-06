@@ -406,6 +406,7 @@ type CloneContext struct {
 // For performance, every {MVCC,Engine}Iterator must specify either Prefix or
 // UpperBound.
 type IterOptions struct {
+	Context context.Context
 	// If Prefix is true, Seek will use the user-key prefix of the supplied
 	// {MVCC,Engine}Key (the Key field) to restrict which sstables are searched,
 	// but iteration (using Next) over keys without the same user-key prefix
@@ -484,6 +485,13 @@ type IterOptions struct {
 	// is minimized if the probability of the key existing is not low or if
 	// this is a one-time Seek (where loading the data block directly is better).
 	useL6Filters bool
+}
+
+func (opts *IterOptions) getContext() context.Context {
+	if opts.Context != nil {
+		return opts.Context
+	}
+	return context.Background()
 }
 
 // IterKeyType configures which types of keys an iterator should surface.

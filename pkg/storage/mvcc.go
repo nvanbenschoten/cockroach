@@ -1134,6 +1134,7 @@ func MVCCGetWithValueHeader(
 	}
 	iter := newMVCCIterator(
 		reader, timestamp, false /* rangeKeyMasking */, opts.DontInterleaveIntents, IterOptions{
+			Context:  ctx,
 			KeyTypes: IterKeyTypePointsAndRanges,
 			Prefix:   true,
 		},
