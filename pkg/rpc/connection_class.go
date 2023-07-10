@@ -34,6 +34,8 @@ const (
 	// DefaultClass is the default ConnectionClass and should be used for most
 	// client traffic.
 	DefaultClass ConnectionClass = iota
+	// ReadOnlyClass class if the default ConnnectionClass for read-only traffic.
+	ReadOnlyClass
 	// SystemClass is the ConnectionClass used for system traffic.
 	SystemClass
 	// RangefeedClass is the ConnectionClass used for rangefeeds.
@@ -47,6 +49,7 @@ const (
 var connectionClassName = map[ConnectionClass]string{
 	DefaultClass:   "default",
 	SystemClass:    "system",
+	ReadOnlyClass:  "readonly",
 	RangefeedClass: "rangefeed",
 }
 
@@ -65,7 +68,7 @@ var systemClassKeyPrefixes = []roachpb.RKey{
 
 // ConnectionClassForKey determines the ConnectionClass which should be used
 // for traffic addressed to the RKey.
-func ConnectionClassForKey(key roachpb.RKey) ConnectionClass {
+func ConnectionClassForKey(key roachpb.RKey, readOnly bool) ConnectionClass {
 	// An empty RKey addresses range 1 and warrants SystemClass.
 	if len(key) == 0 {
 		return SystemClass
@@ -74,6 +77,9 @@ func ConnectionClassForKey(key roachpb.RKey) ConnectionClass {
 		if bytes.HasPrefix(key, prefix) {
 			return SystemClass
 		}
+	}
+	if readOnly {
+		return ReadOnlyClass
 	}
 	return DefaultClass
 }

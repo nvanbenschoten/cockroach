@@ -2074,7 +2074,7 @@ func (ds *DistSender) sendToReplicas(
 	}
 
 	opts := SendOptions{
-		class:                  rpc.ConnectionClassForKey(desc.RSpan().Key),
+		class:                  rpc.ConnectionClassForKey(desc.RSpan().Key, ba.IsReadOnly()),
 		metrics:                &ds.metrics,
 		dontConsiderConnHealth: ds.dontConsiderConnHealth,
 	}
