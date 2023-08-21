@@ -49,7 +49,8 @@ type txnLockGatekeeper struct {
 	allowConcurrentRequests bool
 	// requestInFlight is set while a request is being processed by the wrapped
 	// sender. Used to detect and prevent concurrent txn use.
-	requestInFlight bool
+	requestInFlight    bool
+	requestInFlightStr string
 }
 
 // SendLocked implements the lockedSender interface.
@@ -67,11 +68,13 @@ func (gs *txnLockGatekeeper) SendLocked(
 	if !gs.allowConcurrentRequests && !ba.IsSingleHeartbeatTxnRequest() {
 		if gs.requestInFlight {
 			return nil, kvpb.NewError(
-				errors.AssertionFailedf("concurrent txn use detected. ba: %s", ba))
+				errors.AssertionFailedf("concurrent txn use detected. ba: %s, other: %s", ba, gs.requestInFlightStr))
 		}
 		gs.requestInFlight = true
+		gs.requestInFlightStr = ba.String()
 		defer func() {
 			gs.requestInFlight = false
+			gs.requestInFlightStr = ""
 		}()
 	}
 

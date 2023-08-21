@@ -13,6 +13,7 @@ package kv
 import (
 	"context"
 	"fmt"
+	"runtime/debug"
 	"time"
 
 	"github.com/cockroachdb/cockroach/pkg/kv/kvpb"
@@ -838,6 +839,7 @@ func (txn *Txn) rollback(ctx context.Context) *kvpb.Error {
 	// Raft, and the intent resolver has free async task capacity, the actual
 	// cleanup will be independent of this context.
 	stopper := txn.db.ctx.Stopper
+	stack := string(debug.Stack())
 	ctx, cancel := stopper.WithCancelOnQuiesce(txn.db.AnnotateCtx(context.Background()))
 	if err := stopper.RunAsyncTask(ctx, "async-rollback", func(ctx context.Context) {
 		defer cancel()
@@ -856,9 +858,9 @@ func (txn *Txn) rollback(ctx context.Context) *kvpb.Error {
 						// triggered by a ctx canceled while a commit is in-flight (and it's too
 						// late for it to be canceled), and so the rollback finds the txn to be
 						// already committed. We don't spam the logs with those.
-						log.VEventf(ctx, 2, "async rollback failed: %s", pErr)
+						log.VEventf(ctx, 2, "async rollback failed: %+v", pErr)
 					} else {
-						log.Infof(ctx, "async rollback failed: %s", pErr)
+						log.Infof(ctx, "async rollback failed: %+v\n%s", pErr, stack)
 					}
 				}
 				return nil
