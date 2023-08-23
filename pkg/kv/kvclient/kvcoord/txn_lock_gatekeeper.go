@@ -12,10 +12,12 @@ package kvcoord
 
 import (
 	"context"
+	"runtime/debug"
 	"sync"
 
 	"github.com/cockroachdb/cockroach/pkg/kv"
 	"github.com/cockroachdb/cockroach/pkg/kv/kvpb"
+	"github.com/cockroachdb/cockroach/pkg/util/tracing"
 	"github.com/cockroachdb/errors"
 )
 
@@ -49,8 +51,10 @@ type txnLockGatekeeper struct {
 	allowConcurrentRequests bool
 	// requestInFlight is set while a request is being processed by the wrapped
 	// sender. Used to detect and prevent concurrent txn use.
-	requestInFlight    bool
-	requestInFlightStr string
+	requestInFlight      bool
+	requestInFlightStr   string
+	requestInFlightStack string
+	requestInFlightTrace string
 }
 
 // SendLocked implements the lockedSender interface.
@@ -66,15 +70,26 @@ func (gs *txnLockGatekeeper) SendLocked(
 	//
 	// As a special case, allow for async heartbeats to be sent whenever.
 	if !gs.allowConcurrentRequests && !ba.IsSingleHeartbeatTxnRequest() {
+		stack := string(debug.Stack())
+		var recording string
+		if sp := tracing.SpanFromContext(ctx); sp != nil && !sp.IsNoop() {
+			recording = sp.GetConfiguredRecording().String()
+		}
 		if gs.requestInFlight {
 			return nil, kvpb.NewError(
-				errors.AssertionFailedf("concurrent txn use detected. ba: %s, other: %s", ba, gs.requestInFlightStr))
+				errors.AssertionFailedf("concurrent txn use detected. "+
+					"ba: %s, other: %s\n\n\nmy stack:%s\n\n\ntheir stack:%s\n\n\nmy trace:%s\n\n\ntheir trace:%s",
+					ba, gs.requestInFlightStr, stack, gs.requestInFlightStack, recording, gs.requestInFlightTrace))
 		}
 		gs.requestInFlight = true
 		gs.requestInFlightStr = ba.String()
+		gs.requestInFlightStack = stack
+		gs.requestInFlightTrace = recording
 		defer func() {
 			gs.requestInFlight = false
 			gs.requestInFlightStr = ""
+			gs.requestInFlightStack = ""
+			gs.requestInFlightTrace = ""
 		}()
 	}
 
