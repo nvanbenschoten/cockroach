@@ -14,6 +14,7 @@ import (
 	"context"
 	"fmt"
 	"runtime/debug"
+	"sync/atomic"
 	"time"
 
 	"github.com/cockroachdb/cockroach/pkg/kv/kvpb"
@@ -96,6 +97,8 @@ type Txn struct {
 	// remaining just use the zero value. The set of code paths that initialize
 	// this are expected to expand over time.
 	admissionHeader kvpb.AdmissionHeader
+
+	asyncRollbacks atomic.Int64
 }
 
 // NewTxn returns a new RootTxn.
@@ -843,6 +846,13 @@ func (txn *Txn) rollback(ctx context.Context) *kvpb.Error {
 	ctx, cancel := stopper.WithCancelOnQuiesce(txn.db.AnnotateCtx(context.Background()))
 	if err := stopper.RunAsyncTask(ctx, "async-rollback", func(ctx context.Context) {
 		defer cancel()
+
+		inFlight := txn.asyncRollbacks.Add(1)
+		if inFlight > 1 {
+			log.Fatalf(ctx, "async rollback already in flight: %s", stack)
+		}
+		defer txn.asyncRollbacks.Add(-1)
+
 		// A batch with only endTxnReq is not subject to admission control, in
 		// order to reduce contention by releasing locks. In multi-tenant
 		// settings, it will be subject to admission control, and the zero

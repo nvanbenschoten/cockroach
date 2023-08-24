@@ -847,7 +847,7 @@ func (tc *TxnCoordSender) handleRetryableErrLocked(
 		tc.mu.txn.Status = roachpb.ABORTED
 		// Abort the old txn. The client is not supposed to use use this
 		// TxnCoordSender any more.
-		tc.interceptorAlloc.txnHeartbeater.abortTxnAsyncLocked(ctx)
+		tc.interceptorAlloc.txnHeartbeater.abortTxnAsyncLocked1(ctx)
 		tc.cleanupTxnLocked(ctx)
 		return retErr
 	}
