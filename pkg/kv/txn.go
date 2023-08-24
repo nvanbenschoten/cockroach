@@ -849,7 +849,7 @@ func (txn *Txn) rollback(ctx context.Context) *kvpb.Error {
 
 		inFlight := txn.asyncRollbacks.Add(1)
 		if inFlight > 1 {
-			log.Fatalf(ctx, "async rollback already in flight: %s", stack)
+			log.Infof(ctx, "async rollback already in flight: %s", stack)
 		}
 		defer txn.asyncRollbacks.Add(-1)
 

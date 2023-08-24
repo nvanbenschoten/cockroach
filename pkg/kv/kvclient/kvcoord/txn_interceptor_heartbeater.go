@@ -861,6 +861,186 @@ func (h *txnHeartbeater) abortTxnAsyncLocked4(ctx context.Context) {
 	}
 }
 
+// abortTxnAsyncLocked sends an EndTxn(commit=false) asynchronously.
+// The purpose of the async cleanup is to resolve transaction intents as soon
+// as possible when a transaction coordinator observes an ABORTED transaction.
+func (h *txnHeartbeater) abortTxnAsyncLocked5(ctx context.Context) {
+
+	// If a request is in flight, we must wait for it to complete first such
+	// that txnPipeliner can record its lock spans and attach them to the EndTxn
+	// request we'll send.
+	if h.mu.ifReqs > 0 {
+		h.mu.abortTxnAsyncPending = true
+		log.VEventf(ctx, 2, "async abort waiting for in-flight request for txn %s", h.mu.txn)
+		return
+	}
+
+	// Construct a batch with an EndTxn request.
+	txn := h.mu.txn.Clone()
+	ba := &kvpb.BatchRequest{}
+	ba.Header = kvpb.Header{Txn: txn}
+	ba.Add(&kvpb.EndTxnRequest{
+		Commit: false,
+		// Resolved intents should maintain an abort span entry to prevent
+		// concurrent requests from failing to notice the transaction was aborted.
+		Poison: true,
+	})
+
+	const taskName = "txnHeartbeater: aborting txn"
+	log.VEventf(ctx, 2, "async abort for txn: %s", txn)
+	if err := h.stopper.RunAsyncTask(h.AnnotateCtx(context.Background()), taskName,
+		func(ctx context.Context) {
+			if err := contextutil.RunWithTimeout(ctx, taskName, abortTxnAsyncTimeout,
+				func(ctx context.Context) error {
+					h.mu.Lock()
+					defer h.mu.Unlock()
+
+					// If we find an abortTxnAsyncResultC, that means an async
+					// rollback request is already in flight, so there's no
+					// point in us running another. This can happen because the
+					// TxnCoordSender also calls abortTxnAsyncLocked()
+					// independently of the heartbeat loop.
+					if h.mu.abortTxnAsyncResultC != nil {
+						log.VEventf(ctx, 2,
+							"skipping async abort due to concurrent async abort for %s", txn)
+						return nil
+					}
+
+					// TxnCoordSender allows EndTxn(commit=false) through even
+					// after we set finalObservedStatus, and that request can
+					// race with us for the mutex. Thus, if we find an in-flight
+					// request here, after checking ifReqs=0 before being spawned,
+					// we deduce that it must have been a rollback and there's no
+					// point in sending another rollback.
+					if h.mu.ifReqs > 0 {
+						log.VEventf(ctx, 2,
+							"skipping async abort due to client rollback for %s", txn)
+						return nil
+					}
+
+					// Set up a result channel to signal to an incoming client
+					// rollback that an async rollback is already in progress,
+					// and pass it the result. The buffer allows storing the
+					// result even when no client rollback arrives. Recall that
+					// the SendLocked() call below releases the mutex while
+					// running, allowing concurrent incoming requests.
+					h.mu.abortTxnAsyncResultC = make(chan abortTxnAsyncResult, 1)
+
+					// Send the abort request through the interceptor stack. This is
+					// important because we need the txnPipeliner to append lock spans
+					// to the EndTxn request.
+					br, pErr := h.wrapped.SendLocked(ctx, ba)
+					if pErr != nil {
+						log.VErrEventf(ctx, 1, "async abort failed for %s: %s ", txn, pErr)
+						h.metrics.AsyncRollbacksFailed.Inc(1)
+					}
+
+					// Pass the result to a waiting client rollback, if any, and
+					// remove the channel since we're no longer in flight.
+					h.mu.abortTxnAsyncResultC <- abortTxnAsyncResult{br: br, pErr: pErr}
+					h.mu.abortTxnAsyncResultC = nil
+					return nil
+				},
+			); err != nil {
+				log.VEventf(ctx, 1, "async abort failed for %s: %s", txn, err)
+			}
+		},
+	); err != nil {
+		log.Warningf(ctx, "%v", err)
+		h.metrics.AsyncRollbacksFailed.Inc(1)
+	}
+}
+
+// abortTxnAsyncLocked sends an EndTxn(commit=false) asynchronously.
+// The purpose of the async cleanup is to resolve transaction intents as soon
+// as possible when a transaction coordinator observes an ABORTED transaction.
+func (h *txnHeartbeater) abortTxnAsyncLocked6(ctx context.Context) {
+
+	// If a request is in flight, we must wait for it to complete first such
+	// that txnPipeliner can record its lock spans and attach them to the EndTxn
+	// request we'll send.
+	if h.mu.ifReqs > 0 {
+		h.mu.abortTxnAsyncPending = true
+		log.VEventf(ctx, 2, "async abort waiting for in-flight request for txn %s", h.mu.txn)
+		return
+	}
+
+	// Construct a batch with an EndTxn request.
+	txn := h.mu.txn.Clone()
+	ba := &kvpb.BatchRequest{}
+	ba.Header = kvpb.Header{Txn: txn}
+	ba.Add(&kvpb.EndTxnRequest{
+		Commit: false,
+		// Resolved intents should maintain an abort span entry to prevent
+		// concurrent requests from failing to notice the transaction was aborted.
+		Poison: true,
+	})
+
+	const taskName = "txnHeartbeater: aborting txn"
+	log.VEventf(ctx, 2, "async abort for txn: %s", txn)
+	if err := h.stopper.RunAsyncTask(h.AnnotateCtx(context.Background()), taskName,
+		func(ctx context.Context) {
+			if err := contextutil.RunWithTimeout(ctx, taskName, abortTxnAsyncTimeout,
+				func(ctx context.Context) error {
+					h.mu.Lock()
+					defer h.mu.Unlock()
+
+					// If we find an abortTxnAsyncResultC, that means an async
+					// rollback request is already in flight, so there's no
+					// point in us running another. This can happen because the
+					// TxnCoordSender also calls abortTxnAsyncLocked()
+					// independently of the heartbeat loop.
+					if h.mu.abortTxnAsyncResultC != nil {
+						log.VEventf(ctx, 2,
+							"skipping async abort due to concurrent async abort for %s", txn)
+						return nil
+					}
+
+					// TxnCoordSender allows EndTxn(commit=false) through even
+					// after we set finalObservedStatus, and that request can
+					// race with us for the mutex. Thus, if we find an in-flight
+					// request here, after checking ifReqs=0 before being spawned,
+					// we deduce that it must have been a rollback and there's no
+					// point in sending another rollback.
+					if h.mu.ifReqs > 0 {
+						log.VEventf(ctx, 2,
+							"skipping async abort due to client rollback for %s", txn)
+						return nil
+					}
+
+					// Set up a result channel to signal to an incoming client
+					// rollback that an async rollback is already in progress,
+					// and pass it the result. The buffer allows storing the
+					// result even when no client rollback arrives. Recall that
+					// the SendLocked() call below releases the mutex while
+					// running, allowing concurrent incoming requests.
+					h.mu.abortTxnAsyncResultC = make(chan abortTxnAsyncResult, 1)
+
+					// Send the abort request through the interceptor stack. This is
+					// important because we need the txnPipeliner to append lock spans
+					// to the EndTxn request.
+					br, pErr := h.wrapped.SendLocked(ctx, ba)
+					if pErr != nil {
+						log.VErrEventf(ctx, 1, "async abort failed for %s: %s ", txn, pErr)
+						h.metrics.AsyncRollbacksFailed.Inc(1)
+					}
+
+					// Pass the result to a waiting client rollback, if any, and
+					// remove the channel since we're no longer in flight.
+					h.mu.abortTxnAsyncResultC <- abortTxnAsyncResult{br: br, pErr: pErr}
+					h.mu.abortTxnAsyncResultC = nil
+					return nil
+				},
+			); err != nil {
+				log.VEventf(ctx, 1, "async abort failed for %s: %s", txn, err)
+			}
+		},
+	); err != nil {
+		log.Warningf(ctx, "%v", err)
+		h.metrics.AsyncRollbacksFailed.Inc(1)
+	}
+}
+
 // firstLockingIndex returns the index of the first request that acquires locks
 // in the BatchRequest. Returns -1 if the batch has no intention to acquire
 // locks. It also verifies that if an EndTxnRequest is included, then it is the

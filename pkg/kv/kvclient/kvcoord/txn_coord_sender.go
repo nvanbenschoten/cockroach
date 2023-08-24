@@ -741,7 +741,7 @@ func (tc *TxnCoordSender) maybeRejectClientLocked(
 		// See the comment on txnHeartbeater.mu.finalObservedStatus for more details.
 		abortedErr := kvpb.NewErrorWithTxn(
 			kvpb.NewTransactionAbortedError(kvpb.ABORT_REASON_CLIENT_REJECT), &tc.mu.txn)
-		return kvpb.NewError(tc.handleRetryableErrLocked(ctx, abortedErr))
+		return kvpb.NewError(tc.handleRetryableErrLocked(ctx, abortedErr, 1))
 	case protoStatus != roachpb.PENDING || hbObservedStatus != roachpb.PENDING:
 		// The transaction proto is in an unexpected state.
 		return kvpb.NewErrorf(
@@ -777,7 +777,7 @@ func (tc *TxnCoordSender) UpdateStateOnRemoteRetryableErr(
 ) *kvpb.Error {
 	tc.mu.Lock()
 	defer tc.mu.Unlock()
-	return kvpb.NewError(tc.handleRetryableErrLocked(ctx, pErr))
+	return kvpb.NewError(tc.handleRetryableErrLocked(ctx, pErr, 2))
 }
 
 // handleRetryableErrLocked takes a retriable error and creates a
@@ -788,7 +788,7 @@ func (tc *TxnCoordSender) UpdateStateOnRemoteRetryableErr(
 // expected to check the ID of the resulting transaction. If the TxnCoordSender
 // can still be used, it will have been prepared for a new epoch.
 func (tc *TxnCoordSender) handleRetryableErrLocked(
-	ctx context.Context, pErr *kvpb.Error,
+	ctx context.Context, pErr *kvpb.Error, num int,
 ) *kvpb.TransactionRetryWithProtoRefreshError {
 	// If the error is a transaction retry error, update metrics to
 	// reflect the reason for the restart. More details about the
@@ -847,7 +847,14 @@ func (tc *TxnCoordSender) handleRetryableErrLocked(
 		tc.mu.txn.Status = roachpb.ABORTED
 		// Abort the old txn. The client is not supposed to use use this
 		// TxnCoordSender any more.
-		tc.interceptorAlloc.txnHeartbeater.abortTxnAsyncLocked1(ctx)
+		log.Infof(ctx, "handleRetryableErrLocked ABORT: %s\n%s", tc.mu.txn, string(debug.Stack()))
+		if num == 0 {
+			tc.interceptorAlloc.txnHeartbeater.abortTxnAsyncLocked1(ctx)
+		} else if num == 1 {
+			tc.interceptorAlloc.txnHeartbeater.abortTxnAsyncLocked5(ctx)
+		} else {
+			tc.interceptorAlloc.txnHeartbeater.abortTxnAsyncLocked6(ctx)
+		}
 		tc.cleanupTxnLocked(ctx)
 		return retErr
 	}
@@ -920,7 +927,7 @@ func (tc *TxnCoordSender) updateStateLocked(
 			log.Fatalf(ctx, "retryable error for the wrong txn. ba.Txn: %s. pErr: %s",
 				ba.Txn, pErr)
 		}
-		return kvpb.NewError(tc.handleRetryableErrLocked(ctx, pErr))
+		return kvpb.NewError(tc.handleRetryableErrLocked(ctx, pErr, 3))
 	}
 
 	// This is the non-retriable error case.
