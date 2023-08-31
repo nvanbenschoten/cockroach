@@ -251,6 +251,49 @@ func TestMVCCHistories(t *testing.T) {
 			return err
 		}
 
+		reportReplicatedLocks := func(buf *redact.StringBuilder) error {
+			for _, span := range spans {
+				ltStart, _ := keys.LockTableSingleKey(span.Key, nil)
+				ltEnd, _ := keys.LockTableSingleKey(span.EndKey, nil)
+				iter, err := engine.NewEngineIterator(storage.IterOptions{LowerBound: ltStart, UpperBound: ltEnd})
+				if err != nil {
+					return err
+				}
+				defer iter.Close()
+
+				var meta enginepb.MVCCMetadata
+				for valid, err := iter.SeekEngineKeyGE(storage.EngineKey{Key: ltStart}); ; valid, err = iter.NextEngineKey() {
+					if err != nil {
+						return err
+					} else if !valid {
+						break
+					}
+					eKey, err := iter.EngineKey()
+					if err != nil {
+						return err
+					}
+					ltKey, err := eKey.ToLockTableKey()
+					if err != nil {
+						return errors.Wrapf(err, "decoding LockTable key: %v", eKey)
+					}
+					if ltKey.Strength == lock.Intent {
+						// Reported above.
+						continue
+					}
+					// Unmarshal.
+					v, err := iter.UnsafeValue()
+					if err != nil {
+						return err
+					}
+					if err := protoutil.Unmarshal(v, &meta); err != nil {
+						return errors.Wrapf(err, "unmarshaling mvcc meta: %v", ltKey)
+					}
+					buf.Printf("lock (%s): %v -> %+v\n", ltKey.Strength, ltKey.Key, &meta)
+				}
+			}
+			return nil
+		}
+
 		// reportSSTEntries outputs entries from a raw SSTable. It uses a raw
 		// SST iterator in order to accurately represent the raw SST data.
 		reportSSTEntries := func(buf *redact.StringBuilder, name string, sst []byte) error {
@@ -455,6 +498,15 @@ func TestMVCCHistories(t *testing.T) {
 								foundErr = err
 							} else {
 								buf.Printf("error reading data: (%T:) %v\n", err, err)
+							}
+						}
+						err = reportReplicatedLocks(&buf)
+						if err != nil {
+							if foundErr == nil {
+								// Handle the error below.
+								foundErr = err
+							} else {
+								buf.Printf("error reading replicated locks: (%T:) %v\n", err, err)
 							}
 						}
 						for i, sst := range e.ssts {
@@ -723,7 +775,11 @@ var commands = map[string]cmd{
 	"resolve_intent":       {typDataUpdate, cmdResolveIntent},
 	"resolve_intent_range": {typDataUpdate, cmdResolveIntentRange},
 	"check_intent":         {typReadOnly, cmdCheckIntent},
-	"add_lock":             {typLocksUpdate, cmdAddLock},
+	// TODO(nvanbenschoten): name this add_unreplicated_lock.
+	"add_lock": {typLocksUpdate, cmdAddLock},
+
+	"check_lock":   {typReadOnly, cmdCheckLock},
+	"acquire_lock": {typDataUpdate, cmdAcquireLock},
 
 	"clear":                 {typDataUpdate, cmdClear},
 	"clear_range":           {typDataUpdate, cmdClearRange},
@@ -999,6 +1055,24 @@ func cmdAddLock(e *evalCtx) error {
 	key := e.getKey()
 	e.locks[string(key)] = txn
 	return nil
+}
+
+func cmdCheckLock(e *evalCtx) error {
+	return e.withReader(func(r storage.Reader) error {
+		txn := e.getTxn(mandatory)
+		key := e.getKey()
+		str := e.getStrength()
+		return storage.MVCCCheckLock(e.ctx, r, txn, str, key, 0)
+	})
+}
+
+func cmdAcquireLock(e *evalCtx) error {
+	return e.withWriter("acquire_lock", func(rw storage.ReadWriter) error {
+		txn := e.getTxn(mandatory)
+		key := e.getKey()
+		str := e.getStrength()
+		return storage.MVCCAcquireLock(e.ctx, rw, txn, str, key, 0)
+	})
 }
 
 func cmdClear(e *evalCtx) error {
@@ -2408,6 +2482,21 @@ func (e *evalCtx) getKeyRange() (sk, ek roachpb.Key) {
 		ek = toKey(endKeyS, codec)
 	}
 	return sk, ek
+}
+
+func (e *evalCtx) getStrength() lock.Strength {
+	e.t.Helper()
+	var strS string
+	e.scanArg("str", &strS)
+	switch strS {
+	case "shared":
+		return lock.Shared
+	case "exclusive":
+		return lock.Exclusive
+	default:
+		e.Fatalf("unknown lock strength: %s", strS)
+		return 0
+	}
 }
 
 func (e *evalCtx) getTenantCodec() keys.SQLCodec {

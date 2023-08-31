@@ -15,6 +15,7 @@ go_library(
         "fingerprint_writer.go",
         "in_mem.go",
         "intent_interleaving_iter.go",
+        "lock_table_scanner.go",
         "min_version.go",
         "mvcc.go",
         "mvcc_incremental_iterator.go",
