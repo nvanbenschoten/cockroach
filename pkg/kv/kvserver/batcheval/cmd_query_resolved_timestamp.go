@@ -17,6 +17,7 @@ import (
 	"github.com/cockroachdb/cockroach/pkg/keys"
 	"github.com/cockroachdb/cockroach/pkg/kv/kvpb"
 	"github.com/cockroachdb/cockroach/pkg/kv/kvserver/batcheval/result"
+	"github.com/cockroachdb/cockroach/pkg/kv/kvserver/concurrency/lock"
 	"github.com/cockroachdb/cockroach/pkg/kv/kvserver/gc"
 	"github.com/cockroachdb/cockroach/pkg/roachpb"
 	"github.com/cockroachdb/cockroach/pkg/settings"
@@ -124,9 +125,13 @@ func computeMinIntentTimestamp(
 		if err != nil {
 			return hlc.Timestamp{}, nil, err
 		}
-		lockedKey, err := keys.DecodeLockTableSingleKey(engineKey.Key)
+		lockedKey, err := engineKey.ToLockTableKey()
 		if err != nil {
 			return hlc.Timestamp{}, nil, errors.Wrapf(err, "decoding LockTable key: %v", lockedKey)
+		}
+		if lockedKey.Strength != lock.Intent {
+			// TODO: test.
+			continue
 		}
 		// Unmarshal.
 		v, err := iter.UnsafeValue()

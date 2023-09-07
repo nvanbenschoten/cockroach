@@ -16,6 +16,7 @@ import (
 
 	"github.com/cockroachdb/cockroach/pkg/keys"
 	"github.com/cockroachdb/cockroach/pkg/kv/kvpb"
+	"github.com/cockroachdb/cockroach/pkg/kv/kvserver/concurrency/lock"
 	"github.com/cockroachdb/cockroach/pkg/roachpb"
 	"github.com/cockroachdb/cockroach/pkg/storage"
 	"github.com/cockroachdb/cockroach/pkg/storage/enginepb"
@@ -130,9 +131,13 @@ func (s *SeparatedIntentScanner) ConsumeIntents(
 		if err != nil {
 			return err
 		}
-		lockedKey, err := keys.DecodeLockTableSingleKey(engineKey.Key)
+		lockedKey, err := engineKey.ToLockTableKey()
 		if err != nil {
 			return errors.Wrapf(err, "decoding LockTable key: %s", lockedKey)
+		}
+		if lockedKey.Strength != lock.Intent {
+			// TODO: test.
+			continue
 		}
 
 		v, err := s.iter.UnsafeValue()

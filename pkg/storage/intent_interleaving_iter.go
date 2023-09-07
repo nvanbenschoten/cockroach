@@ -20,7 +20,6 @@ import (
 	"github.com/cockroachdb/cockroach/pkg/kv/kvserver/concurrency/lock"
 	"github.com/cockroachdb/cockroach/pkg/roachpb"
 	"github.com/cockroachdb/cockroach/pkg/util"
-	"github.com/cockroachdb/cockroach/pkg/util/hlc"
 	"github.com/cockroachdb/cockroach/pkg/util/protoutil"
 	"github.com/cockroachdb/cockroach/pkg/util/uuid"
 	"github.com/cockroachdb/errors"
@@ -162,7 +161,7 @@ type intentInterleavingIter struct {
 
 	// intentIter is for iterating over separated intents, so that
 	// intentInterleavingIter can make them look as if they were interleaved.
-	intentIter      *pebbleIterator // EngineIterator
+	intentIter      *lockTableIter // EngineIterator
 	intentIterState pebble.IterValidityState
 	// The decoded key from the lock table. This is an unsafe key
 	// in that it is only valid when intentIter has not been
@@ -297,20 +296,18 @@ func newIntentInterleavingIterator(reader Reader, opts IterOptions) (MVCCIterato
 	// bound for prefix iteration, though since they don't need to, most callers
 	// don't.
 
-	intentOpts := opts
-
 	// There cannot be any range keys across the lock table, so create the intent
 	// iterator for point keys only, or return a normal MVCC iterator if only
 	// range keys are requested.
-	if intentOpts.KeyTypes == IterKeyTypeRangesOnly {
+	if opts.KeyTypes == IterKeyTypeRangesOnly {
 		return reader.NewMVCCIterator(MVCCKeyIterKind, opts)
 	}
-	intentOpts.KeyTypes = IterKeyTypePointsOnly
-	intentOpts.RangeKeyMaskingBelow = hlc.Timestamp{}
 
 	iiIter := intentInterleavingIterPool.Get().(*intentInterleavingIter)
 	intentKeyBuf := iiIter.intentKeyBuf
 	intentLimitKeyBuf := iiIter.intentLimitKeyBuf
+
+	intentOpts := lockTableIterOptions{Prefix: opts.Prefix, MatchMinStr: lock.Intent}
 	if opts.LowerBound != nil {
 		intentOpts.LowerBound, intentKeyBuf = keys.LockTableSingleKey(opts.LowerBound, intentKeyBuf)
 	} else if !opts.Prefix {
@@ -334,11 +331,10 @@ func newIntentInterleavingIterator(reader Reader, opts IterOptions) (MVCCIterato
 	//
 	// Note that we can reuse intentKeyBuf, intentLimitKeyBuf after
 	// NewEngineIterator returns.
-	intentEngineIter, err := reader.NewEngineIterator(intentOpts)
+	intentIter, err := newLockTableIter(reader, intentOpts)
 	if err != nil {
 		return nil, err
 	}
-	intentIter := intentEngineIter.(*pebbleIterator)
 
 	// The creation of these iterators can race with concurrent mutations, which
 	// may make them inconsistent with each other. So we clone here, to ensure
@@ -736,96 +732,106 @@ func (i *intentInterleavingIter) seekIntentIterAndDecodeLockKey(
 	} else {
 		iterState, err = i.intentIter.SeekEngineKeyGEWithLimit(seekKey, limitKey)
 	}
-	if err := i.tryDecodeLockKey(iterState, err); err != nil {
-		return err
-	}
-	if i.intentIterState != pebble.IterValid || i.intentKeyStr == lock.Intent {
-		return nil
-	}
-	return i.stepIntentIterAndDecodeLockKey(limitKey)
+	return i.tryDecodeLockKey(iterState, err)
+	//if err := i.tryDecodeLockKey(iterState, err); err != nil {
+	//	return err
+	//}
+	//if i.intentIterState != pebble.IterValid || i.intentKeyStr == lock.Intent {
+	//	return nil
+	//}
+	//return i.stepIntentIterAndDecodeLockKey(limitKey)
 }
 
 // stepIntentIterAndDecodeLockKey steps intentIter to the next intent key and
 // decodes it into i.intentKey.
 func (i *intentInterleavingIter) stepIntentIterAndDecodeLockKey(limitKey roachpb.Key) error {
-	// If this is a prefix iterator, we have already seeked to or past the
-	// intent key, which is ordered first, so we can stop iterating.
-	// TODO DURING REVIEW: do we want something like this to short-circuit the
-	// lock table iteration immediately for a prefix iterator?
-	if i.prefix {
-		return i.tryDecodeLockKey(pebble.IterExhausted, nil)
+	var iterState pebble.IterValidityState
+	var err error
+	if i.dir < 0 {
+		iterState, err = i.intentIter.PrevEngineKeyWithLimit(limitKey)
+	} else {
+		iterState, err = i.intentIter.NextEngineKeyWithLimit(limitKey)
 	}
-	// Otherwise, iterate over the locks on each key until we find an intent.
-	itersBeforeSeek := i.maxIntentItersBeforeSeek / 2
-	if itersBeforeSeek == 0 && i.intentIterState != pebble.IterValid {
-		// If the iterator is not valid and i.intentKey is not set, step the
-		// iterator at least once before seeking.
-		itersBeforeSeek = 1
-	}
-	i.intentKeyBuf = i.intentKeyBuf[:0]
-	// Step the iterator repeatedly until we find an intent key. If we step
-	// itersBeforeSeek times and see (shared) locks on the same user key each
-	// time, we seek to locks on the next user key. This bounds the number of
-	// (shared) locks that we will see for a single user key.
-	for {
-		var iterState pebble.IterValidityState
-		var err error
-		if itersBeforeSeek > 0 {
-			if i.dir < 0 {
-				iterState, err = i.intentIter.PrevEngineKeyWithLimit(limitKey)
-			} else {
-				iterState, err = i.intentIter.NextEngineKeyWithLimit(limitKey)
-			}
-		} else {
-			if i.dir < 0 {
-				var seekEngineKey EngineKey
-				if i.intentKeyStr != lock.Intent {
-					// If the current key is not an intent key, then we seek
-					// backwards to the lock table key for the current user key
-					// with an intent strength. Recall that the lock table key
-					// strength is stored in the key's version and that versions
-					// are stored in reverse order, so intent-strength lock
-					// table keys are ordered first for a given user key.
-					seekEngineKey, i.intentKeyBuf = LockTableKey{
-						Key:      i.intentKey,
-						Strength: lock.Intent,
-					}.ToEngineKey(i.intentKeyBuf)
-				} else {
-					// Else, seek backwards to locks on the previous key.
-					var seekKey roachpb.Key
-					seekKey, i.intentKeyBuf = keys.LockTableSingleKey(i.intentKey, i.intentKeyBuf)
-					seekEngineKey = EngineKey{Key: seekKey}
-				}
-				iterState, err = i.intentIter.SeekEngineKeyLTWithLimit(seekEngineKey, limitKey)
-			} else {
-				// Seek forwards to locks on the next key.
-				var seekKey roachpb.Key
-				seekKey, i.intentKeyBuf = keys.LockTableSingleNextKey(i.intentKey, i.intentKeyBuf)
-				seekEngineKey := EngineKey{Key: seekKey}
-				iterState, err = i.intentIter.SeekEngineKeyGEWithLimit(seekEngineKey, limitKey)
-			}
-			i.intentKeyBuf = i.intentKeyBuf[:0]
-		}
-		if err := i.tryDecodeLockKey(iterState, err); err != nil {
-			return err
-		}
-		if i.intentIterState != pebble.IterValid || i.intentKeyStr == lock.Intent {
-			return nil
-		}
-		// The iterator is not at an intent key. Continue iterating after
-		// adjusting itersBeforeSeek.
-		if bytes.Equal(i.intentKey, i.intentKeyBuf) {
-			itersBeforeSeek--
-			if itersBeforeSeek < 0 {
-				return errors.AssertionFailedf("seeked without moving to new key")
-			}
-		} else {
-			i.intentKeyBuf = append(i.intentKeyBuf[:0], i.intentKey...)
-			if itersBeforeSeek < i.maxIntentItersBeforeSeek {
-				itersBeforeSeek++
-			}
-		}
-	}
+	return i.tryDecodeLockKey(iterState, err)
+
+	//// If this is a prefix iterator, we have already seeked to or past the
+	//// intent key, which is ordered first, so we can stop iterating.
+	//// TODO DURING REVIEW: do we want something like this to short-circuit the
+	//// lock table iteration immediately for a prefix iterator?
+	//if i.prefix {
+	//	return i.tryDecodeLockKey(pebble.IterExhausted, nil)
+	//}
+	//// Otherwise, iterate over the locks on each key until we find an intent.
+	//itersBeforeSeek := i.maxIntentItersBeforeSeek / 2
+	//if itersBeforeSeek == 0 && i.intentIterState != pebble.IterValid {
+	//	// If the iterator is not valid and i.intentKey is not set, step the
+	//	// iterator at least once before seeking.
+	//	itersBeforeSeek = 1
+	//}
+	//i.intentKeyBuf = i.intentKeyBuf[:0]
+	//// Step the iterator repeatedly until we find an intent key. If we step
+	//// itersBeforeSeek times and see (shared) locks on the same user key each
+	//// time, we seek to locks on the next user key. This bounds the number of
+	//// (shared) locks that we will see for a single user key.
+	//for {
+	//	var iterState pebble.IterValidityState
+	//	var err error
+	//	if itersBeforeSeek > 0 {
+	//		if i.dir < 0 {
+	//			iterState, err = i.intentIter.PrevEngineKeyWithLimit(limitKey)
+	//		} else {
+	//			iterState, err = i.intentIter.NextEngineKeyWithLimit(limitKey)
+	//		}
+	//	} else {
+	//		if i.dir < 0 {
+	//			var seekEngineKey EngineKey
+	//			if i.intentKeyStr != lock.Intent {
+	//				// If the current key is not an intent key, then we seek
+	//				// backwards to the lock table key for the current user key
+	//				// with an intent strength. Recall that the lock table key
+	//				// strength is stored in the key's version and that versions
+	//				// are stored in reverse order, so intent-strength lock
+	//				// table keys are ordered first for a given user key.
+	//				seekEngineKey, i.intentKeyBuf = LockTableKey{
+	//					Key:      i.intentKey,
+	//					Strength: lock.Intent,
+	//				}.ToEngineKey(i.intentKeyBuf)
+	//			} else {
+	//				// Else, seek backwards to locks on the previous key.
+	//				var seekKey roachpb.Key
+	//				seekKey, i.intentKeyBuf = keys.LockTableSingleKey(i.intentKey, i.intentKeyBuf)
+	//				seekEngineKey = EngineKey{Key: seekKey}
+	//			}
+	//			iterState, err = i.intentIter.SeekEngineKeyLTWithLimit(seekEngineKey, limitKey)
+	//		} else {
+	//			// Seek forwards to locks on the next key.
+	//			var seekKey roachpb.Key
+	//			seekKey, i.intentKeyBuf = keys.LockTableSingleNextKey(i.intentKey, i.intentKeyBuf)
+	//			seekEngineKey := EngineKey{Key: seekKey}
+	//			iterState, err = i.intentIter.SeekEngineKeyGEWithLimit(seekEngineKey, limitKey)
+	//		}
+	//		i.intentKeyBuf = i.intentKeyBuf[:0]
+	//	}
+	//	if err := i.tryDecodeLockKey(iterState, err); err != nil {
+	//		return err
+	//	}
+	//	if i.intentIterState != pebble.IterValid || i.intentKeyStr == lock.Intent {
+	//		return nil
+	//	}
+	//	// The iterator is not at an intent key. Continue iterating after
+	//	// adjusting itersBeforeSeek.
+	//	if bytes.Equal(i.intentKey, i.intentKeyBuf) {
+	//		itersBeforeSeek--
+	//		if itersBeforeSeek < 0 {
+	//			return errors.AssertionFailedf("seeked without moving to new key")
+	//		}
+	//	} else {
+	//		i.intentKeyBuf = append(i.intentKeyBuf[:0], i.intentKey...)
+	//		if itersBeforeSeek < i.maxIntentItersBeforeSeek {
+	//			itersBeforeSeek++
+	//		}
+	//	}
+	//}
 }
 
 // tryDecodeLockTable attempts to decode the key-value pair at the current

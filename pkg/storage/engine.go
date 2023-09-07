@@ -261,6 +261,7 @@ type MVCCIterator interface {
 	// for the intent it is looking for. When running with separated intents,
 	// this can optimize the behavior of the underlying Engine for write heavy
 	// keys by avoiding the need to iterate over many deleted intents.
+	// TODO(nvanbenschoten): delete.
 	SeekIntentGE(key roachpb.Key, txnUUID uuid.UUID)
 
 	// UnsafeRawKey returns the current raw key which could be an encoded
@@ -1351,6 +1352,7 @@ type EncryptionRegistries struct {
 // key, it will return nil rather than an error. Errors are returned for problem
 // at the storage layer, problem decoding the key, problem unmarshalling the
 // intent, missing transaction on the intent or multiple intents for this key.
+// TODO(nvanbenschoten): fix this.
 func GetIntent(reader Reader, key roachpb.Key) (*roachpb.Intent, error) {
 	// Translate this key from a regular key to one in the lock space so it can be
 	// used for queries.
@@ -1437,13 +1439,14 @@ func Scan(reader Reader, start, end roachpb.Key, max int64) ([]MVCCKeyValue, err
 // does not take interleaved intents into account at all.
 func ScanIntents(
 	ctx context.Context, reader Reader, start, end roachpb.Key, maxIntents int64, targetBytes int64,
-) ([]roachpb.Intent, error) {
-	var intents []roachpb.Intent
+) ([]roachpb.Lock, error) {
+	var locks []roachpb.Lock
 
 	if bytes.Compare(start, end) >= 0 {
-		return intents, nil
+		return locks, nil
 	}
 
+	// TODO(nvanbenschoten): fix this.
 	ltStart, _ := keys.LockTableSingleKey(start, nil)
 	ltEnd, _ := keys.LockTableSingleKey(end, nil)
 	iter, err := reader.NewEngineIterator(IterOptions{LowerBound: ltStart, UpperBound: ltEnd})
@@ -1459,7 +1462,7 @@ func ScanIntents(
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		if maxIntents != 0 && int64(len(intents)) >= maxIntents {
+		if maxIntents != 0 && int64(len(locks)) >= maxIntents {
 			break
 		}
 		if targetBytes != 0 && intentBytes >= targetBytes {
@@ -1469,7 +1472,7 @@ func ScanIntents(
 		if err != nil {
 			return nil, err
 		}
-		lockedKey, err := keys.DecodeLockTableSingleKey(key.Key)
+		lockedKey, err := key.ToLockTableKey()
 		if err != nil {
 			return nil, err
 		}
@@ -1480,13 +1483,13 @@ func ScanIntents(
 		if err = protoutil.Unmarshal(v, &meta); err != nil {
 			return nil, err
 		}
-		intents = append(intents, roachpb.MakeIntent(meta.Txn, lockedKey))
-		intentBytes += int64(len(lockedKey)) + int64(len(v))
+		locks = append(locks, roachpb.MakeLock(meta.Txn, lockedKey.Key, lockedKey.Strength))
+		intentBytes += int64(len(lockedKey.Key)) + int64(len(v))
 	}
 	if err != nil {
 		return nil, err
 	}
-	return intents, nil
+	return locks, nil
 }
 
 // WriteSyncNoop carries out a synchronous no-op write to the engine.
@@ -1984,6 +1987,8 @@ func ScanConflictingIntentsForDroppingLatchesEarly(
 		return false, err
 	}
 	defer iter.Close()
+
+	// TODO(nvanbenschoten): fix this.
 
 	var meta enginepb.MVCCMetadata
 	var ok bool
