@@ -224,8 +224,19 @@ func EvalAddSSTable(
 		}
 	}
 
-	var statsDelta enginepb.MVCCStats
+	// If not checking for MVCC conflicts, at least check for locks. The
+	// caller is expected to make sure there are no writers across the span,
+	// and thus no or few locks, so this is cheap in the common case.
 	maxLockConflicts := storage.MaxConflictsPerLockConflictError.Get(&cArgs.EvalCtx.ClusterSettings().SV)
+	log.VEventf(ctx, 2, "checking conflicting locks for SSTable [%s,%s)", start.Key, end.Key)
+	locks, err := storage.ScanLocks(ctx, readWriter, start.Key, end.Key, maxLockConflicts, 0)
+	if err != nil {
+		return result.Result{}, errors.Wrap(err, "scanning locks")
+	} else if len(locks) > 0 {
+		return result.Result{}, &kvpb.LockConflictError{Locks: locks}
+	}
+
+	var statsDelta enginepb.MVCCStats
 	checkConflicts := args.DisallowConflicts || args.DisallowShadowing ||
 		!args.DisallowShadowingBelow.IsEmpty()
 	if checkConflicts {
@@ -265,18 +276,6 @@ func EvalAddSSTable(
 		statsDelta.Add(sstReqStatsDelta)
 		if err != nil {
 			return result.Result{}, errors.Wrap(err, "checking for key collisions")
-		}
-
-	} else {
-		// If not checking for MVCC conflicts, at least check for locks. The
-		// caller is expected to make sure there are no writers across the span,
-		// and thus no or few locks, so this is cheap in the common case.
-		log.VEventf(ctx, 2, "checking conflicting locks for SSTable [%s,%s)", start.Key, end.Key)
-		locks, err := storage.ScanLocks(ctx, readWriter, start.Key, end.Key, maxLockConflicts, 0)
-		if err != nil {
-			return result.Result{}, errors.Wrap(err, "scanning locks")
-		} else if len(locks) > 0 {
-			return result.Result{}, &kvpb.LockConflictError{Locks: locks}
 		}
 	}
 
