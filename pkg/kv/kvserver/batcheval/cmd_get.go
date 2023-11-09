@@ -33,6 +33,11 @@ func Get(
 	h := cArgs.Header
 	reply := resp.(*kvpb.GetResponse)
 
+	var lockTableForSkipLocked storage.LockTableView
+	if h.WaitPolicy == lock.WaitPolicy_SkipLocked {
+		lockTableForSkipLocked = newRequestBoundLockTableView(cArgs.Concurrency, args.KeyLockingStrength)
+	}
+
 	getRes, err := storage.MVCCGet(ctx, readWriter, args.Key, h.Timestamp, storage.MVCCGetOptions{
 		Inconsistent:          h.ReadConsistency != kvpb.CONSISTENT,
 		SkipLocked:            h.WaitPolicy == lock.WaitPolicy_SkipLocked,
@@ -41,7 +46,7 @@ func Get(
 		ScanStats:             cArgs.ScanStats,
 		Uncertainty:           cArgs.Uncertainty,
 		MemoryAccount:         cArgs.EvalCtx.GetResponseMemoryAccount(),
-		LockTable:             cArgs.Concurrency,
+		LockTable:             lockTableForSkipLocked,
 		DontInterleaveIntents: cArgs.DontInterleaveIntents,
 		MaxKeys:               cArgs.Header.MaxSpanRequestKeys,
 		TargetBytes:           cArgs.Header.TargetBytes,

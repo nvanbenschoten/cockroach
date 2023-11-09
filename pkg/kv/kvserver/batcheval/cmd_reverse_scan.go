@@ -35,6 +35,11 @@ func ReverseScan(
 	h := cArgs.Header
 	reply := resp.(*kvpb.ReverseScanResponse)
 
+	var lockTableForSkipLocked storage.LockTableView
+	if h.WaitPolicy == lock.WaitPolicy_SkipLocked {
+		lockTableForSkipLocked = newRequestBoundLockTableView(cArgs.Concurrency, args.KeyLockingStrength)
+	}
+
 	var res result.Result
 	var scanRes storage.MVCCScanResult
 	var err error
@@ -53,7 +58,7 @@ func ReverseScan(
 		FailOnMoreRecent:      args.KeyLockingStrength != lock.None,
 		Reverse:               true,
 		MemoryAccount:         cArgs.EvalCtx.GetResponseMemoryAccount(),
-		LockTable:             cArgs.Concurrency,
+		LockTable:             lockTableForSkipLocked,
 		DontInterleaveIntents: cArgs.DontInterleaveIntents,
 	}
 

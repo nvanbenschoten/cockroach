@@ -1190,13 +1190,7 @@ type LockTableView interface {
 	//
 	// This method is used by requests in conjunction with the SkipLocked wait
 	// policy to determine which keys they should skip over during evaluation.
-	//
-	// If the supplied lock strength is locking (!= lock.None), then any queued
-	// locking requests that came before the lockTableGuard will also be checked
-	// for conflicts. This helps prevent a stream of locking SKIP LOCKED requests
-	// from starving out regular locking requests. In such cases, true is
-	// returned, but so is nil.
-	IsKeyLockedByConflictingTxn(roachpb.Key, lock.Strength) (bool, *enginepb.TxnMeta, error)
+	IsKeyLockedByConflictingTxn(roachpb.Key) (bool, *enginepb.TxnMeta, error)
 }
 
 // MVCCGetOptions bundles options for the MVCCGet family of functions.
