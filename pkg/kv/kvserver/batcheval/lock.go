@@ -236,21 +236,33 @@ type txnBoundLockTableView interface {
 // requestBoundLockTableView combines a txnBoundLockTableView with the lock
 // strength that an individual request is attempting to acquire.
 type requestBoundLockTableView struct {
-	ltv txnBoundLockTableView
-	str lock.Strength
+	reader storage.Reader
+	ltv    txnBoundLockTableView
+	txn    *roachpb.Transaction
+	str    lock.Strength
 }
 
 // newRequestBoundLockTableView creates a new requestBoundLockTableView.
 func newRequestBoundLockTableView(
-	ltv txnBoundLockTableView, str lock.Strength,
+	reader storage.Reader, ltv txnBoundLockTableView, txn *roachpb.Transaction, str lock.Strength,
 ) *requestBoundLockTableView {
-	return &requestBoundLockTableView{ltv: ltv, str: str}
+	return &requestBoundLockTableView{reader: reader, ltv: ltv, txn: txn, str: str}
 }
 
 // IsKeyLockedByConflictingTxn implements the storage.LockTableView interface.
 func (ltv *requestBoundLockTableView) IsKeyLockedByConflictingTxn(
-	key roachpb.Key,
+	ctx context.Context, key roachpb.Key,
 ) (bool, *enginepb.TxnMeta, error) {
-	// TODO(nvanbenschoten): look for replicated lock conflicts.
-	return ltv.ltv.IsKeyLockedByConflictingTxn(key, ltv.str)
+	ok, txn, err := ltv.ltv.IsKeyLockedByConflictingTxn(key, ltv.str)
+	if ok || err != nil {
+		return ok, txn, err
+	}
+	err = storage.MVCCCheckForAcquireLock(ctx, ltv.reader, ltv.txn, ltv.str, key, 1 /* maxLockConflicts */)
+	if err != nil {
+		if lcErr := (*kvpb.LockConflictError)(nil); errors.As(err, &lcErr) {
+			return true, &lcErr.Locks[0].Txn, nil
+		}
+		return false, nil, err
+	}
+	return false, nil, nil
 }

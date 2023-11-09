@@ -37,7 +37,8 @@ func ReverseScan(
 
 	var lockTableForSkipLocked storage.LockTableView
 	if h.WaitPolicy == lock.WaitPolicy_SkipLocked {
-		lockTableForSkipLocked = newRequestBoundLockTableView(cArgs.Concurrency, args.KeyLockingStrength)
+		lockTableForSkipLocked = newRequestBoundLockTableView(
+			readWriter, cArgs.Concurrency, h.Txn, args.KeyLockingStrength)
 	}
 
 	var res result.Result
