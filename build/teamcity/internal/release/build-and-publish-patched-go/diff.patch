@@ -1,8 +1,145 @@
+diff --git a/src/context/context.go b/src/context/context.go
+index ee66b43c85..4e0dcf3a73 100644
+--- a/src/context/context.go
++++ b/src/context/context.go
+@@ -472,17 +472,7 @@ func (c *cancelCtx) propagateCancel(parent Context, child canceler) {
+ 
+ 	if p, ok := parentCancelCtx(parent); ok {
+ 		// parent is a *cancelCtx, or derives from one.
+-		p.mu.Lock()
+-		if p.err != nil {
+-			// parent has already been canceled
+-			child.cancel(false, p.err, p.cause)
+-		} else {
+-			if p.children == nil {
+-				p.children = make(map[canceler]struct{})
+-			}
+-			p.children[child] = struct{}{}
+-		}
+-		p.mu.Unlock()
++		p.addChild(child)
+ 		return
+ 	}
+ 
+@@ -510,6 +500,22 @@ func (c *cancelCtx) propagateCancel(parent Context, child canceler) {
+ 	}()
+ }
+ 
++// addChild adds child to the list of children.
++// NB: CockroachDB runtime patch.
++func (c *cancelCtx) addChild(child canceler) {
++	c.mu.Lock()
++	if c.err != nil {
++		// parent has already been canceled
++		child.cancel(false, c.err, c.cause)
++	} else {
++		if c.children == nil {
++			c.children = make(map[canceler]struct{})
++		}
++		c.children[child] = struct{}{}
++	}
++	c.mu.Unlock()
++}
++
+ type stringer interface {
+ 	String() string
+ }
+@@ -783,3 +789,33 @@ func value(c Context, key any) any {
+ 		}
+ 	}
+ }
++
++// CockroachDB runtime patch.
++// cancelerAdapter invokes f when cancel context completes.
++type cancelerAdapter struct {
++	*cancelCtx
++	f func()
++}
++
++func (c *cancelerAdapter) cancel(removeFromParent bool, err, cause error) {
++	if removeFromParent {
++		removeChild(c.cancelCtx, c)
++	}
++	c.f()
++}
++
++// PropagateCancel arranges for f to be invoked when parent is done.
++// Parent must be one of the cancelable contexts.
++// Returns true if cancellation will be propagated, false if the parent
++// is not cancelable.
++// This is similar to AfterFunc(), but does not spin up goroutine, and instead
++// invokes f on whatever goroutine completed parent context.
++func PropagateCancel(parent Context, f func()) bool {
++	p, ok := parent.Value(&cancelCtxKey).(*cancelCtx)
++	if !ok {
++		return false
++	}
++	a := cancelerAdapter{cancelCtx: p, f: f}
++	p.addChild(&a)
++	return true
++}
+diff --git a/src/runtime/mgcmark.go b/src/runtime/mgcmark.go
+index 2ed411ae61..6ba9c2ad55 100644
+--- a/src/runtime/mgcmark.go
++++ b/src/runtime/mgcmark.go
+@@ -678,13 +678,15 @@ func gcFlushBgCredit(scanWork int64) {
+ 
+ 	lock(&work.assistQueue.lock)
+ 	for !work.assistQueue.q.empty() && scanBytes > 0 {
+-		gp := work.assistQueue.q.pop()
++		gp := work.assistQueue.q.peek()
+ 		// Note that gp.gcAssistBytes is negative because gp
+ 		// is in debt. Think carefully about the signs below.
+ 		if scanBytes+gp.gcAssistBytes >= 0 {
+ 			// Satisfy this entire assist debt.
+ 			scanBytes += gp.gcAssistBytes
+ 			gp.gcAssistBytes = 0
++			// Remove qp from the assist queue.
++			work.assistQueue.q.pop()
+ 			// It's important that we *not* put gp in
+ 			// runnext. Otherwise, it's possible for user
+ 			// code to exploit the GC worker's high
+@@ -696,11 +698,6 @@ func gcFlushBgCredit(scanWork int64) {
+ 			// Partially satisfy this assist.
+ 			gp.gcAssistBytes += scanBytes
+ 			scanBytes = 0
+-			// As a heuristic, we move this assist to the
+-			// back of the queue so that large assists
+-			// can't clog up the assist queue and
+-			// substantially delay small assists.
+-			work.assistQueue.q.pushBack(gp)
+ 			break
+ 		}
+ 	}
+diff --git a/src/runtime/mgcpacer.go b/src/runtime/mgcpacer.go
+index 32e19f96e1..e10e1771aa 100644
+--- a/src/runtime/mgcpacer.go
++++ b/src/runtime/mgcpacer.go
+@@ -71,6 +71,9 @@ const (
+ 	// heap goal should have as a percent of the maximum possible heap goal allowed
+ 	// to maintain the memory limit.
+ 	memoryLimitHeapGoalHeadroomPercent = 3
++
++	// consMarkHeadroomPercent ...
++	consMarkHeadroomPercent = 0.2
+ )
+ 
+ // gcController implements the GC pacing controller that determines
+@@ -671,6 +674,9 @@ func (c *gcControllerState) endCycle(now int64, procs int, userForced bool) {
+ 	copy(c.lastConsMark[:], c.lastConsMark[1:])
+ 	c.lastConsMark[len(c.lastConsMark)-1] = currentConsMark
+ 
++	// We then apply a headroom to this value.
++	c.consMark *= (1 + consMarkHeadroomPercent)
++
+ 	if debug.gcpacertrace > 0 {
+ 		printlock()
+ 		goal := gcGoalUtilization * 100
 diff --git a/src/runtime/proc.go b/src/runtime/proc.go
-index 554a60d747..8d64ee31c8 100644
+index afb33c1e8b..186611c492 100644
 --- a/src/runtime/proc.go
 +++ b/src/runtime/proc.go
-@@ -1027,7 +1027,18 @@ func casgstatus(gp *g, oldval, newval uint32) {
+@@ -1073,7 +1073,18 @@ func casgstatus(gp *g, oldval, newval uint32) {
  		}
  	}
  
@@ -21,7 +158,7 @@ index 554a60d747..8d64ee31c8 100644
  		// Track every gTrackingPeriod time a goroutine transitions out of running.
  		if casgstatusAlwaysTrack || gp.trackingSeq%gTrackingPeriod == 0 {
  			gp.tracking = true
-@@ -1048,7 +1059,6 @@ func casgstatus(gp *g, oldval, newval uint32) {
+@@ -1094,7 +1105,6 @@ func casgstatus(gp *g, oldval, newval uint32) {
  		// We transitioned out of runnable, so measure how much
  		// time we spent in this state and add it to
  		// runnableTime.
@@ -29,7 +166,7 @@ index 554a60d747..8d64ee31c8 100644
  		gp.runnableTime += now - gp.trackingStamp
  		gp.trackingStamp = 0
  	case _Gwaiting:
-@@ -1061,7 +1071,6 @@ func casgstatus(gp *g, oldval, newval uint32) {
+@@ -1107,7 +1117,6 @@ func casgstatus(gp *g, oldval, newval uint32) {
  		// a more representative estimate of the absolute value.
  		// gTrackingPeriod also represents an accurate sampling period
  		// because we can only enter this state from _Grunning.
@@ -37,7 +174,7 @@ index 554a60d747..8d64ee31c8 100644
  		sched.totalMutexWaitTime.Add((now - gp.trackingStamp) * gTrackingPeriod)
  		gp.trackingStamp = 0
  	}
-@@ -1072,12 +1081,10 @@ func casgstatus(gp *g, oldval, newval uint32) {
+@@ -1118,12 +1127,10 @@ func casgstatus(gp *g, oldval, newval uint32) {
  			break
  		}
  		// Blocking on a lock. Write down the timestamp.
@@ -50,7 +187,7 @@ index 554a60d747..8d64ee31c8 100644
  		gp.trackingStamp = now
  	case _Grunning:
  		// We're transitioning into running, so turn off
-@@ -3412,6 +3419,14 @@ func dropg() {
+@@ -3646,6 +3653,14 @@ func dropg() {
  	setGNoWB(&gp.m.curg, nil)
  }
  
@@ -65,7 +202,7 @@ index 554a60d747..8d64ee31c8 100644
  // checkTimers runs any timers for the P that are ready.
  // If now is not 0 it is the current time.
  // It returns the passed time or the current time if now was passed as 0.
-@@ -3646,6 +3661,8 @@ func goexit0(gp *g) {
+@@ -3880,6 +3895,8 @@ func goexit0(gp *g) {
  	gp.param = nil
  	gp.labels = nil
  	gp.timer = nil
@@ -74,6 +211,18 @@ index 554a60d747..8d64ee31c8 100644
  
  	if gcBlackenEnabled != 0 && gp.gcAssistBytes > 0 {
  		// Flush assist credit to the global pool. This gives
+@@ -6495,6 +6512,11 @@ func (q *gQueue) pushBackAll(q2 gQueue) {
+ 	q.tail = q2.tail
+ }
+ 
++// peek returns the head of queue q, or nil if q is empty.
++func (q *gQueue) peek() *g {
++	return q.head.ptr()
++}
++
+ // pop removes and returns the head of queue q. It returns nil if
+ // q is empty.
+ func (q *gQueue) pop() *g {
 diff --git a/src/runtime/runtime2.go b/src/runtime/runtime2.go
 index f4c76abd1c..57672bd8c5 100644
 --- a/src/runtime/runtime2.go
@@ -100,7 +249,7 @@ diff --git a/src/runtime/sizeof_test.go b/src/runtime/sizeof_test.go
 index fb9195481a..55e37287c2 100644
 --- a/src/runtime/sizeof_test.go
 +++ b/src/runtime/sizeof_test.go
-@@ -21,6 +21,6 @@ func TestSizeof(t *testing.T) {
+@@ -21,7 +21,7 @@ func TestSizeof(t *testing.T) {
  		_32bit uintptr // size on 32bit platforms
  		_64bit uintptr // size on 64bit platforms
  	}{
@@ -108,84 +257,4 @@ index fb9195481a..55e37287c2 100644
 +		{runtime.G{}, 260, 416},   // g, but exported for testing
  		{runtime.Sudog{}, 56, 88}, // sudog, but exported for testing
  	}
-diff -ru a/src/context/context.go b/src/context/context.go
---- a/src/context/context.go
-+++ b/src/context/context.go
-@@ -472,17 +472,7 @@
  
- 	if p, ok := parentCancelCtx(parent); ok {
- 		// parent is a *cancelCtx, or derives from one.
--		p.mu.Lock()
--		if p.err != nil {
--			// parent has already been canceled
--			child.cancel(false, p.err, p.cause)
--		} else {
--			if p.children == nil {
--				p.children = make(map[canceler]struct{})
--			}
--			p.children[child] = struct{}{}
--		}
--		p.mu.Unlock()
-+		p.addChild(child)
- 		return
- 	}
- 
-@@ -510,6 +500,22 @@
- 	}()
- }
- 
-+// addChild adds child to the list of children.
-+// NB: CockroachDB runtime patch.
-+func (c *cancelCtx) addChild(child canceler) {
-+	c.mu.Lock()
-+	if c.err != nil {
-+		// parent has already been canceled
-+		child.cancel(false, c.err, c.cause)
-+	} else {
-+		if c.children == nil {
-+			c.children = make(map[canceler]struct{})
-+		}
-+		c.children[child] = struct{}{}
-+	}
-+	c.mu.Unlock()
-+}
-+
- type stringer interface {
- 	String() string
- }
-@@ -781,5 +787,35 @@
- 		default:
- 			return c.Value(key)
- 		}
-+	}
-+}
-+
-+// CockroachDB runtime patch.
-+// cancelerAdapter invokes f when cancel context completes.
-+type cancelerAdapter struct {
-+	*cancelCtx
-+	f func()
-+}
-+
-+func (c *cancelerAdapter) cancel(removeFromParent bool, err, cause error) {
-+	if removeFromParent {
-+		removeChild(c.cancelCtx, c)
- 	}
-+	c.f()
- }
-+
-+// PropagateCancel arranges for f to be invoked when parent is done.
-+// Parent must be one of the cancelable contexts.
-+// Returns true if cancellation will be propagated, false if the parent
-+// is not cancelable.
-+// This is similar to AfterFunc(), but does not spin up goroutine, and instead
-+// invokes f on whatever goroutine completed parent context.
-+func PropagateCancel(parent Context, f func()) bool {
-+	p, ok := parent.Value(&cancelCtxKey).(*cancelCtx)
-+	if !ok {
-+		return false
-+	}
-+	a := cancelerAdapter{cancelCtx: p, f: f}
-+	p.addChild(&a)
-+	return true
-+}
