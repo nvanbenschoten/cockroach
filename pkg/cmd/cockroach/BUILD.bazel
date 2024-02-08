@@ -22,8 +22,16 @@ disallowed_imports_test(
     ],
 )
 
+# Combining a 30-second profile from each of:
+# - kv0/enc=false/nodes=3
+# - kv95/enc=false/nodes=3
+# - tpccbench/nodes=3/cpu=16
+# - tpce/c=5000/nodes=3
+exports_files(["pgo.pprof"])
+
 go_binary(
     name = "cockroach",
     embed = [":cockroach_lib"],
+    pgoprofile = "pgo.pprof",
     visibility = ["//visibility:public"],
 )
