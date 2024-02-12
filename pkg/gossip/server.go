@@ -113,6 +113,7 @@ func (s *server) Gossip(stream Gossip_GossipServer) error {
 		return errors.Errorf("gossip connection refused from different cluster %s", args.ClusterID)
 	}
 
+	lastSendHighWaterStamps := make(map[roachpb.NodeID]int64)
 	ctx, cancel := context.WithCancel(s.AnnotateCtx(stream.Context()))
 	defer cancel()
 	syncChan := make(chan struct{}, 1)
@@ -139,7 +140,7 @@ func (s *server) Gossip(stream Gossip_GossipServer) error {
 	errCh := make(chan error, 1)
 
 	if err := s.stopper.RunAsyncTask(ctx, "gossip receiver", func(ctx context.Context) {
-		errCh <- s.gossipReceiver(ctx, &args, send, stream.Recv)
+		errCh <- s.gossipReceiver(ctx, &args, &lastSendHighWaterStamps, send, stream.Recv)
 	}); err != nil {
 		return err
 	}
@@ -175,9 +176,12 @@ func (s *server) Gossip(stream Gossip_GossipServer) error {
 				ratchetHighWaterStamp(args.HighWaterStamps, i.NodeID, i.OrigStamp)
 			}
 
+			var diff map[roachpb.NodeID]int64
+			lastSendHighWaterStamps, diff = s.mu.is.getHighWaterStampsWithDiff(lastSendHighWaterStamps)
+
 			*reply = Response{
 				NodeID:          s.NodeID.Get(),
-				HighWaterStamps: s.mu.is.getHighWaterStamps(),
+				HighWaterStamps: diff,
 				Delta:           delta,
 			}
 
@@ -203,6 +207,7 @@ func (s *server) Gossip(stream Gossip_GossipServer) error {
 func (s *server) gossipReceiver(
 	ctx context.Context,
 	argsPtr **Request,
+	lastSendHighWaterStampsPtr *map[roachpb.NodeID]int64,
 	senderFn func(*Response) error,
 	receiverFn func() (*Request, error),
 ) error {
@@ -314,9 +319,12 @@ func (s *server) gossipReceiver(
 		}
 		s.maybeTightenLocked()
 
+		var diff map[roachpb.NodeID]int64
+		*lastSendHighWaterStampsPtr, diff = s.mu.is.getHighWaterStampsWithDiff(*lastSendHighWaterStampsPtr)
+
 		*reply = Response{
 			NodeID:          s.NodeID.Get(),
-			HighWaterStamps: s.mu.is.getHighWaterStamps(),
+			HighWaterStamps: diff,
 		}
 
 		s.mu.Unlock()

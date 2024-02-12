@@ -36,6 +36,7 @@ type client struct {
 	resolvedPlaceholder   bool                     // Whether we've resolved the nodeSet's placeholder for this client
 	addr                  net.Addr                 // Peer node network address
 	forwardAddr           *util.UnresolvedAddr     // Set if disconnected with an alternate addr
+	prevHighWaterStamps   map[roachpb.NodeID]int64 // Last high water timestamps sent to remote server
 	remoteHighWaterStamps map[roachpb.NodeID]int64 // Remote server's high water timestamps
 	closer                chan struct{}            // Client shutdown channel
 	clientMetrics         Metrics
@@ -169,6 +170,7 @@ func (c *client) requestGossip(g *Gossip, stream Gossip_GossipClient) error {
 	bytesSent := int64(args.Size())
 	c.clientMetrics.BytesSent.Inc(bytesSent)
 	c.nodeMetrics.BytesSent.Inc(bytesSent)
+	c.prevHighWaterStamps = args.HighWaterStamps
 
 	return stream.Send(args)
 }
@@ -189,11 +191,14 @@ func (c *client) sendGossip(g *Gossip, stream Gossip_GossipClient, firstReq bool
 			ratchetHighWaterStamp(c.remoteHighWaterStamps, i.NodeID, i.OrigStamp)
 		}
 
+		var diff map[roachpb.NodeID]int64
+		c.prevHighWaterStamps, diff = g.mu.is.getHighWaterStampsWithDiff(c.prevHighWaterStamps)
+
 		args := Request{
 			NodeID:          g.NodeID.Get(),
 			Addr:            g.mu.is.NodeAddr,
 			Delta:           delta,
-			HighWaterStamps: g.mu.is.getHighWaterStamps(),
+			HighWaterStamps: diff,
 			ClusterID:       g.clusterID.Get(),
 		}
 
