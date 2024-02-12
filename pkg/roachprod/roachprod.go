@@ -1422,9 +1422,9 @@ func Create(
 	createVMOpts vm.CreateOpts,
 	providerOptsContainer vm.ProviderOptionsContainer,
 ) (retErr error) {
-	if numNodes <= 0 || numNodes >= 1000 {
+	if numNodes <= 0 || numNodes >= 10000 {
 		// Upper limit is just for safety.
-		return fmt.Errorf("number of nodes must be in [1..999]")
+		return fmt.Errorf("number of nodes must be in [1..9999]")
 	}
 	clusterName := createVMOpts.ClusterName
 	if err := verifyClusterName(l, clusterName, username); err != nil {

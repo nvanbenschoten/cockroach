@@ -34,6 +34,7 @@ import (
 	"github.com/spf13/pflag"
 	"golang.org/x/exp/maps"
 	"golang.org/x/sync/errgroup"
+	"golang.org/x/time/rate"
 	cloudbilling "google.golang.org/api/cloudbilling/v1beta"
 )
 
@@ -1516,6 +1517,11 @@ func propagateDiskLabels(
 	argsPrefix = append(argsPrefix, "--update-labels", labels)
 	argsPrefix = append(argsPrefix, "--project", project)
 
+	g.SetLimit(5)
+	limit := rate.NewLimiter(rate.Limit(5), 1)
+	time.Sleep(1 * time.Minute)
+	defer time.Sleep(1 * time.Minute)
+
 	for zone, zoneHosts := range zoneToHostNames {
 		zoneArg := []string{"--zone", zone}
 
@@ -1523,6 +1529,10 @@ func propagateDiskLabels(
 			hostName := host
 
 			g.Go(func() error {
+				if err := limit.Wait(context.Background()); err != nil {
+					return err
+				}
+
 				bootDiskArgs := append([]string(nil), argsPrefix...)
 				bootDiskArgs = append(bootDiskArgs, zoneArg...)
 				// N.B. boot disk has the same name as the host.
@@ -1538,6 +1548,10 @@ func propagateDiskLabels(
 
 			if !opts.SSDOpts.UseLocalSSD {
 				g.Go(func() error {
+					if err := limit.Wait(context.Background()); err != nil {
+						return err
+					}
+
 					persistentDiskArgs := append([]string(nil), argsPrefix...)
 					persistentDiskArgs = append(persistentDiskArgs, zoneArg...)
 					// N.B. additional persistent disks are suffixed with the offset, starting at 1.
