@@ -382,6 +382,13 @@ func (c *client) gossip(
 		case <-initTimer.C:
 			maybeRegister()
 		case <-sendGossipChan:
+			{
+				time.Sleep(gossipPropagateInfosDelay)
+				select {
+				case <-sendGossipChan:
+				default:
+				}
+			}
 			if err := c.sendGossip(g, stream, count == 0); err != nil {
 				return err
 			}

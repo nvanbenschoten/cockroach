@@ -200,6 +200,7 @@ func (s *server) Gossip(stream Gossip_GossipServer) error {
 		case err := <-errCh:
 			return err
 		case <-ready:
+			time.Sleep(gossipPropagateInfosDelay)
 		}
 	}
 }

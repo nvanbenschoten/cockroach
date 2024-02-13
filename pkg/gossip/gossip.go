@@ -123,6 +123,8 @@ const (
 	// we didn't need to tighten the last time we checked.
 	gossipTightenInterval = time.Second
 
+	gossipPropagateInfosDelay = 10 * time.Millisecond
+
 	unknownNodeID roachpb.NodeID = 0
 )
 
