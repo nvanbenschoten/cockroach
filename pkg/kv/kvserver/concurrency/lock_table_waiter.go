@@ -293,11 +293,11 @@ func (w *lockTableWaiterImpl) WaitOn(
 				if req.LockTimeout != 0 {
 					return doWithTimeoutAndFallback(
 						ctx, req.LockTimeout,
-						func(ctx context.Context) *Error { return w.pushLockTxn(ctx, req, state) },
-						func(ctx context.Context) *Error { return w.pushLockTxnAfterTimeout(ctx, req, state) },
+						func(ctx context.Context) *Error { return w.pushLockTxn(ctx, req, guard, state) },
+						func(ctx context.Context) *Error { return w.pushLockTxnAfterTimeout(ctx, req, guard, state) },
 					)
 				}
-				return w.pushLockTxn(ctx, req, state)
+				return w.pushLockTxn(ctx, req, guard, state)
 
 			case waitSelf:
 				// Another request from the same transaction has claimed the lock (but
@@ -398,7 +398,7 @@ func (w *lockTableWaiterImpl) WaitOn(
 					// edges in the local portion of its dependency graph for deadlock
 					// detection, as doing so is cheaper that finding out the same
 					// information using (QueryTxnRequest) RPCs.
-					err = w.pushLockTxn(pushCtx, req, timerWaitingState)
+					err = w.pushLockTxn(pushCtx, req, guard, timerWaitingState)
 				} else {
 					// The request conflicts with another request that's claimed an unheld
 					// lock. The conflicting request may exit the lock table without
@@ -424,7 +424,7 @@ func (w *lockTableWaiterImpl) WaitOn(
 			pushNoWait := func(ctx context.Context) *Error {
 				// Resolve the conflict without waiting by pushing the lock holder's
 				// transaction.
-				return w.pushLockTxnAfterTimeout(ctx, req, timerWaitingState)
+				return w.pushLockTxnAfterTimeout(ctx, req, guard, timerWaitingState)
 			}
 
 			// We push with or without the option to wait on the conflict,
@@ -432,7 +432,7 @@ func (w *lockTableWaiterImpl) WaitOn(
 			// and depending on the wait policy.
 			var err *Error
 			if req.WaitPolicy == lock.WaitPolicy_Error {
-				err = w.pushLockTxn(ctx, req, timerWaitingState)
+				err = w.pushLockTxn(ctx, req, guard, timerWaitingState)
 			} else if !lockDeadline.IsZero() {
 				untilDeadline := w.timeUntilDeadline(lockDeadline)
 				if untilDeadline == 0 {
@@ -475,7 +475,7 @@ func (w *lockTableWaiterImpl) WaitOn(
 // expect to have an updated waitingState. Otherwise, the method returns with a
 // WriteIntentError and without blocking on the lock holder transaction.
 func (w *lockTableWaiterImpl) pushLockTxn(
-	ctx context.Context, req Request, ws waitingState,
+	ctx context.Context, req Request, guard lockTableGuard, ws waitingState,
 ) *Error {
 	if w.disableTxnPushing {
 		return newWriteIntentErr(req, ws, reasonWaitPolicy)
@@ -667,10 +667,10 @@ func (w *lockTableWaiterImpl) pushLockTxn(
 // elapsed, and returns a WriteIntentErrors with a LOCK_TIMEOUT reason if the
 // lock holder is not abandoned.
 func (w *lockTableWaiterImpl) pushLockTxnAfterTimeout(
-	ctx context.Context, req Request, ws waitingState,
+	ctx context.Context, req Request, guard lockTableGuard, ws waitingState,
 ) *Error {
 	req.WaitPolicy = lock.WaitPolicy_Error
-	err := w.pushLockTxn(ctx, req, ws)
+	err := w.pushLockTxn(ctx, req, guard, ws)
 	if _, ok := err.GetDetail().(*kvpb.WriteIntentError); ok {
 		err = newWriteIntentErr(req, ws, reasonLockTimeout)
 	}
