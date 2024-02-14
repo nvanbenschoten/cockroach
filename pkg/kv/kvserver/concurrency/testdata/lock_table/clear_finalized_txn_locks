@@ -246,7 +246,70 @@ Intents to resolve:
  key="d" txn=00000000 status=COMMITTED
  key="e" txn=00000000 status=COMMITTED
 
-print
+release txn=txn2 span=a
+----
+num=5
+ lock: "a"
+   queued locking requests:
+    active: false req: 1, strength: Exclusive, txn: 00000000-0000-0000-0000-000000000001
+ lock: "b"
+  holder: txn: 00000000-0000-0000-0000-000000000002 epoch: 0, iso: Serializable, ts: 10.000000000,1, info: repl [Intent] [holder finalized: aborted]
+   queued locking requests:
+    active: false req: 1, strength: Exclusive, txn: 00000000-0000-0000-0000-000000000001
+ lock: "c"
+   queued locking requests:
+    active: false req: 1, strength: Exclusive, txn: 00000000-0000-0000-0000-000000000001
+ lock: "d"
+  holder: txn: 00000000-0000-0000-0000-000000000003 epoch: 0, iso: Serializable, ts: 11.000000000,1, info: repl [Intent] [holder finalized: committed]
+   queued locking requests:
+    active: false req: 1, strength: Exclusive, txn: 00000000-0000-0000-0000-000000000001
+ lock: "e"
+  holder: txn: 00000000-0000-0000-0000-000000000003 epoch: 0, iso: Serializable, ts: 11.000000000,1, info: repl [Intent] [holder finalized: committed]
+   queued locking requests:
+    active: false req: 1, strength: Exclusive, txn: 00000000-0000-0000-0000-000000000001
+
+release txn=txn2 span=b
+----
+num=5
+ lock: "a"
+   queued locking requests:
+    active: false req: 1, strength: Exclusive, txn: 00000000-0000-0000-0000-000000000001
+ lock: "b"
+   queued locking requests:
+    active: false req: 1, strength: Exclusive, txn: 00000000-0000-0000-0000-000000000001
+ lock: "c"
+   queued locking requests:
+    active: false req: 1, strength: Exclusive, txn: 00000000-0000-0000-0000-000000000001
+ lock: "d"
+  holder: txn: 00000000-0000-0000-0000-000000000003 epoch: 0, iso: Serializable, ts: 11.000000000,1, info: repl [Intent] [holder finalized: committed]
+   queued locking requests:
+    active: false req: 1, strength: Exclusive, txn: 00000000-0000-0000-0000-000000000001
+ lock: "e"
+  holder: txn: 00000000-0000-0000-0000-000000000003 epoch: 0, iso: Serializable, ts: 11.000000000,1, info: repl [Intent] [holder finalized: committed]
+   queued locking requests:
+    active: false req: 1, strength: Exclusive, txn: 00000000-0000-0000-0000-000000000001
+
+release txn=txn3 span=d
+----
+num=5
+ lock: "a"
+   queued locking requests:
+    active: false req: 1, strength: Exclusive, txn: 00000000-0000-0000-0000-000000000001
+ lock: "b"
+   queued locking requests:
+    active: false req: 1, strength: Exclusive, txn: 00000000-0000-0000-0000-000000000001
+ lock: "c"
+   queued locking requests:
+    active: false req: 1, strength: Exclusive, txn: 00000000-0000-0000-0000-000000000001
+ lock: "d"
+   queued locking requests:
+    active: false req: 1, strength: Exclusive, txn: 00000000-0000-0000-0000-000000000001
+ lock: "e"
+  holder: txn: 00000000-0000-0000-0000-000000000003 epoch: 0, iso: Serializable, ts: 11.000000000,1, info: repl [Intent] [holder finalized: committed]
+   queued locking requests:
+    active: false req: 1, strength: Exclusive, txn: 00000000-0000-0000-0000-000000000001
+
+release txn=txn3 span=e
 ----
 num=5
  lock: "a"
@@ -357,7 +420,21 @@ Intents to resolve:
  key="a" txn=00000000 status=ABORTED
  key="c" txn=00000000 status=ABORTED
 
-print
+release txn=txn2 span=a
+----
+num=3
+ lock: "a"
+   queued locking requests:
+    active: false req: 3, strength: Exclusive, txn: 00000000-0000-0000-0000-000000000001
+ lock: "b"
+   queued locking requests:
+    active: false req: 3, strength: Exclusive, txn: 00000000-0000-0000-0000-000000000001
+ lock: "c"
+  holder: txn: 00000000-0000-0000-0000-000000000002 epoch: 0, iso: Serializable, ts: 11.000000000,1, info: repl [Intent] [holder finalized: aborted]
+   queued locking requests:
+    active: false req: 3, strength: Exclusive, txn: 00000000-0000-0000-0000-000000000001
+
+release txn=txn2 span=c
 ----
 num=3
  lock: "a"
@@ -483,7 +560,7 @@ new: state=doneWaiting
 Intents to resolve:
  key="b" txn=00000000 status=ABORTED
 
-print
+release txn=txn2 span=b
 ----
 num=2
  lock: "a"
@@ -581,11 +658,18 @@ Intents to resolve:
  key="a" txn=00000000 status=ABORTED
  key="b" txn=00000000 status=ABORTED
 
-guard-state r=req7
+release txn=txn2 span=a
 ----
-new: state=doneWaiting
+num=2
+ lock: "a"
+   queued locking requests:
+    active: false req: 7, strength: Exclusive, txn: 00000000-0000-0000-0000-000000000001
+ lock: "b"
+  holder: txn: 00000000-0000-0000-0000-000000000002 epoch: 0, iso: Serializable, ts: 11.000000000,1, info: repl [Intent] [holder finalized: aborted]
+   queued locking requests:
+    active: false req: 7, strength: Exclusive, txn: 00000000-0000-0000-0000-000000000001
 
-print
+release txn=txn2 span=b
 ----
 num=2
  lock: "a"
@@ -594,6 +678,10 @@ num=2
  lock: "b"
    queued locking requests:
     active: false req: 7, strength: Exclusive, txn: 00000000-0000-0000-0000-000000000001
+
+guard-state r=req7
+----
+new: state=doneWaiting
 
 dequeue r=req7
 ----
@@ -696,6 +784,30 @@ Intents to resolve:
  key="a" txn=00000000 status=ABORTED
  key="b" txn=00000000 status=ABORTED
 
+release txn=txn3 span=a
+----
+num=3
+ lock: "b"
+  holder: txn: 00000000-0000-0000-0000-000000000003 epoch: 0, iso: Serializable, ts: 12.000000000,1, info: repl [Intent] [holder finalized: aborted]
+ lock: "c"
+  holder: txn: 00000000-0000-0000-0000-000000000004 epoch: 0, iso: Serializable, ts: 11.000000000,1, info: repl [Intent]
+   waiting readers:
+    req: 9, txn: 00000000-0000-0000-0000-000000000001
+   distinguished req: 9
+ lock: "d"
+  holder: txn: 00000000-0000-0000-0000-000000000004 epoch: 0, iso: Serializable, ts: 11.000000000,1, info: repl [Intent]
+
+release txn=txn3 span=b
+----
+num=2
+ lock: "c"
+  holder: txn: 00000000-0000-0000-0000-000000000004 epoch: 0, iso: Serializable, ts: 11.000000000,1, info: repl [Intent]
+   waiting readers:
+    req: 9, txn: 00000000-0000-0000-0000-000000000001
+   distinguished req: 9
+ lock: "d"
+  holder: txn: 00000000-0000-0000-0000-000000000004 epoch: 0, iso: Serializable, ts: 11.000000000,1, info: repl [Intent]
+
 pushed-txn-updated txn=txn4 status=aborted
 ----
 
@@ -709,7 +821,13 @@ guard-state r=req9
 ----
 new: state=doneWaiting
 Intents to resolve:
+ key="a" txn=00000000 status=ABORTED
+ key="b" txn=00000000 status=ABORTED
  key="d" txn=00000000 status=ABORTED
+
+release txn=txn4 span=d
+----
+num=0
 
 print
 ----
@@ -744,15 +862,15 @@ scan r=req11
 ----
 start-waiting: true
 
-print
-----
-num=0
-
 guard-state r=req11
 ----
 new: state=doneWaiting
 Intents to resolve:
  key="a" txn=00000000 status=ABORTED
+
+release txn=txn2 span=a
+----
+num=0
 
 dequeue r=req11
 ----
@@ -787,15 +905,15 @@ scan r=req12
 ----
 start-waiting: true
 
-print
-----
-num=0
-
 guard-state r=req12
 ----
 new: state=doneWaiting
 Intents to resolve:
  key="a" txn=00000000 status=ABORTED
+
+release txn=txn2 span=a
+----
+num=0
 
 dequeue r=req12
 ----

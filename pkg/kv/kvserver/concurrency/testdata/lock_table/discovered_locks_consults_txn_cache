@@ -59,7 +59,7 @@ new: state=doneWaiting
 Intents to resolve:
  key="a" txn=00000000 status=ABORTED
 
-print
+release txn=txn2 span=a
 ----
 num=1
  lock: "a"
@@ -107,6 +107,28 @@ resolve-before-scanning r=req1
 Intents to resolve:
  key="b" txn=00000000 status=ABORTED
  key="c" txn=00000000 status=ABORTED
+
+release txn=txn3 span=b
+----
+num=2
+ lock: "a"
+   queued locking requests:
+    active: false req: 1, strength: Intent, txn: 00000000-0000-0000-0000-000000000001
+ lock: "d"
+  holder: txn: 00000000-0000-0000-0000-000000000004 epoch: 0, iso: Serializable, ts: 10.000000000,0, info: repl [Intent]
+   queued locking requests:
+    active: false req: 1, strength: Intent, txn: 00000000-0000-0000-0000-000000000001
+
+release txn=txn3 span=c
+----
+num=2
+ lock: "a"
+   queued locking requests:
+    active: false req: 1, strength: Intent, txn: 00000000-0000-0000-0000-000000000001
+ lock: "d"
+  holder: txn: 00000000-0000-0000-0000-000000000004 epoch: 0, iso: Serializable, ts: 10.000000000,0, info: repl [Intent]
+   queued locking requests:
+    active: false req: 1, strength: Intent, txn: 00000000-0000-0000-0000-000000000001
 
 scan r=req1
 ----
