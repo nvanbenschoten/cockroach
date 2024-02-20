@@ -121,7 +121,7 @@ debug-advance-clock ts=123
 on-txn-updated txn=txn1 status=committed
 ----
 [-] update txn: committing txn1
-[3] sequence req3: resolving intent ‹"k2"› for txn 00000001 with COMMITTED status
+[3] sequence req3: informing lock table of pushed txn 00000001 with COMMITTED status
 [3] sequence req3: lock wait-queue event: wait for (distinguished) txn 00000002 holding lock @ key ‹"k3"› (queuedLockingRequests: 1, queuedReaders: 0)
 [3] sequence req3: conflicted with ‹00000001-0000-0000-0000-000000000000› on ‹"k2"› for 123.000s
 [3] sequence req3: pushing after 0s for: liveness detection = true, deadlock detection = true, timeout enforcement = false, priority enforcement = false, wait policy error = false
@@ -143,8 +143,10 @@ debug-lock-table
 ----
 num=2
  lock: "k2"
+  holder: txn: 00000001-0000-0000-0000-000000000000 epoch: 0, iso: Serializable, ts: 10.000000000,0, info: unrepl [(str: Exclusive seq: 0)] [holder finalized: committed]
    queued locking requests:
-    active: false req: 3, strength: Intent, txn: 00000003-0000-0000-0000-000000000000
+    active: true req: 3, strength: Intent, txn: 00000003-0000-0000-0000-000000000000
+   distinguished req: 3
  lock: "k3"
   holder: txn: 00000002-0000-0000-0000-000000000000 epoch: 0, iso: Serializable, ts: 11.000000000,0, info: unrepl [(str: Exclusive seq: 0)]
    queued locking requests:
@@ -163,6 +165,15 @@ new-request name=reqNoWait2 txn=txnNoWait ts=12,0 wait-policy=error
 
 sequence req=reqNoWait2
 ----
+[3] sequence req3: lock wait-queue event: done waiting
+[3] sequence req3: conflicted with ‹00000002-0000-0000-0000-000000000000› on ‹"k3"› for 0.000s
+[3] sequence req3: acquiring latches
+[3] sequence req3: scanning lock table for conflicting locks
+[3] sequence req3: waiting in lock wait-queues
+[3] sequence req3: lock wait-queue event: wait for (distinguished) txn 00000002 holding lock @ key ‹"k3"› (queuedLockingRequests: 1, queuedReaders: 0)
+[3] sequence req3: pushing after 0s for: liveness detection = true, deadlock detection = true, timeout enforcement = false, priority enforcement = false, wait policy error = false
+[3] sequence req3: pushing txn 00000002 to abort
+[3] sequence req3: blocked on select in concurrency_test.(*cluster).PushTransaction
 [6] sequence reqNoWait2: sequencing request
 [6] sequence reqNoWait2: acquiring latches
 [6] sequence reqNoWait2: scanning lock table for conflicting locks
@@ -233,7 +244,7 @@ debug-advance-clock ts=123
 on-txn-updated txn=txn2 status=aborted
 ----
 [-] update txn: aborting txn2
-[3] sequence req3: resolving intent ‹"k3"› for txn 00000002 with ABORTED status
+[3] sequence req3: informing lock table of pushed txn 00000002 with ABORTED status
 [3] sequence req3: lock wait-queue event: done waiting
 [3] sequence req3: conflicted with ‹00000002-0000-0000-0000-000000000000› on ‹"k3"› for 123.000s
 [3] sequence req3: acquiring latches

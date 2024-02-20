@@ -487,8 +487,6 @@ type lockTableGuardImpl struct {
 		mustComputeWaitingState bool
 	}
 
-	//deferredConflicts lockTableGuardDeferredConflict
-
 	// nonBlockingTxns contains lock holder transactions that the request has
 	// encountered and which the request knows need not block (some or all of) the
 	// request from proceeding. Transactions end up in this map either because the
@@ -503,6 +501,7 @@ type lockTableGuardImpl struct {
 	// pushed while its status remains PENDING. This is sufficient to not block
 	// non-locking reads (str == lock.None), but is insufficient to not block
 	// locking reads or intent writes.
+	// TODO: rename to otherTxnKnowledge.
 	nonBlockingTxns map[uuid.UUID]*roachpb.Transaction
 
 	// Locks to resolve before scanning again. Doesn't need to be protected by
@@ -516,6 +515,7 @@ type lockTableGuardImpl struct {
 	// toResolveReplicatedLocks contains the locks that the request is tracking in
 	// toResolve. The boolean value indicates whether the lock update carries a
 	// finalized transaction status.
+	// TODO: this seems to be needed for shared locks...
 	toResolveReplicatedLocks map[lockUpdateKey]bool
 
 	// toResolveUnreplicated is a list of locks (only held with durability
@@ -629,7 +629,8 @@ func (g *lockTableGuardImpl) deferConflictResolution(
 
 func (g *lockTableGuardImpl) addNonBlockingTxn(conflictTxn *roachpb.Transaction) {
 	if existing, ok := g.nonBlockingTxns[conflictTxn.ID]; ok {
-		assert(!existing.Status.IsFinalized(), "expected existing txn to be pending")
+		_ = existing
+		//assert(!existing.Status.IsFinalized(), "expected existing txn to be pending")
 		assert(conflictTxn.Status.IsFinalized(), "expected updated txn to be finalized")
 	}
 	if g.nonBlockingTxns == nil {
@@ -637,26 +638,6 @@ func (g *lockTableGuardImpl) addNonBlockingTxn(conflictTxn *roachpb.Transaction)
 	}
 	g.nonBlockingTxns[conflictTxn.ID] = conflictTxn
 }
-
-//func (rs *lockTableGuardResolutionSet) contains(txnID uuid.UUID, keyStr string) bool {
-//	_, ok := rs.locks[pushedLockToResolve{txnID: txnID, keyStr: keyStr}]
-//	return ok
-//}
-//
-//func (rs *lockTableGuardResolutionSet) add(
-//	txnID uuid.UUID, keyStr string, update roachpb.LockUpdate,
-//) {
-//	rs.locks[pushedLockToResolve{txnID: txnID, keyStr: keyStr}] = struct{}{}
-//	rs.updates = append(rs.updates, update)
-//}
-//
-//func (g *lockTableGuardImpl) knownFinalized(txnID uuid.UUID) bool {
-//	if txn, ok := g.lockUpdates.nonBlockingTxns[txnID]; ok && txn.Status.IsFinalized() {
-//		return true
-//	}
-//	_, ok := g.lt.txnStatusCache.finalizedTxns.get(txnID)
-//	return ok
-//}
 
 var _ lockTableGuard = &lockTableGuardImpl{}
 
@@ -734,6 +715,21 @@ func (g *lockTableGuardImpl) CurState() (waitingState, error) {
 		return waitingState{}, err
 	}
 	return g.mu.state, nil
+}
+
+func (g *lockTableGuardImpl) PushedTransactionUpdated(txn *roachpb.Transaction) {
+	g.addNonBlockingTxn(txn)
+	// If the transaction was pushed, add it to the txnStatusCache. This avoids
+	// needing to push it again if we find another one of its locks and allows for
+	// batching of intent resolution.
+	g.lt.PushedTransactionUpdated(txn)
+
+	iter := g.tableSnapshot.MakeIter()
+	iter.SeekGE(&keyLocks{key: g.key})
+	if !iter.Valid() || !iter.Cur().key.Equal(g.key) {
+		panic("did not find lock")
+	}
+	iter.Cur().checkStillBlocked(g)
 }
 
 // updateStateToDoneWaitingLocked updates the request's waiting state to
@@ -2266,7 +2262,29 @@ func (kl *keyLocks) claimantTxn() (_ *enginepb.TxnMeta, held bool) {
 		// necessitates it to change. So we always return the first lock holder,
 		// ensuring all requests consider the same transaction to have claimed a
 		// key.
+		// TODO: pick the first that conflicts...
 		return kl.holders.Front().Value.txn, true
+	}
+	if kl.queuedLockingRequests.Len() == 0 {
+		panic("no queued locking request or lock holder; no one should be waiting on the lock")
+	}
+	qg := kl.queuedLockingRequests.Front().Value
+	return qg.guard.txnMeta(), false
+}
+
+func (kl *keyLocks) claimantTxn2(g *lockTableGuardImpl) (_ *enginepb.TxnMeta, held bool) {
+	if kl.isLocked() {
+		// We want the claimant transaction to remain the same unless there has been
+		// a state transition (e.g. the claimant released the lock) that
+		// necessitates it to change. So we always return the first lock holder,
+		// ensuring all requests consider the same transaction to have claimed a
+		// key.
+		for e := kl.holders.Front(); e != nil; e = e.Next() {
+			tl := e.Value
+			if !g.hasDeferredConflictResolution(tl.txn.ID, string(kl.key), g.curStrength() == lock.None) {
+				return kl.holders.Front().Value.txn, true
+			}
+		}
 	}
 	if kl.queuedLockingRequests.Len() == 0 {
 		panic("no queued locking request or lock holder; no one should be waiting on the lock")
@@ -2589,6 +2607,53 @@ func (kl *keyLocks) scanAndMaybeEnqueue(g *lockTableGuardImpl, notify bool) (wai
 	return false /* wait */, nil
 }
 
+func (kl *keyLocks) checkStillBlocked(g *lockTableGuardImpl) (wait bool) {
+	kl.mu.Lock()
+	defer kl.mu.Unlock()
+	if kl.isEmptyLock() {
+		return false
+	}
+	if kl.conflictsWithLockHolders(g) {
+		ws := kl.constructWaitingState(g)
+		g.startWaitingWithWaitingState(ws, true /* notify */)
+		return true
+	}
+	found := false
+	if g.curStrength() == lock.None {
+		for e := kl.waitingReaders.Front(); e != nil; e = e.Next() {
+			if e.Value == g {
+				kl.removeReader(e)
+				found = true
+				break
+			}
+		}
+	} else {
+		for e := kl.queuedLockingRequests.Front(); e != nil; e = e.Next() {
+			qg := e.Value
+			if qg.guard == g {
+				assert(qg.active, "expect active")
+				qg.active = false // mark as inactive
+				g.mu.Lock()
+				g.doneActivelyWaitingAtLock()
+				g.mu.Unlock()
+				//if g == kl.distinguishedWaiter {
+				//	// We're only clearing the distinguishedWaiter for now; a new one will be
+				//	// selected below in the call to informActiveWaiters.
+				//	kl.distinguishedWaiter = nil
+				//}
+				found = true
+				break
+			}
+		}
+	}
+	_ = found
+	//assert(found, "must find request in waitingReaders or queuedLockingRequests")
+	//if found {
+	//	kl.informActiveWaiters()
+	//}
+	return false
+}
+
 // constructWaitingState constructs the waiting state the supplied request
 // should use to wait in the receiver's lock wait-queues.
 //
@@ -2601,7 +2666,7 @@ func (kl *keyLocks) constructWaitingState(g *lockTableGuardImpl) waitingState {
 		queuedReaders:         kl.waitingReaders.Len(),
 		held:                  true,
 	}
-	txn, held := kl.claimantTxn()
+	txn, held := kl.claimantTxn2(g)
 	waitForState.held = held
 	waitForState.txn = txn
 	if g.isSameTxn(waitForState.txn) {
@@ -2909,9 +2974,7 @@ func (kl *keyLocks) maybeMakeDistinguishedWaiter(g *lockTableGuardImpl) {
 // REQUIRES: kl.mu to be locked.
 // REQUIRES: g.mu to be locked.
 func (kl *keyLocks) shouldRequestActivelyWait(g *lockTableGuardImpl) bool {
-	if g.curStrength() == lock.None {
-		return true // non-locking read requests always actively wait
-	}
+	assert(g.curStrength() != lock.None, "should only be called with a locking request")
 
 	if kl.conflictsWithLockHolders(g) {
 		return true

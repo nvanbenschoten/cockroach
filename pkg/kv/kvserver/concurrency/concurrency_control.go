@@ -771,6 +771,8 @@ type lockTableGuard interface {
 	// CurState returns the latest waiting state.
 	CurState() (waitingState, error)
 
+	PushedTransactionUpdated(*roachpb.Transaction)
+
 	// ResolveBeforeScanning lists the locks to resolve before scanning again.
 	// This must be called after:
 	// - the waiting state has transitioned to doneWaiting.

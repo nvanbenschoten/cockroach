@@ -124,7 +124,7 @@ debug-advance-clock ts=123
 on-txn-updated txn=txn2 status=committed
 ----
 [-] update txn: committing txn2
-[2] sequence req3: resolving intent ‹"k"› for txn 00000002 with COMMITTED status
+[2] sequence req3: informing lock table of pushed txn 00000002 with COMMITTED status
 [2] sequence req3: lock wait-queue event: done waiting
 [2] sequence req3: conflicted with ‹00000002-0000-0000-0000-000000000000› on ‹"k"› for 123.000s
 [2] sequence req3: acquiring latches
@@ -225,7 +225,7 @@ debug-advance-clock ts=123
 on-txn-updated txn=txn2 status=pending ts=18,1
 ----
 [-] update txn: increasing timestamp of txn2
-[2] sequence req5: resolving intent ‹"k"› for txn 00000002 with PENDING status and clock observation {1 246.000000000,0}
+[2] sequence req5: informing lock table of pushed txn 00000002 with PENDING status
 [2] sequence req5: lock wait-queue event: done waiting
 [2] sequence req5: conflicted with ‹00000002-0000-0000-0000-000000000000› on ‹"k"› for 123.000s
 [2] sequence req5: acquiring latches
@@ -270,7 +270,7 @@ debug-advance-clock ts=123
 on-txn-updated txn=txn2 status=committed
 ----
 [-] update txn: committing txn2
-[4] sequence req7: resolving intent ‹"k"› for txn 00000002 with COMMITTED status
+[4] sequence req7: informing lock table of pushed txn 00000002 with COMMITTED status
 [4] sequence req7: lock wait-queue event: done waiting
 [4] sequence req7: conflicted with ‹00000002-0000-0000-0000-000000000000› on ‹"k"› for 123.000s
 [4] sequence req7: acquiring latches

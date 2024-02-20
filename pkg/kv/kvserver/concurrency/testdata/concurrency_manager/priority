@@ -144,7 +144,7 @@ sequence req=req4
 
 sequence req=req5
 ----
-[4] sequence req4: resolving intent ‹"kLow1"› for txn 00000001 with PENDING status and clock observation {1 123.000000000,1}
+[4] sequence req4: informing lock table of pushed txn 00000001 with PENDING status
 [4] sequence req4: lock wait-queue event: done waiting
 [4] sequence req4: conflicted with ‹00000001-0000-0000-0000-000000000000› on ‹"kLow1"› for 0.000s
 [4] sequence req4: acquiring latches
@@ -158,7 +158,7 @@ sequence req=req5
 [5] sequence req5: pushing after 0s for: liveness detection = false, deadlock detection = true, timeout enforcement = false, priority enforcement = true, wait policy error = false
 [5] sequence req5: pushing timestamp of txn 00000001 above 10.000000000,1
 [5] sequence req5: pusher pushed pushee to 10.000000000,2
-[5] sequence req5: resolving intent ‹"kLow1"› for txn 00000001 with PENDING status and clock observation {1 123.000000000,3}
+[5] sequence req5: informing lock table of pushed txn 00000001 with PENDING status
 [5] sequence req5: lock wait-queue event: done waiting
 [5] sequence req5: conflicted with ‹00000001-0000-0000-0000-000000000000› on ‹"kLow1"› for 0.000s
 [5] sequence req5: acquiring latches
@@ -216,7 +216,7 @@ sequence req=req6
 
 sequence req=req7
 ----
-[6] sequence req6: resolving intent ‹"kLow2"› for txn 00000001 with ABORTED status
+[6] sequence req6: informing lock table of pushed txn 00000001 with ABORTED status
 [6] sequence req6: lock wait-queue event: done waiting
 [6] sequence req6: conflicted with ‹00000001-0000-0000-0000-000000000000› on ‹"kLow2"› for 0.000s
 [6] sequence req6: acquiring latches
@@ -230,9 +230,13 @@ sequence req=req7
 [7] sequence req7: pushing after 0s for: liveness detection = false, deadlock detection = false, timeout enforcement = false, priority enforcement = true, wait policy error = false
 [7] sequence req7: pushing txn 00000001 to abort
 [7] sequence req7: pusher aborted pushee
-[7] sequence req7: resolving intent ‹"kLow2"› for txn 00000001 with ABORTED status
-[7] sequence req7: lock wait-queue event: wait for (distinguished) txn 00000004 running request @ key ‹"kLow2"› (queuedLockingRequests: 2, queuedReaders: 0)
+[7] sequence req7: informing lock table of pushed txn 00000001 with ABORTED status
+[7] sequence req7: lock wait-queue event: done waiting
 [7] sequence req7: conflicted with ‹00000001-0000-0000-0000-000000000000› on ‹"kLow2"› for 0.000s
+[7] sequence req7: acquiring latches
+[7] sequence req7: scanning lock table for conflicting locks
+[7] sequence req7: waiting in lock wait-queues
+[7] sequence req7: lock wait-queue event: wait for (distinguished) txn 00000004 running request @ key ‹"kLow2"› (queuedLockingRequests: 2, queuedReaders: 0)
 [7] sequence req7: pushing after 0s for: liveness detection = false, deadlock detection = false, timeout enforcement = false, priority enforcement = true, wait policy error = false
 [7] sequence req7: pushing txn 00000004 to detect request deadlock
 [7] sequence req7: pusher aborted pushee
@@ -292,7 +296,7 @@ sequence req=req8
 
 sequence req=req9
 ----
-[8] sequence req8: resolving intent ‹"kNormal1"› for txn 00000002 with PENDING status and clock observation {1 123.000000000,6}
+[8] sequence req8: informing lock table of pushed txn 00000002 with PENDING status
 [8] sequence req8: lock wait-queue event: done waiting
 [8] sequence req8: conflicted with ‹00000002-0000-0000-0000-000000000000› on ‹"kNormal1"› for 0.000s
 [8] sequence req8: acquiring latches
@@ -306,7 +310,7 @@ sequence req=req9
 [9] sequence req9: pushing after 0s for: liveness detection = false, deadlock detection = true, timeout enforcement = false, priority enforcement = true, wait policy error = false
 [9] sequence req9: pushing timestamp of txn 00000002 above 10.000000000,1
 [9] sequence req9: pusher pushed pushee to 10.000000000,2
-[9] sequence req9: resolving intent ‹"kNormal1"› for txn 00000002 with PENDING status and clock observation {1 123.000000000,8}
+[9] sequence req9: informing lock table of pushed txn 00000002 with PENDING status
 [9] sequence req9: lock wait-queue event: done waiting
 [9] sequence req9: conflicted with ‹00000002-0000-0000-0000-000000000000› on ‹"kNormal1"› for 0.000s
 [9] sequence req9: acquiring latches
@@ -362,7 +366,7 @@ sequence req=req10
 
 sequence req=req11
 ----
-[10] sequence req10: resolving intent ‹"kNormal2"› for txn 00000002 with ABORTED status
+[10] sequence req10: informing lock table of pushed txn 00000002 with ABORTED status
 [10] sequence req10: lock wait-queue event: done waiting
 [10] sequence req10: conflicted with ‹00000002-0000-0000-0000-000000000000› on ‹"kNormal2"› for 0.000s
 [10] sequence req10: acquiring latches
@@ -376,9 +380,13 @@ sequence req=req11
 [11] sequence req11: pushing after 0s for: liveness detection = false, deadlock detection = false, timeout enforcement = false, priority enforcement = true, wait policy error = false
 [11] sequence req11: pushing txn 00000002 to abort
 [11] sequence req11: pusher aborted pushee
-[11] sequence req11: resolving intent ‹"kNormal2"› for txn 00000002 with ABORTED status
-[11] sequence req11: lock wait-queue event: wait for (distinguished) txn 00000007 running request @ key ‹"kNormal2"› (queuedLockingRequests: 2, queuedReaders: 0)
+[11] sequence req11: informing lock table of pushed txn 00000002 with ABORTED status
+[11] sequence req11: lock wait-queue event: done waiting
 [11] sequence req11: conflicted with ‹00000002-0000-0000-0000-000000000000› on ‹"kNormal2"› for 0.000s
+[11] sequence req11: acquiring latches
+[11] sequence req11: scanning lock table for conflicting locks
+[11] sequence req11: waiting in lock wait-queues
+[11] sequence req11: lock wait-queue event: wait for (distinguished) txn 00000007 running request @ key ‹"kNormal2"› (queuedLockingRequests: 2, queuedReaders: 0)
 [11] sequence req11: pushing after 0s for: liveness detection = false, deadlock detection = false, timeout enforcement = false, priority enforcement = true, wait policy error = false
 [11] sequence req11: pushing txn 00000007 to detect request deadlock
 [11] sequence req11: pusher aborted pushee
@@ -448,13 +456,13 @@ sequence req=req13
 on-txn-updated txn=txnHighPushee status=pending ts=10,2
 ----
 [-] update txn: increasing timestamp of txnHighPushee
-[12] sequence req12: resolving intent ‹"kHigh1"› for txn 00000003 with PENDING status and clock observation {1 123.000000000,11}
+[12] sequence req12: informing lock table of pushed txn 00000003 with PENDING status
 [12] sequence req12: lock wait-queue event: done waiting
 [12] sequence req12: conflicted with ‹00000003-0000-0000-0000-000000000000› on ‹"kHigh1"› for 0.000s
 [12] sequence req12: acquiring latches
 [12] sequence req12: scanning lock table for conflicting locks
 [12] sequence req12: sequencing complete, returned guard
-[13] sequence req13: resolving intent ‹"kHigh1"› for txn 00000003 with PENDING status and clock observation {1 123.000000000,13}
+[13] sequence req13: informing lock table of pushed txn 00000003 with PENDING status
 [13] sequence req13: lock wait-queue event: done waiting
 [13] sequence req13: conflicted with ‹00000003-0000-0000-0000-000000000000› on ‹"kHigh1"› for 0.000s
 [13] sequence req13: acquiring latches
@@ -519,7 +527,7 @@ sequence req=req15
 on-txn-updated txn=txnHighPushee status=committed
 ----
 [-] update txn: committing txnHighPushee
-[14] sequence req14: resolving intent ‹"kHigh2"› for txn 00000003 with COMMITTED status
+[14] sequence req14: informing lock table of pushed txn 00000003 with COMMITTED status
 [14] sequence req14: lock wait-queue event: done waiting
 [14] sequence req14: conflicted with ‹00000003-0000-0000-0000-000000000000› on ‹"kHigh2"› for 0.000s
 [14] sequence req14: acquiring latches
@@ -530,6 +538,9 @@ on-txn-updated txn=txnHighPushee status=committed
 [15] sequence req15: pushing after 0s for: liveness detection = false, deadlock detection = false, timeout enforcement = false, priority enforcement = true, wait policy error = false
 [15] sequence req15: pushing txn 00000008 to detect request deadlock
 [15] sequence req15: pusher aborted pushee
+[15] sequence req15: lock wait-queue event: wait for (distinguished) txn 00000008 running request @ key ‹"kHigh2"› (queuedLockingRequests: 2, queuedReaders: 0)
+[15] sequence req15: pushing after 0s for: liveness detection = false, deadlock detection = false, timeout enforcement = false, priority enforcement = true, wait policy error = false
+[15] sequence req15: pushing txn 00000008 to detect request deadlock
 [15] sequence req15: blocked on select in concurrency.(*lockTableWaiterImpl).WaitOn
 
 finish req=req14

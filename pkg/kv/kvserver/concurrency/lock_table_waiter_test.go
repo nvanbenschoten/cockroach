@@ -81,6 +81,8 @@ func (g *mockLockTableGuard) CurState() (waitingState, error) {
 	}
 	return s, nil
 }
+func (g *mockLockTableGuard) PushedTransactionUpdated(*roachpb.Transaction) {
+}
 func (g *mockLockTableGuard) ResolveBeforeScanning() []roachpb.LockUpdate {
 	return g.toResolve
 }
