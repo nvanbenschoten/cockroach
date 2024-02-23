@@ -42,7 +42,7 @@ import (
 const (
 	kvSchema = `(
 		k %s NOT NULL PRIMARY KEY,
-		v BYTES NOT NULL
+		v JSONB NOT NULL
 	)`
 	kvSchemaWithIndex = `(
 		k %s NOT NULL PRIMARY KEY,
@@ -58,6 +58,446 @@ const (
 		v BYTES NOT NULL,
 		INDEX (v)
 	)`
+
+	jsonBlob = `
+{
+	"response": true,
+	"errorMessage": "",
+	"infos": [
+		{
+			"span": {
+				"startKey": "/Min",
+				"endKey": "/System/NodeLiveness"
+			},
+			"raftState": {
+				"replicaId": "1",
+				"hardState": {
+					"term": "6",
+					"vote": "1",
+					"commit": "479"
+				},
+				"lead": "1",
+				"state": "StateLeader",
+				"applied": "479",
+				"progress": {
+					"1": {
+						"match": "479",
+						"next": "480",
+						"state": "StateReplicate",
+						"paused": false,
+						"pendingSnapshot": "0"
+					},
+					"2": {
+						"match": "479",
+						"next": "480",
+						"state": "StateReplicate",
+						"paused": false,
+						"pendingSnapshot": "0"
+					},
+					"3": {
+						"match": "479",
+						"next": "480",
+						"state": "StateReplicate",
+						"paused": false,
+						"pendingSnapshot": "0"
+					}
+				},
+				"leadTransferee": "0"
+			},
+			"state": {
+				"state": {
+					"raftAppliedIndex": "479",
+					"leaseAppliedIndex": "461",
+					"desc": {
+						"rangeId": "1",
+						"startKey": "",
+						"endKey": "BABsaXZlbmVzcy0=",
+						"internalReplicas": [
+							{
+								"nodeId": 1,
+								"storeId": 1,
+								"replicaId": 1,
+								"type": 0
+							},
+							{
+								"nodeId": 3,
+								"storeId": 3,
+								"replicaId": 2,
+								"type": 0
+							},
+							{
+								"nodeId": 2,
+								"storeId": 2,
+								"replicaId": 3,
+								"type": 0
+							}
+						],
+						"nextReplicaId": 4,
+						"generation": "4",
+						"stickyBit": {
+							"wallTime": "0",
+							"logical": 0
+						}
+					},
+					"lease": {
+						"start": {
+							"wallTime": "0",
+							"logical": 0
+						},
+						"expiration": {
+							"wallTime": "1708702437961930000",
+							"logical": 0
+						},
+						"replica": {
+							"nodeId": 1,
+							"storeId": 1,
+							"replicaId": 1,
+							"type": 0
+						},
+						"deprecatedStartStasis": {
+							"wallTime": "1708702437961930000",
+							"logical": 0
+						},
+						"proposedTs": {
+							"wallTime": "1708702431961930000",
+							"logical": 0
+						},
+						"epoch": "0",
+						"sequence": "1",
+						"acquisitionType": 2
+					},
+					"truncatedState": {
+						"index": "460",
+						"term": "6"
+					},
+					"gcThreshold": {
+						"wallTime": "0",
+						"logical": 0
+					},
+					"stats": {
+						"containsEstimates": "0",
+						"lastUpdateNanos": "1708702434863882000",
+						"lockAge": "0",
+						"gcBytesAge": "281330",
+						"liveBytes": "9239",
+						"liveCount": "93",
+						"keyBytes": "6021",
+						"keyCount": "93",
+						"valBytes": "21727",
+						"valCount": "398",
+						"intentBytes": "0",
+						"intentCount": "0",
+						"lockBytes": "0",
+						"lockCount": "0",
+						"rangeKeyCount": "0",
+						"rangeKeyBytes": "0",
+						"rangeValCount": "0",
+						"rangeValBytes": "0",
+						"sysBytes": "593",
+						"sysCount": "7",
+						"abortSpanBytes": "0"
+					},
+					"deprecatedUsingAppliedStateKey": false,
+					"version": {
+						"majorVal": 1000023,
+						"minorVal": 2,
+						"patch": 0,
+						"internal": 14
+					},
+					"raftClosedTimestamp": {
+						"wallTime": "1708702430539434000",
+						"logical": 0
+					},
+					"raftAppliedIndexTerm": "6",
+					"gcHint": {
+						"latestRangeDeleteTimestamp": {
+							"wallTime": "0",
+							"logical": 0
+						},
+						"gcTimestamp": {
+							"wallTime": "0",
+							"logical": 0
+						},
+						"gcTimestampNext": {
+							"wallTime": "0",
+							"logical": 0
+						}
+					}
+				},
+				"lastIndex": "479",
+				"numPending": "0",
+				"numDropped": "0",
+				"raftLogSize": "10294",
+				"raftLogSizeTrusted": true,
+				"approximateProposalQuota": "8388608",
+				"proposalQuotaBaseIndex": "479",
+				"proposalQuotaReleaseQueue": [
+				],
+				"rangeMaxBytes": "536870912",
+				"activeClosedTimestamp": {
+					"wallTime": "1708702431775323000",
+					"logical": 0
+				},
+				"rangefeedRegistrations": "0",
+				"tenantId": "1",
+				"closedTimestampPolicy": 0,
+				"closedTimestampSidetransportInfo": {
+					"replicaClosed": {
+						"wallTime": "1708702431775323000",
+						"logical": 0
+					},
+					"replicaLai": "461",
+					"centralClosed": {
+						"wallTime": "0",
+						"logical": 0
+					},
+					"centralLai": "0"
+				},
+				"circuitBreakerError": "",
+				"pausedReplicas": [
+				]
+			},
+			"sourceNodeId": 1,
+			"sourceStoreId": 1,
+			"errorMessage": "",
+			"leaseHistory": [
+				{
+					"start": {
+						"wallTime": "0",
+						"logical": 0
+					},
+					"expiration": {
+						"wallTime": "1708702424461369000",
+						"logical": 0
+					},
+					"replica": {
+						"nodeId": 1,
+						"storeId": 1,
+						"replicaId": 1,
+						"type": 0
+					},
+					"deprecatedStartStasis": {
+						"wallTime": "1708702424461369000",
+						"logical": 0
+					},
+					"proposedTs": {
+						"wallTime": "1708702418461369000",
+						"logical": 0
+					},
+					"epoch": "0",
+					"sequence": "1",
+					"acquisitionType": 2
+				},
+				{
+					"start": {
+						"wallTime": "0",
+						"logical": 0
+					},
+					"expiration": {
+						"wallTime": "1708702427464131000",
+						"logical": 0
+					},
+					"replica": {
+						"nodeId": 1,
+						"storeId": 1,
+						"replicaId": 1,
+						"type": 0
+					},
+					"deprecatedStartStasis": {
+						"wallTime": "1708702427464131000",
+						"logical": 0
+					},
+					"proposedTs": {
+						"wallTime": "1708702421464131000",
+						"logical": 0
+					},
+					"epoch": "0",
+					"sequence": "1",
+					"acquisitionType": 2
+				},
+				{
+					"start": {
+						"wallTime": "0",
+						"logical": 0
+					},
+					"expiration": {
+						"wallTime": "1708702430961830000",
+						"logical": 0
+					},
+					"replica": {
+						"nodeId": 1,
+						"storeId": 1,
+						"replicaId": 1,
+						"type": 0
+					},
+					"deprecatedStartStasis": {
+						"wallTime": "1708702430961830000",
+						"logical": 0
+					},
+					"proposedTs": {
+						"wallTime": "1708702424961830000",
+						"logical": 0
+					},
+					"epoch": "0",
+					"sequence": "1",
+					"acquisitionType": 2
+				},
+				{
+					"start": {
+						"wallTime": "0",
+						"logical": 0
+					},
+					"expiration": {
+						"wallTime": "1708702434465690000",
+						"logical": 0
+					},
+					"replica": {
+						"nodeId": 1,
+						"storeId": 1,
+						"replicaId": 1,
+						"type": 0
+					},
+					"deprecatedStartStasis": {
+						"wallTime": "1708702434465690000",
+						"logical": 0
+					},
+					"proposedTs": {
+						"wallTime": "1708702428465690000",
+						"logical": 0
+					},
+					"epoch": "0",
+					"sequence": "1",
+					"acquisitionType": 2
+				},
+				{
+					"start": {
+						"wallTime": "0",
+						"logical": 0
+					},
+					"expiration": {
+						"wallTime": "1708702437961930000",
+						"logical": 0
+					},
+					"replica": {
+						"nodeId": 1,
+						"storeId": 1,
+						"replicaId": 1,
+						"type": 0
+					},
+					"deprecatedStartStasis": {
+						"wallTime": "1708702437961930000",
+						"logical": 0
+					},
+					"proposedTs": {
+						"wallTime": "1708702431961930000",
+						"logical": 0
+					},
+					"epoch": "0",
+					"sequence": "1",
+					"acquisitionType": 2
+				}
+			],
+			"problems": {
+				"unavailable": false,
+				"leaderNotLeaseHolder": false,
+				"noRaftLeader": false,
+				"underreplicated": false,
+				"overreplicated": false,
+				"noLease": false,
+				"quiescentEqualsTicking": false,
+				"raftLogTooLarge": false,
+				"circuitBreakerError": false,
+				"pausedFollowers": false
+			},
+			"stats": {
+				"queriesPerSecond": 34.14189260826196,
+				"writesPerSecond": 61.39443154334932,
+				"requestsPerSecond": 46.884131812572235,
+				"readsPerSecond": 57.67540440914445,
+				"writeBytesPerSecond": 5418.378663904751,
+				"readBytesPerSecond": 4299.2563347987725,
+				"cpuTimePerSecond": 8075901.28390566
+			},
+			"leaseStatus": {
+				"lease": {
+					"start": {
+						"wallTime": "0",
+						"logical": 0
+					},
+					"expiration": {
+						"wallTime": "1708702437961930000",
+						"logical": 0
+					},
+					"replica": {
+						"nodeId": 1,
+						"storeId": 1,
+						"replicaId": 1,
+						"type": 0
+					},
+					"deprecatedStartStasis": {
+						"wallTime": "1708702437961930000",
+						"logical": 0
+					},
+					"proposedTs": {
+						"wallTime": "1708702431961930000",
+						"logical": 0
+					},
+					"epoch": "0",
+					"sequence": "1",
+					"acquisitionType": 2
+				},
+				"now": {
+					"wallTime": "1708702434868673000",
+					"logical": 0
+				},
+				"requestTime": {
+					"wallTime": "1708702434868673000",
+					"logical": 0
+				},
+				"state": 1,
+				"errInfo": "",
+				"liveness": {
+					"nodeId": 0,
+					"epoch": "0",
+					"expiration": {
+						"wallTime": "0",
+						"logical": 0
+					},
+					"draining": false,
+					"membership": 0
+				},
+				"minValidObservedTimestamp": {
+					"wallTime": "0",
+					"logical": 0
+				}
+			},
+			"quiescent": false,
+			"ticking": true,
+			"readLatches": "0",
+			"writeLatches": "0",
+			"locks": "0",
+			"locksWithWaitQueues": "0",
+			"lockWaitQueueWaiters": "0",
+			"topKLocksByWaitQueueWaiters": [
+			],
+			"locality": {
+				"tiers": [
+					{
+						"key": "region",
+						"value": "us-east1"
+					},
+					{
+						"key": "az",
+						"value": "b"
+					}
+				]
+			},
+			"isLeaseholder": true,
+			"leaseValid": true
+		}
+	]
+}
+`
 )
 
 var RandomSeed = workload.NewInt64RandomSeed()
@@ -670,7 +1110,7 @@ func (o *kvOp) run(ctx context.Context) (retErr error) {
 		if sfuArgs != nil {
 			sfuArgs[i] = writeArgs[j]
 		}
-		writeArgs[j+1] = o.config.randBlock(o.g.rand())
+		writeArgs[j+1] = jsonBlob
 	}
 	start := timeutil.Now()
 	var err error
