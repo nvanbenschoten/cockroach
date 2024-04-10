@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"math"
 	"math/rand"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -121,6 +122,20 @@ type workloadInstance struct {
 	prometheusPort int
 	// extraRunArgs dictates unique arguments to use for the workload.
 	extraRunArgs string
+	// extraSessionsVars dictates SQL session variables to configure for the
+	// workload connections to the database.
+	extraSessionsVars map[string]string
+}
+
+func (w workloadInstance) sessionsVarsQueryString() string {
+	if len(w.extraSessionsVars) == 0 {
+		return ""
+	}
+	var sb strings.Builder
+	for k, v := range w.extraSessionsVars {
+		fmt.Fprintf(&sb, "&%s=%s", url.QueryEscape(k), url.QueryEscape(v))
+	}
+	return sb.String()
 }
 
 const workloadPProfStartPort = 33333
@@ -230,8 +245,9 @@ func runTPCC(
 		)
 	}
 	var pgURLs []string
-	for _, workloadInstance := range workloadInstances {
-		pgURLs = append(pgURLs, fmt.Sprintf("{pgurl%s}", workloadInstance.nodes.String()))
+	for _, wi := range workloadInstances {
+		pgURL := fmt.Sprintf("{pgurl%s}%s", wi.nodes.String(), wi.sessionsVarsQueryString())
+		pgURLs = append(pgURLs, pgURL)
 	}
 
 	var ep *tpccChaosEventProcessor
@@ -641,13 +657,24 @@ func registerTPCC(r registry.Registry) {
 					isoLevels := []string{"read_uncommitted", "read_committed", "repeatable_read", "snapshot", "serializable"}
 					for i, isoLevel := range isoLevels {
 						args := "--isolation-level=" + isoLevel
-						if i <= 1 { // read_uncommitted and read_committed
+						if isoLevel == "read_uncommitted" || isoLevel == "read_committed" {
+							// Disable retries for read committed and read uncommitted. These
+							// isolation levels are weak enough that we don't expect retries.
 							args += " --txn-retries=false"
 						}
+						extraSessionsVars := make(map[string]string)
+						if isoLevel == "serializable" {
+							// Enable durable locking for serializable transactions. This
+							// ensures that we do not run into issues with best-effort locks
+							// acquired by SELECT FOR UPDATE being lost and creating lock
+							// order inversions which lead to transaction deadlocks.
+							extraSessionsVars["enable_durable_locking_for_serializable"] = "true"
+						}
 						ret = append(ret, workloadInstance{
-							nodes:          c.Range(1, c.Spec().NodeCount-1),
-							prometheusPort: 2112 + i,
-							extraRunArgs:   args,
+							nodes:             c.Range(1, c.Spec().NodeCount-1),
+							prometheusPort:    2112 + i,
+							extraRunArgs:      args,
+							extraSessionsVars: extraSessionsVars,
 						})
 					}
 					return ret
