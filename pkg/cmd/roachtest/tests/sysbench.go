@@ -103,7 +103,9 @@ func runSysbench(ctx context.Context, t test.Test, c cluster.Cluster, opts sysbe
 	loadNode := c.Node(c.Spec().NodeCount)
 
 	t.Status("installing cockroach")
-	c.Start(ctx, t.L(), option.DefaultStartOpts(), install.MakeClusterSettings(), roachNodes)
+	startOpts := option.DefaultStartOpts()
+	startOpts.RoachprodOpts.ScheduleBackups = false
+	c.Start(ctx, t.L(), startOpts, install.MakeClusterSettings(), roachNodes)
 	err := WaitFor3XReplication(ctx, t, t.L(), c.Conn(ctx, t.L(), allNodes[0]))
 	require.NoError(t, err)
 
@@ -130,9 +132,16 @@ func runSysbench(ctx context.Context, t test.Test, c cluster.Cluster, opts sysbe
 
 	m := c.NewMonitor(ctx, roachNodes)
 	m.Go(func(ctx context.Context) error {
+		t.Status("disabling expensive observability")
+		c.Run(ctx, option.WithNodes(c.Node(1)), `./cockroach sql --url={pgurl:1} -e "SET CLUSTER SETTING sql.stats.activity.flush.enabled = false;"`)
+		c.Run(ctx, option.WithNodes(c.Node(1)), `./cockroach sql --url={pgurl:1} -e "SET CLUSTER SETTING sql.stats.flush.enabled = false;"`)
+		c.Run(ctx, option.WithNodes(c.Node(1)), `./cockroach sql --url={pgurl:1} -e "SET CLUSTER SETTING sql.txn_stats.sample_rate = 0;"`)
+
 		t.Status("preparing workload")
 		c.Run(ctx, option.WithNodes(c.Node(1)), `./cockroach sql --url={pgurl:1} -e "CREATE DATABASE sysbench"`)
 		c.Run(ctx, option.WithNodes(loadNode), opts.cmd(false /* haproxy */)+" prepare")
+		c.Run(ctx, option.WithNodes(c.Node(1)), `./cockroach sql --url={pgurl:1} -e "ALTER DATABASE sysbench SET default_transaction_isolation ='read committed'"`)
+		c.Run(ctx, option.WithNodes(c.Node(1)), `./cockroach sql --url={pgurl:1} -e "ALTER DATABASE sysbench SET opt_split_scan_limit=0"`)
 
 		t.Status("running workload")
 		cmd := opts.cmd(true /* haproxy */) + " run"
@@ -156,20 +165,21 @@ func runSysbench(ctx context.Context, t test.Test, c cluster.Cluster, opts sysbe
 
 func registerSysbench(r registry.Registry) {
 	for w := sysbenchWorkload(0); w < numSysbenchWorkloads; w++ {
-		const n = 3
-		const cpus = 32
+		const n = 7
+		const cpus = 16
 		const conc = 8 * cpus
 		opts := sysbenchOptions{
 			workload:     w,
-			duration:     10 * time.Minute,
+			duration:     60 * time.Minute,
 			concurrency:  conc,
-			tables:       10,
+			tables:       16,
 			rowsPerTable: 10000000,
 		}
 
 		r.Add(registry.TestSpec{
 			Name:             fmt.Sprintf("sysbench/%s/nodes=%d/cpu=%d/conc=%d", w, n, cpus, conc),
 			Owner:            registry.OwnerTestEng,
+			Benchmark:        true,
 			Cluster:          r.MakeClusterSpec(n+1, spec.CPU(cpus)),
 			CompatibleClouds: registry.AllExceptAWS,
 			Suites:           registry.Suites(registry.Nightly),
