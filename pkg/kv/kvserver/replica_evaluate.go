@@ -17,6 +17,7 @@ import (
 
 	"github.com/cockroachdb/cockroach/pkg/kv/kvnemesis/kvnemesisutil"
 	"github.com/cockroachdb/cockroach/pkg/kv/kvpb"
+	"github.com/cockroachdb/cockroach/pkg/kv/kvserver/abortspan"
 	"github.com/cockroachdb/cockroach/pkg/kv/kvserver/batcheval"
 	"github.com/cockroachdb/cockroach/pkg/kv/kvserver/batcheval/result"
 	"github.com/cockroachdb/cockroach/pkg/kv/kvserver/concurrency"
@@ -220,7 +221,7 @@ func evaluateBatch(
 			// return an aborted proto in their otherwise successful response.
 			// TODO(nvanbenschoten): Let's remove heartbeats from this allowlist when
 			// we rationalize the TODO in txnHeartbeater.heartbeat.
-			if !ba.IsSingleAbortTxnRequest() && !ba.IsSingleHeartbeatTxnRequest() {
+			if abortspan.Enabled.Get(&rec.ClusterSettings().SV) && !ba.IsSingleAbortTxnRequest() && !ba.IsSingleHeartbeatTxnRequest() {
 				if pErr := checkIfTxnAborted(ctx, rec, readWriter, *baHeader.Txn); pErr != nil {
 					return nil, result.Result{}, pErr
 				}

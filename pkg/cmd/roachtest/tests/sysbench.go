@@ -137,6 +137,9 @@ func runSysbench(ctx context.Context, t test.Test, c cluster.Cluster, opts sysbe
 		c.Run(ctx, option.WithNodes(c.Node(1)), `./cockroach sql --url={pgurl:1} -e "SET CLUSTER SETTING sql.stats.flush.enabled = false;"`)
 		c.Run(ctx, option.WithNodes(c.Node(1)), `./cockroach sql --url={pgurl:1} -e "SET CLUSTER SETTING sql.txn_stats.sample_rate = 0;"`)
 
+		t.Status("tuning other settings")
+		c.Run(ctx, option.WithNodes(c.Node(1)), `./cockroach sql --url={pgurl:1} -e "SET CLUSTER SETTING kv.transaction.abort_span.enabled = false;"`)
+
 		t.Status("preparing workload")
 		c.Run(ctx, option.WithNodes(c.Node(1)), `./cockroach sql --url={pgurl:1} -e "CREATE DATABASE sysbench"`)
 		c.Run(ctx, option.WithNodes(loadNode), opts.cmd(false /* haproxy */)+" prepare")

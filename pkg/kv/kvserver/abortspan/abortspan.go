@@ -16,12 +16,22 @@ import (
 
 	"github.com/cockroachdb/cockroach/pkg/keys"
 	"github.com/cockroachdb/cockroach/pkg/roachpb"
+	"github.com/cockroachdb/cockroach/pkg/settings"
 	"github.com/cockroachdb/cockroach/pkg/storage"
 	"github.com/cockroachdb/cockroach/pkg/storage/enginepb"
 	"github.com/cockroachdb/cockroach/pkg/util/hlc"
 	"github.com/cockroachdb/cockroach/pkg/util/log"
 	"github.com/cockroachdb/cockroach/pkg/util/uuid"
 	"github.com/cockroachdb/errors"
+)
+
+// Enabled is the kv.transaction.abort_span.enabled cluster setting.
+var Enabled = settings.RegisterBoolSetting(
+	settings.ApplicationLevel,
+	"kv.transaction.abort_span.enabled",
+	"if enabled, zombie transactions cannot fail to miss their own writes",
+	true,
+	settings.WithPublic,
 )
 
 // An AbortSpan sets markers for aborted transactions to provide protection
