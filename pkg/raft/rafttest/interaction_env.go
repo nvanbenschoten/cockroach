@@ -25,6 +25,7 @@ import (
 
 	"github.com/cockroachdb/cockroach/pkg/raft"
 	pb "github.com/cockroachdb/cockroach/pkg/raft/raftpb"
+	"github.com/cockroachdb/cockroach/pkg/raft/raftstoreliveness"
 )
 
 // InteractionOpts groups the options for an InteractionEnv.
@@ -53,6 +54,7 @@ type InteractionEnv struct {
 	Options  *InteractionOpts
 	Nodes    []Node
 	Messages []pb.Message // in-flight messages
+	fabric   *globalLivenessFabric
 
 	Output *RedirectLogger
 }
@@ -102,6 +104,7 @@ func raftConfigStub() raft.Config {
 		HeartbeatTick:   1,
 		MaxSizePerMsg:   math.MaxUint64,
 		MaxInflightMsgs: math.MaxInt32,
+		StoreLiveness:   raftstoreliveness.AlwaysLiveStoreLiveness{},
 	}
 }
 

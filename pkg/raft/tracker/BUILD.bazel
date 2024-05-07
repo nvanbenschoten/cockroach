@@ -8,12 +8,15 @@ go_library(
         "progress.go",
         "progresstracker.go",
         "state.go",
+        "support_tracker.go",
     ],
     importpath = "github.com/cockroachdb/cockroach/pkg/raft/tracker",
     visibility = ["//visibility:public"],
     deps = [
         "//pkg/raft/quorum",
         "//pkg/raft/raftpb",
+        "//pkg/raft/raftstoreliveness",
+        "//pkg/util/hlc",
     ],
 )
 
