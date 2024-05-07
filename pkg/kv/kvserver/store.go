@@ -56,6 +56,7 @@ import (
 	"github.com/cockroachdb/cockroach/pkg/kv/kvserver/rangefeed"
 	"github.com/cockroachdb/cockroach/pkg/kv/kvserver/rditer"
 	"github.com/cockroachdb/cockroach/pkg/kv/kvserver/storeliveness"
+	slpb "github.com/cockroachdb/cockroach/pkg/kv/kvserver/storeliveness/storelivenesspb"
 	"github.com/cockroachdb/cockroach/pkg/kv/kvserver/tenantrate"
 	"github.com/cockroachdb/cockroach/pkg/kv/kvserver/tscache"
 	"github.com/cockroachdb/cockroach/pkg/kv/kvserver/txnrecovery"
@@ -1154,17 +1155,18 @@ type StoreConfig struct {
 	AmbientCtx log.AmbientContext
 	base.RaftConfig
 
-	DefaultSpanConfig    roachpb.SpanConfig
-	Settings             *cluster.Settings
-	Clock                *hlc.Clock
-	Gossip               *gossip.Gossip
-	DB                   *kv.DB
-	NodeLiveness         *liveness.NodeLiveness
-	StorePool            *storepool.StorePool
-	Transport            *RaftTransport
-	NodeDialer           *nodedialer.Dialer
-	RPCContext           *rpc.Context
-	RangeDescriptorCache *rangecache.RangeCache
+	DefaultSpanConfig      roachpb.SpanConfig
+	Settings               *cluster.Settings
+	Clock                  *hlc.Clock
+	Gossip                 *gossip.Gossip
+	DB                     *kv.DB
+	NodeLiveness           *liveness.NodeLiveness
+	StoreLivenessTransport *storeliveness.Transport
+	StorePool              *storepool.StorePool
+	Transport              *RaftTransport
+	NodeDialer             *nodedialer.Dialer
+	RPCContext             *rpc.Context
+	RangeDescriptorCache   *rangecache.RangeCache
 
 	ClosedTimestampSender   *sidetransport.Sender
 	ClosedTimestampReceiver sidetransportReceiver
@@ -2182,6 +2184,22 @@ func (s *Store) Start(ctx context.Context, stopper *stop.Stopper) error {
 	now := s.cfg.Clock.Now()
 	s.startedAt = now.WallTime
 
+	storeID := slpb.StoreIdent{NodeID: s.NodeID(), StoreID: s.StoreID()}
+	options := storeliveness.Options{
+		LivenessInterval:             s.cfg.RangeLeaseDuration,
+		HeartbeatInterval:            s.cfg.RangeLeaseDuration - s.cfg.RangeLeaseRenewalDuration(),
+		SupportExpiryInterval:        1 * time.Second,
+		IdleSupportFromInterval:      1 * time.Minute,
+		SupportWithdrawalGracePeriod: 10 * time.Second,
+	}
+	sm := storeliveness.NewSupportManager(storeID, s.TODOEngine(),
+		options, s.ClusterSettings(), stopper, s.cfg.Clock, s.cfg.StoreLivenessTransport)
+	s.cfg.StoreLivenessTransport.ListenMessages(storeID.StoreID, sm)
+	if err = sm.Start(ctx); err != nil {
+		return errors.Wrap(err, "loading store liveness state")
+	}
+	s.storeLiveness = sm
+
 	// Iterate over all range descriptors, ignoring uncommitted versions
 	// (consistent=false). Uncommitted intents which have been abandoned
 	// due to a split crashing halfway will simply be resolved on the
@@ -2254,6 +2272,13 @@ func (s *Store) Start(ctx context.Context, stopper *stop.Stopper) error {
 		// also check Sequence > 0 to omit ranges that haven't seen a lease yet.
 		if l, _ := rep.GetLease(); l.Type() == roachpb.LeaseExpiration && l.Sequence > 0 {
 			rep.maybeUnquiesce(ctx, true /* wakeLeader */, true /* mayCampaign */)
+		}
+		// Set up store liveness heartbeating to all remote replicas.
+		for _, r := range repl.Desc.InternalReplicas {
+			remoteStoreID := slpb.StoreIdent{NodeID: r.NodeID, StoreID: r.StoreID}
+			if remoteStoreID != storeID {
+				s.storeLiveness.SupportFrom(remoteStoreID)
+			}
 		}
 	}
 	log.Infof(ctx, "initialized %d/%d replicas", len(repls), len(repls))

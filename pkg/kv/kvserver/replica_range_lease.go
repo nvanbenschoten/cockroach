@@ -584,7 +584,7 @@ func (p *pendingLeaseRequest) requestLease(
 	// NB:
 	// RequestLease always bypasses the circuit breaker (i.e. will prefer to
 	// get stuck on an unavailable range rather than failing fast; see
-	// `(*RequestLeaseRequest).flags()`). This enables the caller to chose
+	// `(*RequestLeaseRequest).flags()`). This enables the caller to choose
 	// between either behavior for themselves: if they too want to bypass
 	// the circuit breaker, they simply don't check for the circuit breaker
 	// while waiting for their lease handle. If they want to fail-fast, they

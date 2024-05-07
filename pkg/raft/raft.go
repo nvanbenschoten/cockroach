@@ -336,6 +336,7 @@ type raft struct {
 	config          quorum.Config
 	trk             tracker.ProgressTracker
 	electionTracker tracker.ElectionTracker
+	st              tracker.SupportTracker
 
 	state StateType
 
@@ -365,6 +366,7 @@ type raft struct {
 	// has supported the leader in. It's unset if the peer hasn't supported the
 	// current leader.
 	//
+	// TODO(arul): consider putting this on SupportTracker.
 	// TODO(arul): This should be populated when responding to a MsgFortify.
 	leadEpoch pb.Epoch
 	// leadTransferee is id of the leader transfer target when its value is not zero.
@@ -450,6 +452,7 @@ func newRaft(c *Config) *raft {
 	lastID := r.raftLog.lastEntryID()
 
 	r.electionTracker = tracker.MakeVoteTracker(&r.config)
+	r.st = tracker.MakeSupportTracker(&r.config, c.StoreLiveness)
 
 	cfg, progressMap, err := confchange.Restore(confchange.Changer{
 		Config:           quorum.MakeEmptyConfig(),
@@ -708,8 +711,7 @@ func (r *raft) sendFortify(to pb.PeerID) {
 		epoch, live := r.storeLiveness.SupportFor(r.lead)
 		if live {
 			r.leadEpoch = epoch
-			// TODO(arul): For now, we're not recording any support on the leader. Do
-			// this once we implement handleFortifyResp correctly.
+			r.st.RecordSupport(r.id, epoch)
 		} else {
 			r.logger.Infof(
 				"%x leader at term %d does not support itself in the liveness fabric", r.id, r.Term,
@@ -748,6 +750,39 @@ func (r *raft) bcastFortify() {
 
 	r.trk.Visit(func(id pb.PeerID, _ *tracker.Progress) {
 		r.sendFortify(id)
+	})
+}
+
+// maybeRefortify goes through the list of all peers and figures out whether
+// fortification support from any has expired. If it has, it tries to gain this
+// back by refortifying (if possible).
+func (r *raft) maybeRefortify() {
+	assertTrue(r.state == StateLeader, "can't fortify if you're not a leader")
+	r.trk.Visit(func(id pb.PeerID, _ *tracker.Progress) {
+		livenessEpoch, _, isSupported := r.storeLiveness.SupportFrom(id)
+		if !isSupported {
+			// TODO(arul): should we try regardless?
+			return
+		}
+		fortifiedEpoch, found := r.st.IsSupportedBy(id)
+		if !found {
+			// We hadn't successfully fortified this peer before. The peer's store is
+			// supporting us, so we have a chance to do so now.
+			r.sendFortify(id)
+			return
+		}
+		// TODO(arul): we can't actually make this assertion, as a
+		// MsgFortifyLeaderResp may beat a store liveness heartbeat back to the
+		// leader.
+		//assertTrue(fortifiedEpoch <= livenessEpoch,
+		//	"store liveness epoch can't be less than an already fortified epoch",
+		//)
+		if fortifiedEpoch != livenessEpoch {
+			// Support from the fortified epoch has been withdrawn, however, the
+			// peer's store is currently providing support at a higher epoch. Try to
+			// re-fortify.
+			r.sendFortify(id)
+		}
 	})
 }
 
@@ -847,6 +882,7 @@ func (r *raft) reset(term uint64) {
 			pr.Match = r.raftLog.lastIndex()
 		}
 	})
+	r.st.ResetSupport()
 
 	r.pendingConfIndex = 0
 	r.uncommittedSize = 0
@@ -926,7 +962,7 @@ func (r *raft) tickElection() {
 	}
 	r.electionElapsed++
 
-	if r.promotable() && r.pastElectionTimeout() {
+	if r.promotable() && r.pastElectionTimeout() && !r.isSupportingFortifiedLeader() {
 		r.electionElapsed = 0
 		if err := r.Step(pb.Message{From: r.id, Type: pb.MsgHup}); err != nil {
 			r.logger.Debugf("error occurred during election: %v", err)
@@ -961,6 +997,9 @@ func (r *raft) tickHeartbeat() {
 		if err := r.Step(pb.Message{From: r.id, Type: pb.MsgBeat}); err != nil {
 			r.logger.Debugf("error occurred during checking sending heartbeat: %v", err)
 		}
+
+		// Re-fortify at heartbeat timeout interval as well.
+		r.maybeRefortify()
 	}
 }
 
@@ -970,6 +1009,10 @@ func (r *raft) tickHeartbeat() {
 // function instead; in there, we can add safety checks to ensure we're not
 // overwriting the leader.
 func (r *raft) becomeFollower(term uint64, lead pb.PeerID) {
+	// TODO(arul): we should be able to make the following assertion.
+	//if r.state == StateLeader && r.st.QuorumActive() {
+	//	panic("invalid transition [leader -> follower] when quorum is active")
+	//}
 	r.step = stepFollower
 	r.reset(term)
 	r.tick = r.tickElection
@@ -1075,6 +1118,11 @@ func (r *raft) hup(t CampaignType) {
 	}
 	if r.hasUnappliedConfChanges() {
 		r.logger.Warningf("%x cannot campaign at term %d since there are still pending configuration changes to apply", r.id, r.Term)
+		return
+	}
+
+	if t != campaignTransfer && r.isSupportingFortifiedLeader() {
+		r.logger.Infof("%x is still supporting a fortified leader; can't campaign", r.id)
 		return
 	}
 
@@ -1271,7 +1319,8 @@ func (r *raft) Step(m pb.Message) error {
 		}
 
 	case m.Term < r.Term:
-		if (r.checkQuorum || r.preVote) && (m.Type == pb.MsgHeartbeat || m.Type == pb.MsgApp) {
+		if (r.checkQuorum || r.preVote) &&
+			(m.Type == pb.MsgHeartbeat || m.Type == pb.MsgFortifyLeader || m.Type == pb.MsgApp) {
 			// We have received messages from a leader at a lower term. It is possible
 			// that these messages were simply delayed in the network, but this could
 			// also mean that this node has advanced its term number during a network
@@ -1406,7 +1455,7 @@ func stepLeader(r *raft, m pb.Message) error {
 		r.bcastHeartbeat()
 		return nil
 	case pb.MsgCheckQuorum:
-		if !r.trk.QuorumActive() {
+		if !r.trk.QuorumActive() || !r.st.QuorumActive() {
 			r.logger.Warningf("%x stepped down to follower since quorum is not active", r.id)
 			// NB: Stepping down because of CheckQuorum is a special, in that we know
 			// the QSE is in the past. This means that the leader can safely call a
@@ -2067,8 +2116,10 @@ func (r *raft) handleFortify(m pb.Message) {
 
 func (r *raft) handleFortifyResp(m pb.Message) {
 	assertTrue(r.state == StateLeader, "only leaders should be handling fortification responses")
-	// TODO(arul): record support once
-	// https://github.com/cockroachdb/cockroach/issues/125264 lands.
+	if m.Reject {
+		return // couldn't successfully fortify; we'll try again later
+	}
+	r.st.RecordSupport(m.From, m.LeadEpoch)
 }
 
 // deFortify (conceptually) revokes previously provided fortification support to
@@ -2176,6 +2227,20 @@ func (r *raft) restore(s snapshot) bool {
 func (r *raft) promotable() bool {
 	pr := r.trk.Progress(r.id)
 	return pr != nil && !pr.IsLearner && !r.raftLog.hasNextOrInProgressSnapshot()
+}
+
+// isSupportingFortifiedLeader returns true if the replica if the state machine
+// is providing support to a fortified leader. In such cases, it should not
+// campaign or vote against the fortified leader.
+func (r *raft) isSupportingFortifiedLeader() bool {
+	if r.lead == None {
+		return false
+	}
+	supportEpoch, isSupporting := r.storeLiveness.SupportFor(r.lead)
+	assertTrue(supportEpoch >= r.leadEpoch,
+		"supported epoch in store liveness can't be lower than the leader's epoch supported by follower",
+	)
+	return isSupporting && supportEpoch == r.leadEpoch
 }
 
 func (r *raft) applyConfChange(cc pb.ConfChangeV2) pb.ConfState {

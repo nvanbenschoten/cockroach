@@ -36,7 +36,7 @@ var raftLeaderFortificationFractionEnabled = settings.RegisterFloatSetting(
 		"by extension, use Leader leases for all ranges which do not require "+
 		"expiration-based leases. Set to a value between 0.0 and 1.0 to gradually "+
 		"roll out Leader leases across the ranges in a cluster.",
-	envutil.EnvOrDefaultFloat64("COCKROACH_LEADER_FORTIFICATION_FRACTION_ENABLED", 0.0),
+	envutil.EnvOrDefaultFloat64("COCKROACH_LEADER_FORTIFICATION_FRACTION_ENABLED", 1.0),
 	settings.FloatInRange(0.0, 1.0),
 	settings.WithPublic,
 )
