@@ -116,7 +116,7 @@ func (l *descriptorSet) findPreviousToExpire(dropped bool) *descriptorVersionSta
 	// If this version is not active, then it will go away on its own
 	// from the leases table, so no expiry needs to be setup. If the
 	// session is already cleared then an expiry has been setup too.
-	if exp.mu.refcount == 0 || exp.mu.session == nil {
+	if exp.refcount.Load() == 0 || exp.mu.session == nil {
 		return nil
 	}
 	return exp

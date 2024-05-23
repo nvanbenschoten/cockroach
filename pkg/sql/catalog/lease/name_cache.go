@@ -59,16 +59,16 @@ func (c *nameCache) get(
 		return nil, expiration
 	}
 	expensiveLogEnabled := log.ExpensiveLogEnabled(ctx, 2)
-	desc.mu.Lock()
+	desc.mu.RLock()
 	if desc.mu.lease == nil {
-		desc.mu.Unlock()
+		desc.mu.RUnlock()
 		// This get() raced with a release operation. Remove this cache
 		// entry if needed.
 		c.remove(desc)
 		return nil, hlc.Timestamp{}
 	}
 
-	defer desc.mu.Unlock()
+	defer desc.mu.RUnlock()
 
 	if !NameMatchesDescriptor(desc, parentID, parentSchemaID, name) {
 		panic(errors.AssertionFailedf("out of sync entry in the name cache. "+
@@ -80,7 +80,7 @@ func (c *nameCache) get(
 	}
 
 	// Expired descriptor. Don't hand it out.
-	if desc.hasExpiredLocked(ctx, timestamp) {
+	if desc.hasExpiredRLocked(ctx, timestamp) {
 		return nil, hlc.Timestamp{}
 	}
 

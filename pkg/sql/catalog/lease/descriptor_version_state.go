@@ -12,6 +12,7 @@ package lease
 
 import (
 	"context"
+	"sync/atomic"
 	"time"
 
 	"github.com/cockroachdb/cockroach/pkg/sql/catalog"
@@ -19,7 +20,6 @@ import (
 	"github.com/cockroachdb/cockroach/pkg/sql/sem/tree"
 	"github.com/cockroachdb/cockroach/pkg/sql/sqlliveness"
 	"github.com/cockroachdb/cockroach/pkg/util/hlc"
-	"github.com/cockroachdb/cockroach/pkg/util/log"
 	"github.com/cockroachdb/cockroach/pkg/util/syncutil"
 	"github.com/cockroachdb/cockroach/pkg/util/timeutil"
 	"github.com/cockroachdb/redact"
@@ -56,7 +56,7 @@ type descriptorVersionState struct {
 	catalog.Descriptor
 
 	mu struct {
-		syncutil.Mutex
+		syncutil.RWMutex
 
 		// The expiration time for the descriptor version. A transaction with
 		// timestamp T can use this descriptor version iff
@@ -72,7 +72,6 @@ type descriptorVersionState struct {
 		// write.
 		session sqlliveness.Session
 
-		refcount int
 		// Set if the node has a lease on this descriptor version.
 		// Leases can only be held for the two latest versions of
 		// a descriptor. The latest version known to a node
@@ -81,6 +80,8 @@ type descriptorVersionState struct {
 		// a node might not necessarily be associated with a lease.
 		lease *storedLease
 	}
+
+	refcount atomic.Int64
 }
 
 func (s *descriptorVersionState) Release(ctx context.Context) {
@@ -112,36 +113,36 @@ func (s *descriptorVersionState) stringLocked() redact.RedactableString {
 	if s.mu.session != nil {
 		sessionID = s.mu.session.ID().String()
 	}
-	return redact.Sprintf("%d(%q,%s) ver=%d:%s, refcount=%d", s.GetID(), s.GetName(), redact.SafeString(sessionID), s.GetVersion(), s.mu.expiration, s.mu.refcount)
+	return redact.Sprintf("%d(%q,%s) ver=%d:%s, refcount=%d", s.GetID(), s.GetName(), redact.SafeString(sessionID), s.GetVersion(), s.mu.expiration, s.refcount.Load())
 }
 
 // hasExpired checks if the descriptor is too old to be used (by a txn
 // operating) at the given timestamp.
 func (s *descriptorVersionState) hasExpired(ctx context.Context, timestamp hlc.Timestamp) bool {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.hasExpiredLocked(ctx, timestamp)
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.hasExpiredRLocked(ctx, timestamp)
 }
 
-// hasExpired checks if the descriptor is too old to be used (by a txn
+// hasExpiredRLocked checks if the descriptor is too old to be used (by a txn
 // operating) at the given timestamp.
-func (s *descriptorVersionState) hasExpiredLocked(
+func (s *descriptorVersionState) hasExpiredRLocked(
 	ctx context.Context, timestamp hlc.Timestamp,
 ) bool {
 	return s.getExpirationLocked(ctx).LessEq(timestamp)
 }
 
 func (s *descriptorVersionState) incRefCount(ctx context.Context, expensiveLogEnabled bool) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	//s.mu.RLock()
+	//defer s.mu.RUnlock()
 	s.incRefCountLocked(ctx, expensiveLogEnabled)
 }
 
 func (s *descriptorVersionState) incRefCountLocked(ctx context.Context, expensiveLogEnabled bool) {
-	s.mu.refcount++
-	if expensiveLogEnabled {
-		log.VEventf(ctx, 2, "descriptorVersionState.incRefCount: %s", s.stringLocked())
-	}
+	s.refcount.Add(1)
+	//if expensiveLogEnabled {
+	//	log.VEventf(ctx, 2, "descriptorVersionState.incRefCount: %s", s.stringLocked())
+	//}
 }
 
 func (s *descriptorVersionState) getExpirationLocked(ctx context.Context) hlc.Timestamp {

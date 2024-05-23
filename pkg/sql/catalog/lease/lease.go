@@ -1798,7 +1798,7 @@ func (m *Manager) VisitLeases(
 				lease, refCount := func() (*storedLease, int) {
 					state.mu.Lock()
 					defer state.mu.Unlock()
-					return state.mu.lease, state.mu.refcount
+					return state.mu.lease, int(state.refcount.Load())
 				}()
 
 				if lease == nil {

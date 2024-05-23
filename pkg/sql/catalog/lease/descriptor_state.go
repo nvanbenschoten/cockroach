@@ -37,7 +37,7 @@ type descriptorState struct {
 	renewalInProgress int32
 
 	mu struct {
-		syncutil.Mutex
+		syncutil.RWMutex
 
 		// descriptors sorted by increasing version. This set always
 		// contains a descriptor version with a lease as the latest
@@ -95,9 +95,9 @@ type descriptorState struct {
 func (t *descriptorState) findForTimestamp(
 	ctx context.Context, timestamp hlc.Timestamp,
 ) (*descriptorVersionState, bool, error) {
-	expensiveLogEnabled := log.ExpensiveLogEnabled(ctx, 2)
-	t.mu.Lock()
-	defer t.mu.Unlock()
+	//expensiveLogEnabled := log.ExpensiveLogEnabled(ctx, 2)
+	t.mu.RLock()
+	defer t.mu.RUnlock()
 
 	// Acquire a lease if no descriptor exists in the cache.
 	if len(t.mu.active.data) == 0 {
@@ -111,7 +111,7 @@ func (t *descriptorState) findForTimestamp(
 			latest := i+1 == len(t.mu.active.data)
 			if !desc.hasExpired(ctx, timestamp) {
 				// Existing valid descriptor version.
-				desc.incRefCount(ctx, expensiveLogEnabled)
+				desc.incRefCount(ctx, false)
 				return desc, latest, nil
 			}
 
@@ -229,7 +229,7 @@ func (t *descriptorState) removeInactiveVersions() []*storedLease {
 		func() {
 			desc.mu.Lock()
 			defer desc.mu.Unlock()
-			if desc.mu.refcount == 0 {
+			if desc.refcount.Load() == 0 {
 				t.mu.active.remove(desc)
 				if l := desc.mu.lease; l != nil {
 					desc.mu.lease = nil
@@ -247,15 +247,8 @@ func (t *descriptorState) release(ctx context.Context, s *descriptorVersionState
 
 	// Decrements the refcount and returns true if the lease has to be removed
 	// from the store.
-	expensiveLoggingEnabled := log.ExpensiveLogEnabled(ctx, 2)
 	decRefCount := func(s *descriptorVersionState) (shouldRemove bool) {
-		s.mu.Lock()
-		defer s.mu.Unlock()
-		s.mu.refcount--
-		if expensiveLoggingEnabled {
-			log.Infof(ctx, "release: %s", s.stringLocked())
-		}
-		return s.mu.refcount == 0
+		return s.refcount.Add(-1) == 0
 	}
 	maybeMarkRemoveStoredLease := func(s *descriptorVersionState) *storedLease {
 		// Figure out if we'd like to remove the lease from the store asap (i.e.
@@ -275,10 +268,11 @@ func (t *descriptorState) release(ctx context.Context, s *descriptorVersionState
 		}
 		s.mu.Lock()
 		defer s.mu.Unlock()
-		if s.mu.refcount < 0 {
+		refcount := s.refcount.Load()
+		if refcount < 0 {
 			panic(errors.AssertionFailedf("negative ref count: %s", s))
 		}
-		if s.mu.refcount == 0 && s.mu.lease != nil && removeOnceDereferenced {
+		if refcount == 0 && s.mu.lease != nil && removeOnceDereferenced {
 			l := s.mu.lease
 			s.mu.lease = nil
 			return l
