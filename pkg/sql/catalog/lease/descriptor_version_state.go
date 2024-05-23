@@ -169,16 +169,16 @@ func (s *descriptorVersionState) getExpirationLocked(ctx context.Context) hlc.Ti
 }
 
 func (s *descriptorVersionState) getExpiration(ctx context.Context) hlc.Timestamp {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 
 	return s.getExpirationLocked(ctx)
 }
 
 // getStoredLease returns a copy of the stored lease.
 func (s *descriptorVersionState) getStoredLease() *storedLease {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	if s.mu.lease == nil {
 		return nil
 	}
