@@ -1037,9 +1037,11 @@ func (r *Replica) handleRaftReadyRaftMuLocked(
 				Engine:      r.store.TODOEngine(),
 				Sideload:    r.raftMu.sideloaded,
 				StateLoader: r.raftMu.stateLoader.StateLoader,
-				SyncWaiter:  r.store.syncWaiter,
-				EntryCache:  r.store.raftEntryCache,
-				Settings:    r.store.cfg.Settings,
+				// NOTE: we use the same SyncWaiter loop for all log appends on a given
+				// range. This ensures that callbacks are processed in the order.
+				SyncWaiter: r.store.syncWaiters[int(r.RangeID)%len(r.store.syncWaiters)],
+				EntryCache: r.store.raftEntryCache,
+				Settings:   r.store.cfg.Settings,
 				Metrics: logstore.Metrics{
 					RaftLogCommitLatency: r.store.metrics.RaftLogCommitLatency,
 				},
