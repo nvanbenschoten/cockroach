@@ -27,6 +27,7 @@ public  locations                        table     node  NULL
 public  migrations                       table     node  NULL
 public  mvcc_statistics                  table     node  NULL
 public  namespace                        table     node  NULL
+public  prepared_transactions            table     node  NULL
 public  privileges                       table     node  NULL
 public  protected_ts_meta                table     node  NULL
 public  protected_ts_records             table     node  NULL
@@ -195,6 +196,7 @@ SELECT id FROM system.descriptor ORDER BY 1
 64
 65
 66
+67
 100
 101
 102
@@ -497,6 +499,8 @@ system  public  mvcc_statistics                  root    SELECT  true
 system  public  mvcc_statistics                  root    UPDATE  true
 system  public  namespace                        admin   SELECT  true
 system  public  namespace                        root    SELECT  true
+system  public  prepared_transactions            admin   SELECT  true
+system  public  prepared_transactions            root    SELECT  true
 system  public  privileges                       admin   DELETE  true
 system  public  privileges                       admin   INSERT  true
 system  public  privileges                       admin   SELECT  true

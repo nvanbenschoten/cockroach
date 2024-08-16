@@ -1175,6 +1175,18 @@ CREATE TABLE system.mvcc_statistics (
 			created
 		)
 	);`
+
+	PreparedTransactionsTableSchema = `
+CREATE TABLE system.prepared_transactions (
+  global_id       STRING,
+  transaction_id  UUID         NOT NULL,
+  transaction     BYTES        NOT NULL,
+  prepared        TIMESTAMPTZ  NOT NULL,
+  owner           STRING       NOT NULL,
+  database        STRING       NOT NULL,
+  CONSTRAINT "primary" PRIMARY KEY (global_id),
+  FAMILY "primary" (global_id, transaction_id, transaction, prepared, owner, database)
+);`
 )
 
 func pk(name string) descpb.IndexDescriptor {
@@ -1227,7 +1239,7 @@ const SystemDatabaseName = catconstants.SystemDatabaseName
 // release version).
 //
 // NB: Don't set this to clusterversion.Latest; use a specific version instead.
-var SystemDatabaseSchemaBootstrapVersion = clusterversion.V24_3_Start.Version()
+var SystemDatabaseSchemaBootstrapVersion = clusterversion.V24_3_PreparedTransactionsTable.Version()
 
 // MakeSystemDatabaseDesc constructs a copy of the system database
 // descriptor.
@@ -1418,6 +1430,7 @@ func MakeSystemTables() []SystemTable {
 		SystemMVCCStatisticsTable,
 		StatementExecInsightsTable,
 		TransactionExecInsightsTable,
+		PreparedTransactionsTable,
 	}
 }
 
@@ -4737,6 +4750,30 @@ var (
 			}}
 			tbl.NextConstraintID++
 		},
+	)
+
+	PreparedTransactionsTable = makeSystemTable(
+		PreparedTransactionsTableSchema,
+		systemTable(
+			catconstants.PreparedTransactionsTableName,
+			descpb.InvalidID, // dynamically assigned table ID
+			[]descpb.ColumnDescriptor{
+				{Name: "global_id", ID: 1, Type: types.String},
+				{Name: "transaction_id", ID: 2, Type: types.Uuid},
+				{Name: "transaction", ID: 3, Type: types.Bytes},
+				{Name: "prepared", ID: 4, Type: types.TimestampTZ},
+				{Name: "owner", ID: 5, Type: types.String},
+				{Name: "database", ID: 6, Type: types.String},
+			},
+			[]descpb.ColumnFamilyDescriptor{
+				{
+					Name:        "primary",
+					ColumnNames: []string{"global_id", "transaction_id", "transaction", "prepared", "owner", "database"},
+					ColumnIDs:   []descpb.ColumnID{1, 2, 3, 4, 5, 6},
+				},
+			},
+			pk("global_id"),
+		),
 	)
 )
 

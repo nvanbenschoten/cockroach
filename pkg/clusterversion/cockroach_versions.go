@@ -279,6 +279,11 @@ const (
 	// of the StoreLiveness fabric.
 	V24_3_StoreLivenessEnabled
 
+	// V24_3_PreparedTransactionsTable adds the system.prepared_transactions
+	// table. The table is used to store information about prepared transaction
+	// that are part of the XA two-phase commit protocol.
+	V24_3_PreparedTransactionsTable
+
 	// *************************************************
 	// Step (1) Add new versions above this comment.
 	// Do not add new versions to a patch release.
@@ -349,7 +354,8 @@ var versionTable = [numKeys]roachpb.Version{
 	// v24.3 versions. Internal versions must be even.
 	V24_3_Start: {Major: 24, Minor: 2, Internal: 2},
 
-	V24_3_StoreLivenessEnabled: {Major: 24, Minor: 2, Internal: 4},
+	V24_3_StoreLivenessEnabled:      {Major: 24, Minor: 2, Internal: 4},
+	V24_3_PreparedTransactionsTable: {Major: 24, Minor: 2, Internal: 6},
 
 	// *************************************************
 	// Step (2): Add new versions above this comment.
