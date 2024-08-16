@@ -4457,6 +4457,11 @@ type StatementCounters struct {
 	ReleaseRestartSavepointCount    telemetry.CounterWithMetric
 	RollbackToRestartSavepointCount telemetry.CounterWithMetric
 
+	// TODO(nvanbenschoten): add telemetry for:
+	// - PrepareTransactionCount
+	// - CommitPreparedCount
+	// - RollbackPreparedCount
+
 	// CopyCount counts all COPY statements.
 	CopyCount telemetry.CounterWithMetric
 
