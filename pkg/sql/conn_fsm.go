@@ -154,6 +154,7 @@ type eventTxnUpgradeToExplicit struct{}
 
 type eventTxnFinishCommitted struct{}
 type eventTxnFinishAborted struct{}
+type eventTxnFinishPrepared struct{}
 
 // eventTxnFinishCommittedPLpgSQL and eventTxnFinishAbortedPLpgSQL are generated
 // when a PL/pgSQL stored procedure executes a COMMIT or ROLLBACK statement. The
@@ -235,6 +236,7 @@ type payloadWithError interface {
 func (eventTxnStart) Event()                            {}
 func (eventTxnFinishCommitted) Event()                  {}
 func (eventTxnFinishAborted) Event()                    {}
+func (eventTxnFinishPrepared) Event()                   {}
 func (eventTxnFinishCommittedPLpgSQL) Event()           {}
 func (eventTxnFinishAbortedPLpgSQL) Event()             {}
 func (eventSavepointRollback) Event()                   {}
@@ -379,6 +381,18 @@ var TxnStateTransitions = fsm.Compile(fsm.Pattern{
 		},
 	},
 	stateOpen{ImplicitTxn: fsm.False, WasUpgraded: fsm.Var("wasUpgraded")}: {
+		// Handle prepared transactions. Note that this statement is only valid in
+		// the context of an explicit transaction, so we don't need to handle
+		// implicit transactions.
+		eventTxnFinishPrepared{}: {
+			Description: "PREPARE TRANSACTION",
+			Next:        stateNoTxn{},
+			Action: func(args fsm.Args) error {
+				// Note that the KV txn has been prepared by the statement execution by
+				// this point.
+				return args.Extended.(*txnState).finishTxn(txnCommit, advanceOne)
+			},
+		},
 		// Handle the errors in explicit txns.
 		eventNonRetriableErr{IsCommit: fsm.False}: {
 			Next: stateAborted{WasUpgraded: fsm.Var("wasUpgraded")},

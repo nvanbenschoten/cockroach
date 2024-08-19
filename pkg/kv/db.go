@@ -29,6 +29,7 @@ import (
 	"github.com/cockroachdb/cockroach/pkg/util/protoutil"
 	"github.com/cockroachdb/cockroach/pkg/util/retry"
 	"github.com/cockroachdb/cockroach/pkg/util/stop"
+	"github.com/cockroachdb/cockroach/pkg/util/uuid"
 	"github.com/cockroachdb/errors"
 )
 
@@ -1113,6 +1114,32 @@ func runTxn(ctx context.Context, txn *Txn, retryable func(context.Context, *Txn)
 		return errors.Wrapf(err, "terminated retryable error")
 	}
 	return err
+}
+
+// QueryTxn queries for the transaction record of the transaction with the
+// specified ID and key. The transaction record is returned if found, or nil
+// if not found.
+func (db *DB) QueryTxn(
+	ctx context.Context, txnID uuid.UUID, txnKey roachpb.Key,
+) (*roachpb.Transaction, error) {
+	b := &Batch{}
+	b.queryTxn(txnID, txnKey)
+	if err := getOneErr(db.Run(ctx, b), b); err != nil {
+		return nil, err
+	}
+	responses := b.response.Responses
+	if len(responses) == 0 {
+		return nil, errors.Errorf("unexpected empty responses for QueryTxn")
+	}
+	resp, ok := responses[0].GetInner().(*kvpb.QueryTxnResponse)
+	if !ok {
+		return nil, errors.Errorf("unexpected response of type %T for QueryTxn",
+			responses[0].GetInner())
+	}
+	if !resp.TxnRecordExists {
+		return nil, nil
+	}
+	return &resp.QueriedTxn, nil
 }
 
 // CommitPrepared commits the prepared transaction.

@@ -17,6 +17,7 @@ import (
 	"github.com/cockroachdb/cockroach/pkg/roachpb"
 	"github.com/cockroachdb/cockroach/pkg/storage/enginepb"
 	"github.com/cockroachdb/cockroach/pkg/util/hlc"
+	"github.com/cockroachdb/cockroach/pkg/util/uuid"
 	"github.com/cockroachdb/errors"
 )
 
@@ -1123,6 +1124,21 @@ func (b *Batch) queryResolvedTimestamp(s, e interface{}) {
 		RequestHeader: kvpb.RequestHeader{
 			Key:    begin,
 			EndKey: end,
+		},
+	}
+	b.appendReqs(req)
+	b.initResult(1, 0, notRaw, nil)
+}
+
+// queryTxn is only exported on DB.
+func (b *Batch) queryTxn(txnID uuid.UUID, txnKey roachpb.Key) {
+	req := &kvpb.QueryTxnRequest{
+		RequestHeader: kvpb.RequestHeader{
+			Key: txnKey,
+		},
+		Txn: enginepb.TxnMeta{
+			ID:  txnID,
+			Key: txnKey,
 		},
 	}
 	b.appendReqs(req)

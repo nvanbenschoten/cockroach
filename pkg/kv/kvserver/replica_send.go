@@ -1085,7 +1085,7 @@ func (r *Replica) checkBatchRequest(ba *kvpb.BatchRequest, isReadOnly bool) erro
 		// For transactional requests, Store.Send sets the timestamp. For non-
 		// transactional requests, the client sets the timestamp. Either way, we
 		// need to have a timestamp at this point.
-		return errors.New("Replica.checkBatchRequest: batch does not have timestamp assigned")
+		return errors.Errorf("Replica.checkBatchRequest: batch does not have timestamp assigned: %s, %+v", ba.Summary(), ba.Header)
 	}
 	consistent := ba.ReadConsistency == kvpb.CONSISTENT
 	if isReadOnly {

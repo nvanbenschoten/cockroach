@@ -1974,6 +1974,8 @@ func golangFillQueryArguments(args ...interface{}) (tree.Datums, error) {
 			d = dd
 		case username.SQLUsername:
 			d = tree.NewDString(t.Normalized())
+		case uuid.UUID:
+			d = tree.NewDUuid(tree.DUuid{UUID: t})
 		}
 		if d == nil {
 			// Handle all types which have an underlying type that can be stored in the

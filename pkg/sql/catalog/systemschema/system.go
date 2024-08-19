@@ -1178,14 +1178,14 @@ CREATE TABLE system.mvcc_statistics (
 
 	PreparedTransactionsTableSchema = `
 CREATE TABLE system.prepared_transactions (
-  global_id       STRING,
-  transaction_id  UUID         NOT NULL,
-  transaction     BYTES        NOT NULL,
-  prepared        TIMESTAMPTZ  NOT NULL,
-  owner           STRING       NOT NULL,
-  database        STRING       NOT NULL,
+  global_id        STRING       NOT NULL,
+  transaction_id   UUID         NOT NULL,
+  transaction_key  BYTES        NULL,
+  prepared         TIMESTAMPTZ  NOT NULL,
+  owner            STRING       NOT NULL,
+  database         STRING       NOT NULL,
   CONSTRAINT "primary" PRIMARY KEY (global_id),
-  FAMILY "primary" (global_id, transaction_id, transaction, prepared, owner, database)
+  FAMILY "primary" (global_id, transaction_id, transaction_key, prepared, owner, database)
 );`
 )
 
@@ -4760,7 +4760,7 @@ var (
 			[]descpb.ColumnDescriptor{
 				{Name: "global_id", ID: 1, Type: types.String},
 				{Name: "transaction_id", ID: 2, Type: types.Uuid},
-				{Name: "transaction", ID: 3, Type: types.Bytes},
+				{Name: "transaction_key", ID: 3, Type: types.Bytes, Nullable: true},
 				{Name: "prepared", ID: 4, Type: types.TimestampTZ},
 				{Name: "owner", ID: 5, Type: types.String},
 				{Name: "database", ID: 6, Type: types.String},
@@ -4768,7 +4768,7 @@ var (
 			[]descpb.ColumnFamilyDescriptor{
 				{
 					Name:        "primary",
-					ColumnNames: []string{"global_id", "transaction_id", "transaction", "prepared", "owner", "database"},
+					ColumnNames: []string{"global_id", "transaction_id", "transaction_key", "prepared", "owner", "database"},
 					ColumnIDs:   []descpb.ColumnID{1, 2, 3, 4, 5, 6},
 				},
 			},

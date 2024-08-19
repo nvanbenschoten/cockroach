@@ -18,8 +18,7 @@ import (
 	"github.com/cockroachdb/cockroach/pkg/sql/pgwire/pgerror"
 	"github.com/cockroachdb/cockroach/pkg/sql/sem/tree"
 	"github.com/cockroachdb/cockroach/pkg/sql/sessiondata"
-	"github.com/cockroachdb/cockroach/pkg/util/protoutil"
-	"github.com/cockroachdb/errors"
+	"github.com/cockroachdb/cockroach/pkg/util/uuid"
 )
 
 // CommitPrepared commits a previously prepared transaction and deletes its
@@ -39,18 +38,18 @@ func (p *planner) RollbackPrepared(
 }
 
 type endPreparedTxnNode struct {
-	txnName string
-	commit  bool
+	globalID string
+	commit   bool
 }
 
 func (p *planner) endPreparedTxnNode(
-	ctx context.Context, txnName *tree.StrVal, commit bool,
+	ctx context.Context, globalID *tree.StrVal, commit bool,
 ) (*endPreparedTxnNode, error) {
-	// TODO(nvanbenschoten): privileges.
+	// TODO(nvanbenschoten): privileges on tables.
 
 	return &endPreparedTxnNode{
-		txnName: txnName.RawString(),
-		commit:  commit,
+		globalID: globalID.RawString(),
+		commit:   commit,
 	}, nil
 }
 
@@ -59,8 +58,22 @@ func (f *endPreparedTxnNode) startExec(params runParams) error {
 		return err
 	}
 
-	//TODO implement me
-	panic("implement me")
+	txnID, txnKey, owner, database, err := f.selectPreparedTxn(params)
+	if err != nil {
+		return err
+	}
+
+	// TODO: Priv check.
+	_ = owner
+	_ = database
+
+	if txnKey != nil {
+		if err := f.endPreparedTxn(params, txnID, txnKey); err != nil {
+			return err
+		}
+	}
+
+	return f.deletePreparedTxn(params)
 }
 
 func (f *endPreparedTxnNode) checkNoActiveTxn(params runParams) error {
@@ -79,44 +92,72 @@ func (f *endPreparedTxnNode) checkNoActiveTxn(params runParams) error {
 // if found, returns the transaction object and the owner.
 func (f *endPreparedTxnNode) selectPreparedTxn(
 	params runParams,
-) (*roachpb.Transaction, string, error) {
-	row, err := params.p.InternalSQLTxn().QueryRowEx(
+) (txnID uuid.UUID, txnKey roachpb.Key, owner, database string, err error) {
+	row, err := params.p.QueryRowEx(
 		params.ctx,
 		"select-prepared-txn",
-		params.p.Txn(),
 		sessiondata.NodeUserSessionDataOverride,
-		`SELECT transaction, owner, status FROM system.prepared_transactions WHERE gid = $1`,
-		f.txnName,
+		`SELECT transaction_id, transaction_key, owner, database FROM system.prepared_transactions WHERE global_id = $1 FOR UPDATE`,
+		f.globalID,
 	)
 	if err != nil {
-		return nil, "", err
+		return uuid.UUID{}, nil, "", "", err
 	}
 	if row == nil {
-		return nil, "", pgerror.Newf(pgcode.UndefinedObject,
-			"prepared transaction with identifier %q does not exist", f.txnName)
+		return uuid.UUID{}, nil, "", "", pgerror.Newf(pgcode.UndefinedObject,
+			"prepared transaction with identifier %q does not exist", f.globalID)
 	}
 
-	var txn roachpb.Transaction
-	if err := protoutil.Unmarshal(([]byte)(tree.MustBeDBytes(row[0])), &txn); err != nil {
-		return nil, "", err
+	txnID = tree.MustBeDUuid(row[0]).UUID
+	if row[1] != tree.DNull {
+		txnKey = roachpb.Key(tree.MustBeDBytes(row[1]))
 	}
-	owner := tree.MustBeDString(row[1])
-	status := tree.MustBeDString(row[2])
-	if len(status) > 0 {
-		return nil, "", errors.Errorf("prepared transaction %s in state %q", txn, status)
+	owner = string(tree.MustBeDString(row[2]))
+	database = string(tree.MustBeDString(row[3]))
+	return txnID, txnKey, owner, database, nil
+}
+
+// endPreparedTxn ends the prepared transaction by either committing or rolling
+// back the transaction.
+func (f *endPreparedTxnNode) endPreparedTxn(
+	params runParams, txnID uuid.UUID, txnKey roachpb.Key,
+) error {
+	db := params.ExecCfg().DB
+
+	preparedTxn, err := db.QueryTxn(params.ctx, txnID, txnKey)
+	if err != nil {
+		return err
 	}
-	return &txn, string(owner), nil
+	if preparedTxn == nil {
+		// WIP: this isn't right. We still want to clean up the record.
+		return pgerror.Newf(pgcode.UndefinedObject,
+			"prepared transaction with identifier %q has not record", f.globalID)
+	}
+	if preparedTxn.Status != roachpb.PREPARED {
+		// WIP: this isn't right. We still want to clean up the record.
+		return pgerror.Newf(pgcode.UndefinedObject,
+			"prepared transaction with identifier %q not in PREPARED state", f.globalID)
+	}
+
+	// WIP: hack to set batch timestamp.
+	preparedTxn.ReadTimestamp = preparedTxn.WriteTimestamp
+
+	if f.commit {
+		err = db.CommitPrepared(params.ctx, preparedTxn)
+	} else {
+		err = db.RollbackPrepared(params.ctx, preparedTxn)
+	}
+	return err
 }
 
 // deletePreparedTxn deletes the prepared transaction from the system table.
 func (f *endPreparedTxnNode) deletePreparedTxn(params runParams) error {
-	_, err := params.p.InternalSQLTxn().ExecEx(
+	_, err := params.p.ExecEx(
 		params.ctx,
 		"delete-prepared-txn",
-		params.p.Txn(),
 		sessiondata.NodeUserSessionDataOverride,
-		`DELETE FROM system.prepared_transactions WHERE gid = $1`,
-		f.txnName,
+		`DELETE FROM system.prepared_transactions WHERE global_id = $1`,
+		f.globalID,
 	)
 	return err
 }
