@@ -2425,9 +2425,33 @@ var pgCatalogPreparedXactsTable = virtualSchemaTable{
 https://www.postgresql.org/docs/9.6/view-pg-prepared-xacts.html`,
 	schema: vtable.PGCatalogPreparedXacts,
 	populate: func(ctx context.Context, p *planner, dbContext catalog.DatabaseDescriptor, addRow func(...tree.Datum) error) error {
+		rows, err := p.InternalSQLTxn().QueryBufferedEx(
+			ctx,
+			"select-prepared-transactions",
+			p.Txn(),
+			sessiondata.NodeUserSessionDataOverride,
+			`SELECT global_id, prepared, owner, database FROM system.prepared_transactions`,
+		)
+		if err != nil {
+			return err
+		}
+		for _, row := range rows {
+			globalID := row[0]
+			prepared := row[1]
+			owner := tree.NewDName(string(tree.MustBeDString(row[2])))
+			database := tree.NewDName(string(tree.MustBeDString(row[3])))
+			if err := addRow(
+				zeroVal,  // transaction
+				globalID, // gid
+				prepared, // prepared
+				owner,    // owner
+				database, // database
+			); err != nil {
+				return err
+			}
+		}
 		return nil
 	},
-	unimplemented: true,
 }
 
 // pgCatalogPreparedStatementsTable implements the pg_prepared_statements table.
