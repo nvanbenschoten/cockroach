@@ -19,6 +19,7 @@ import (
 	"github.com/cockroachdb/cockroach/pkg/sql/sem/tree"
 	"github.com/cockroachdb/cockroach/pkg/sql/sessiondata"
 	"github.com/cockroachdb/cockroach/pkg/util/uuid"
+	"github.com/cockroachdb/errors"
 )
 
 // CommitPrepared commits a previously prepared transaction and deletes its
@@ -58,19 +59,25 @@ func (f *endPreparedTxnNode) startExec(params runParams) error {
 		return err
 	}
 
-	txnID, txnKey, owner, database, err := f.selectPreparedTxn(params)
+	txnID, txnKey, owner, err := f.selectPreparedTxn(params)
 	if err != nil {
 		return err
 	}
 
-	// TODO: Priv check.
-	_ = owner
-	_ = database
+	// Check privileges.
+	//
+	// From https://www.postgresql.org/docs/16/sql-commit-prepared.html and
+	//      https://www.postgresql.org/docs/16/sql-rollback-prepared.html:
+	// > To commit / roll back a prepared transaction, you must be either the same
+	// > user that executed the transaction originally, or a superuser.
+	if params.SessionData().User().Normalized() != owner && !params.SessionData().IsSuperuser {
+		return errors.WithHint(pgerror.Newf(pgcode.InsufficientPrivilege,
+			"permission denied to finish prepared transaction"),
+			"Must be superuser or the user that prepared the transaction.")
+	}
 
-	if txnKey != nil {
-		if err := f.endPreparedTxn(params, txnID, txnKey); err != nil {
-			return err
-		}
+	if err := f.endPreparedTxn(params, txnID, txnKey); err != nil {
+		return err
 	}
 
 	return f.deletePreparedTxn(params)
@@ -92,19 +99,19 @@ func (f *endPreparedTxnNode) checkNoActiveTxn(params runParams) error {
 // if found, returns the transaction object and the owner.
 func (f *endPreparedTxnNode) selectPreparedTxn(
 	params runParams,
-) (txnID uuid.UUID, txnKey roachpb.Key, owner, database string, err error) {
+) (txnID uuid.UUID, txnKey roachpb.Key, owner string, err error) {
 	row, err := params.p.QueryRowEx(
 		params.ctx,
 		"select-prepared-txn",
 		sessiondata.NodeUserSessionDataOverride,
-		`SELECT transaction_id, transaction_key, owner, database FROM system.prepared_transactions WHERE global_id = $1 FOR UPDATE`,
+		`SELECT transaction_id, transaction_key, owner FROM system.prepared_transactions WHERE global_id = $1 FOR UPDATE`,
 		f.globalID,
 	)
 	if err != nil {
-		return uuid.UUID{}, nil, "", "", err
+		return uuid.UUID{}, nil, "", err
 	}
 	if row == nil {
-		return uuid.UUID{}, nil, "", "", pgerror.Newf(pgcode.UndefinedObject,
+		return uuid.UUID{}, nil, "", pgerror.Newf(pgcode.UndefinedObject,
 			"prepared transaction with identifier %q does not exist", f.globalID)
 	}
 
@@ -113,8 +120,7 @@ func (f *endPreparedTxnNode) selectPreparedTxn(
 		txnKey = roachpb.Key(tree.MustBeDBytes(row[1]))
 	}
 	owner = string(tree.MustBeDString(row[2]))
-	database = string(tree.MustBeDString(row[3]))
-	return txnID, txnKey, owner, database, nil
+	return txnID, txnKey, owner, nil
 }
 
 // endPreparedTxn ends the prepared transaction by either committing or rolling
@@ -122,21 +128,33 @@ func (f *endPreparedTxnNode) selectPreparedTxn(
 func (f *endPreparedTxnNode) endPreparedTxn(
 	params runParams, txnID uuid.UUID, txnKey roachpb.Key,
 ) error {
-	db := params.ExecCfg().DB
+	// If the transaction had no key, then it was read-only and never wrote a
+	// transaction record. In this case, we don't need to do anything besides
+	// clean up the system.prepared_transactions row.
+	if txnKey == nil {
+		return nil
+	}
 
+	db := params.ExecCfg().DB
 	preparedTxn, err := db.QueryTxn(params.ctx, txnID, txnKey)
 	if err != nil {
 		return err
 	}
-	if preparedTxn == nil {
-		// WIP: this isn't right. We still want to clean up the record.
-		return pgerror.Newf(pgcode.UndefinedObject,
-			"prepared transaction with identifier %q has not record", f.globalID)
+	if preparedTxn == nil || preparedTxn.Status.IsFinalized() {
+		// The transaction record has already been finalized. Just clean up the
+		// system.prepared_transactions row.
+		return nil
 	}
 	if preparedTxn.Status != roachpb.PREPARED {
-		// WIP: this isn't right. We still want to clean up the record.
-		return pgerror.Newf(pgcode.UndefinedObject,
-			"prepared transaction with identifier %q not in PREPARED state", f.globalID)
+		// The prepared transaction was never moved into the PREPARED state. This
+		// can happen if there was a crash after the system.prepared_transactions
+		// row was inserted but before the transaction record was PREPARED to
+		// commit. In this case, we can't commit the transaction, but we can still
+		// roll it back.
+		if f.commit {
+			return pgerror.Newf(pgcode.ObjectNotInPrerequisiteState,
+				"prepared transaction with identifier %q not in PREPARED state, cannot COMMIT", f.globalID)
+		}
 	}
 
 	// WIP: hack to set batch timestamp.

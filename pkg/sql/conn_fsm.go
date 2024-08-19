@@ -154,7 +154,6 @@ type eventTxnUpgradeToExplicit struct{}
 
 type eventTxnFinishCommitted struct{}
 type eventTxnFinishAborted struct{}
-type eventTxnFinishPrepared struct{}
 
 // eventTxnFinishCommittedPLpgSQL and eventTxnFinishAbortedPLpgSQL are generated
 // when a PL/pgSQL stored procedure executes a COMMIT or ROLLBACK statement. The
@@ -168,6 +167,17 @@ type eventTxnFinishAbortedPLpgSQL struct{}
 // generated when such a savepoint is rolled back to from the Open state. In
 // that case no event is necessary.
 type eventSavepointRollback struct{}
+
+type eventTxnFinishPrepared struct{}
+type eventTxnFinishPreparedErrPayload struct {
+	// err is the error encountered during the prepare.
+	err error
+}
+
+// errorCause implements the payloadWithError interface.
+func (p eventTxnFinishPreparedErrPayload) errorCause() error {
+	return p.err
+}
 
 type eventNonRetriableErr struct {
 	IsCommit fsm.Bool
@@ -390,7 +400,11 @@ var TxnStateTransitions = fsm.Compile(fsm.Pattern{
 			Action: func(args fsm.Args) error {
 				// Note that the KV txn has been prepared by the statement execution by
 				// this point.
-				return args.Extended.(*txnState).finishTxn(txnCommit, advanceOne)
+				ev := txnCommit
+				if args.Payload != nil {
+					ev = txnRollback
+				}
+				return args.Extended.(*txnState).finishTxn(ev, advanceOne)
 			},
 		},
 		// Handle the errors in explicit txns.

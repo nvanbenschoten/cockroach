@@ -927,7 +927,7 @@ func (ex *connExecutor) execStmtInOpenState(
 		return ev, payload, nil
 
 	case *tree.PrepareTransaction:
-		ev, payload := ex.execPrepareTransactionInOpenState(ctx, s, res)
+		ev, payload := ex.execPrepareTransactionInOpenState(ctx, s)
 		return ev, payload, nil
 
 	case *tree.ShowCommitTimestamp:
