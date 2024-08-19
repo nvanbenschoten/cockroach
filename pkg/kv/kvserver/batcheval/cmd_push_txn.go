@@ -310,6 +310,10 @@ func PushTxn(
 	// Determine what to do with the pushee, based on the push type.
 	switch pushType {
 	case kvpb.PUSH_ABORT:
+		if reply.PusheeTxn.Status == roachpb.PREPARED {
+			return result.Result{}, errors.AssertionFailedf(
+				"PUSH_ABORT succeeded against a PREPARED txn: %+v", existTxn)
+		}
 		// If aborting the transaction, set the new status.
 		reply.PusheeTxn.Status = roachpb.ABORTED
 		// Forward the timestamp to accommodate AbortSpan GC. See method comment for
@@ -332,9 +336,11 @@ func PushTxn(
 			}
 		}
 	case kvpb.PUSH_TIMESTAMP:
-		if existTxn.Status != roachpb.PENDING {
+		// WIP clean this up. Relates to logic in cmd_end_transaction.go and in
+		// CanPushWithPriority.
+		if existTxn.Status != roachpb.PENDING && !(existTxn.Status == roachpb.PREPARED && existTxn.IsoLevel.ToleratesWriteSkew()) {
 			return result.Result{}, errors.AssertionFailedf(
-				"PUSH_TIMESTAMP succeeded against non-PENDING txn: %v", existTxn)
+				"PUSH_TIMESTAMP succeeded against a non-PENDING txn: %v", existTxn)
 		}
 		// Otherwise, update timestamp to be one greater than the request's
 		// timestamp. This new timestamp will be used to update the read timestamp

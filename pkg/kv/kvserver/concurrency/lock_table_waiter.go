@@ -522,7 +522,7 @@ func (w *lockTableWaiterImpl) pushLockTxn(
 	// transaction aborted). To do better here, we need per-intent information
 	// on whether we need to poison.
 	resolve := roachpb.MakeLockUpdate(pusheeTxn, roachpb.Span{Key: ws.key})
-	if pusheeTxn.Status == roachpb.PENDING {
+	if !pusheeTxn.Status.IsFinalized() {
 		// The pushee was still PENDING at the time that the push observed its
 		// transaction record. It is safe to use the clock observation we gathered
 		// before initiating the push during intent resolution, as we know that this

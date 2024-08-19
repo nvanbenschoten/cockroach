@@ -291,6 +291,13 @@ func (txn *Txn) IsAborted() bool {
 	return txn.statusLocked() == roachpb.ABORTED
 }
 
+// IsPrepared returns true iff the transaction has the prepared status.
+func (txn *Txn) IsPrepared() bool {
+	txn.mu.Lock()
+	defer txn.mu.Unlock()
+	return txn.statusLocked() == roachpb.PREPARED
+}
+
 // IsOpen returns true iff the transaction is in the open state where
 // it can accept further commands.
 func (txn *Txn) IsOpen() bool {
@@ -997,6 +1004,22 @@ func (txn *Txn) rollback(ctx context.Context) *kvpb.Error {
 		return kvpb.NewError(err)
 	}
 	return nil
+}
+
+// Prepare sends an EndTxnRequest with Prepare=true.
+func (txn *Txn) Prepare(ctx context.Context) (*roachpb.Transaction, error) {
+	if txn.typ != RootTxn {
+		return nil, errors.WithContextTags(errors.AssertionFailedf("Prepare() called on leaf txn"), ctx)
+	}
+
+	et := endTxnReq(true, txn.deadline())
+	et.req.Prepare = true
+	ba := &kvpb.BatchRequest{Requests: et.unionArr[:]}
+	_, pErr := txn.Send(ctx, ba)
+	if pErr != nil {
+		return nil, pErr.GoError()
+	}
+	return txn.TestingCloneTxn(), nil
 }
 
 // AddCommitTrigger adds a closure to be executed on successful commit

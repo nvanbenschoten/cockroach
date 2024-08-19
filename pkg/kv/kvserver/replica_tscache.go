@@ -228,9 +228,9 @@ func (r *Replica) updateTimestampCache(
 				tombstone = false
 			case roachpb.ABORTED:
 				tombstone = true
-			case roachpb.STAGING:
+			case roachpb.PREPARED, roachpb.STAGING:
 				// No need to update the timestamp cache. If a transaction
-				// is in this state then it must have a transaction record.
+				// is in these states then it must have a transaction record.
 				continue
 			case roachpb.COMMITTED:
 				// No need to update the timestamp cache. It was already

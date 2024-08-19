@@ -1294,8 +1294,12 @@ func (t *Transaction) Update(o *Transaction) {
 		switch t.Status {
 		case PENDING:
 			t.Status = o.Status
-		case STAGING:
+		case PREPARED:
 			if o.Status != PENDING {
+				t.Status = o.Status
+			}
+		case STAGING:
+			if o.Status != PENDING && o.Status != PREPARED {
 				t.Status = o.Status
 			}
 		case ABORTED:
@@ -1304,6 +1308,8 @@ func (t *Transaction) Update(o *Transaction) {
 			}
 		case COMMITTED:
 			// Nothing to do.
+		default:
+			log.Fatalf(ctx, "unexpected txn status: %s", t.Status)
 		}
 
 		if t.ReadTimestamp == o.ReadTimestamp {

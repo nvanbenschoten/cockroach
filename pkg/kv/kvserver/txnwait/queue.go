@@ -107,8 +107,20 @@ func CanPushWithPriority(
 	pusherPri, pusheePri = normalize(pusherPri), normalize(pusheePri)
 	switch pushType {
 	case kvpb.PUSH_ABORT:
+		// If the pushee transaction is prepared, never let the ABORT through.
+		if pusheeStatus == roachpb.PREPARED {
+			return false
+		}
+
+		// Otherwise, let the ABORT through if the pusher has a higher priority.
 		return pusherPri > pusheePri
 	case kvpb.PUSH_TIMESTAMP:
+		// If the pushee transaction is prepared, only let the PUSH_TIMESTAMP
+		// through if it would not disrupt the transaction commit.
+		if pusheeStatus == roachpb.PREPARED {
+			return pusheeIso.ToleratesWriteSkew()
+		}
+
 		// If the pushee transaction is STAGING, only let the PUSH_TIMESTAMP through
 		// to disrupt the transaction commit if the pusher has a higher priority. If
 		// the priorities are equal, the PUSH_TIMESTAMP should wait for the commit
@@ -146,6 +158,10 @@ func isPushed(req *kvpb.PushTxnRequest, txn *roachpb.Transaction) bool {
 // TxnExpiration computes the timestamp after which the transaction will be
 // considered expired.
 func TxnExpiration(txn *roachpb.Transaction) hlc.Timestamp {
+	if txn.Status == roachpb.PREPARED {
+		// Prepared transactions have no expiration.
+		return hlc.MaxTimestamp
+	}
 	return txn.LastActive().Add(TxnLivenessThreshold.Load(), 0)
 }
 

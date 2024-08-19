@@ -458,6 +458,10 @@ func (tc *TxnCoordSender) finalizeNonLockingTxnLocked(
 			ba.Txn = txn
 			return tc.updateStateLocked(ctx, ba, nil /* br */, pErr)
 		}
+		if et.Prepare {
+			tc.mu.txn.Status = roachpb.PREPARED
+			return nil
+		}
 		// Mark the transaction as committed so that, in case this commit is done by
 		// the closure passed to db.Txn()), db.Txn() doesn't attempt to commit again.
 		// Also so that the correct metric gets incremented.
@@ -467,7 +471,7 @@ func (tc *TxnCoordSender) finalizeNonLockingTxnLocked(
 		tc.mu.txn.Status = roachpb.ABORTED
 	}
 	tc.finalizeAndCleanupTxnLocked(ctx)
-	if et.Commit {
+	if tc.mu.txn.Status == roachpb.COMMITTED {
 		if err := tc.maybeCommitWait(ctx, false /* deferred */); err != nil {
 			return kvpb.NewError(err)
 		}
@@ -544,9 +548,9 @@ func (tc *TxnCoordSender) Send(
 	// txnFinalized.
 	if req, ok := ba.GetArg(kvpb.EndTxn); ok {
 		et := req.(*kvpb.EndTxnRequest)
-		if (et.Commit && pErr == nil) || !et.Commit {
+		if (et.Commit && !et.Prepare && pErr == nil) || !et.Commit {
 			tc.finalizeAndCleanupTxnLocked(ctx)
-			if et.Commit {
+			if tc.mu.txn.Status == roachpb.COMMITTED {
 				if err := tc.maybeCommitWait(ctx, false /* deferred */); err != nil {
 					return nil, kvpb.NewError(err)
 				}
@@ -725,6 +729,7 @@ func (tc *TxnCoordSender) maybeRejectClientLocked(
 	}
 
 	// Check the transaction coordinator state.
+	// WIP: add txnPrepared and reject all non-EndTxn requests.
 	switch tc.mu.txnState {
 	case txnPending:
 		// All good.
@@ -765,10 +770,12 @@ func (tc *TxnCoordSender) maybeRejectClientLocked(
 		abortedErr := kvpb.NewErrorWithTxn(
 			kvpb.NewTransactionAbortedError(kvpb.ABORT_REASON_CLIENT_REJECT), &tc.mu.txn)
 		return kvpb.NewError(tc.handleRetryableErrLocked(ctx, abortedErr))
-	case protoStatus != roachpb.PENDING || hbObservedStatus != roachpb.PENDING:
+	case protoStatus != roachpb.PENDING && protoStatus != roachpb.PREPARED:
 		// The transaction proto is in an unexpected state.
-		return kvpb.NewErrorf(
-			"unexpected txn state: %s; heartbeat observed status: %s", tc.mu.txn, hbObservedStatus)
+		return kvpb.NewErrorf("unexpected txn state: %s", tc.mu.txn)
+	case hbObservedStatus != roachpb.PENDING:
+		// The heartbeat status is in an unexpected state.
+		return kvpb.NewErrorf("unexpected heartbeat observed status: %s", hbObservedStatus)
 	default:
 		// All good.
 	}

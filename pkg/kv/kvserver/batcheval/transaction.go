@@ -136,8 +136,8 @@ func CanCreateTxnRecord(ctx context.Context, rec EvalContext, txn *roachpb.Trans
 // the minimum timestamp at which it is allowed to commit. The transaction must
 // be PENDING.
 func BumpToMinTxnCommitTS(ctx context.Context, rec EvalContext, txn *roachpb.Transaction) {
-	if txn.Status != roachpb.PENDING {
-		log.Fatalf(ctx, "non-pending txn passed to BumpToMinTxnCommitTS: %v", txn)
+	if txn.Status != roachpb.PENDING && txn.Status != roachpb.PREPARED {
+		log.Fatalf(ctx, "non-pending, non-prepared txn passed to BumpToMinTxnCommitTS: %v", txn)
 	}
 	minCommitTS := rec.MinTxnCommitTS(ctx, txn.ID, txn.Key)
 	if bumped := txn.WriteTimestamp.Forward(minCommitTS); bumped {

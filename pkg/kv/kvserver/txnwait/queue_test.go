@@ -144,7 +144,7 @@ func testCanPushWithPriorityPushAbort(t *testing.T) {
 	max := enginepb.MaxTxnPriority
 	mid1 := enginepb.TxnPriority(1)
 	mid2 := enginepb.TxnPriority(2)
-	statuses := []roachpb.TransactionStatus{roachpb.PENDING, roachpb.STAGING}
+	statuses := []roachpb.TransactionStatus{roachpb.PENDING, roachpb.STAGING, roachpb.PREPARED}
 	testCases := []struct {
 		pusherPri enginepb.TxnPriority
 		pusheePri enginepb.TxnPriority
@@ -167,7 +167,6 @@ func testCanPushWithPriorityPushAbort(t *testing.T) {
 		{max, mid2, true},
 		{max, max, false},
 	}
-	// NOTE: the behavior of PUSH_ABORT pushes is agnostic to pushee status.
 	for _, pusheeStatus := range statuses {
 		// NOTE: the behavior of PUSH_ABORT pushes is agnostic to isolation levels.
 		for _, pusherIso := range isolation.Levels() {
@@ -176,9 +175,14 @@ func testCanPushWithPriorityPushAbort(t *testing.T) {
 					name := fmt.Sprintf("pusheeStatus=%s/pusherIso=%s/pusheeIso=%s/pusherPri=%d/pusheePri=%d",
 						pusheeStatus, pusherIso, pusheeIso, test.pusherPri, test.pusheePri)
 					t.Run(name, func(t *testing.T) {
+						exp := test.exp
+						if pusheeStatus == roachpb.PREPARED {
+							// When the pushee is PREPARED, a PUSH_ABORT never succeeds.
+							exp = false
+						}
 						canPush := CanPushWithPriority(
 							kvpb.PUSH_ABORT, pusherIso, pusheeIso, test.pusherPri, test.pusheePri, pusheeStatus)
-						require.Equal(t, test.exp, canPush)
+						require.Equal(t, exp, canPush)
 					})
 				}
 			}
@@ -188,6 +192,7 @@ func testCanPushWithPriorityPushAbort(t *testing.T) {
 
 func testCanPushWithPriorityPushTimestamp(t *testing.T) {
 	t.Run("pusheeStatus="+roachpb.PENDING.String(), testCanPushWithPriorityPushTimestampPusheePending)
+	t.Run("pusheeStatus="+roachpb.PREPARED.String(), testCanPushWithPriorityPushTimestampPusheePrepared)
 	t.Run("pusheeStatus="+roachpb.STAGING.String(), testCanPushWithPriorityPushTimestampPusheeStaging)
 }
 
@@ -371,6 +376,87 @@ func testCanPushWithPriorityPushTimestampPusheePending(t *testing.T) {
 	}
 }
 
+func testCanPushWithPriorityPushTimestampPusheePrepared(t *testing.T) {
+	SSI := isolation.Serializable
+	SI := isolation.Snapshot
+	RC := isolation.ReadCommitted
+	min := enginepb.MinTxnPriority
+	max := enginepb.MaxTxnPriority
+	mid1 := enginepb.TxnPriority(1)
+	mid2 := enginepb.TxnPriority(2)
+	testCases := []struct {
+		pusheeIso isolation.Level
+		pusherPri enginepb.TxnPriority
+		pusheePri enginepb.TxnPriority
+		exp       bool
+	}{
+		// Pushing SSI
+		{SSI, min, min, false},
+		{SSI, min, mid1, false},
+		{SSI, min, mid2, false},
+		{SSI, min, max, false},
+		{SSI, mid1, min, false},
+		{SSI, mid1, mid1, false},
+		{SSI, mid1, mid2, false},
+		{SSI, mid1, max, false},
+		{SSI, mid2, min, false},
+		{SSI, mid2, mid1, false},
+		{SSI, mid2, mid2, false},
+		{SSI, mid2, max, false},
+		{SSI, max, min, false},
+		{SSI, max, mid1, false},
+		{SSI, max, mid2, false},
+		{SSI, max, max, false},
+		// Pushing SI
+		{SI, min, min, true},
+		{SI, min, mid1, true},
+		{SI, min, mid2, true},
+		{SI, min, max, true},
+		{SI, mid1, min, true},
+		{SI, mid1, mid1, true},
+		{SI, mid1, mid2, true},
+		{SI, mid1, max, true},
+		{SI, mid2, min, true},
+		{SI, mid2, mid1, true},
+		{SI, mid2, mid2, true},
+		{SI, mid2, max, true},
+		{SI, max, min, true},
+		{SI, max, mid1, true},
+		{SI, max, mid2, true},
+		{SI, max, max, true},
+		// Pushing RC
+		{RC, min, min, true},
+		{RC, min, mid1, true},
+		{RC, min, mid2, true},
+		{RC, min, max, true},
+		{RC, mid1, min, true},
+		{RC, mid1, mid1, true},
+		{RC, mid1, mid2, true},
+		{RC, mid1, max, true},
+		{RC, mid2, min, true},
+		{RC, mid2, mid1, true},
+		{RC, mid2, mid2, true},
+		{RC, mid2, max, true},
+		{RC, max, min, true},
+		{RC, max, mid1, true},
+		{RC, max, mid2, true},
+		{RC, max, max, true},
+	}
+	// NOTE: the behavior of PUSH_TIMESTAMP pushes is agnostic to the isolation
+	// level of the pusher when the pushee transaction is PREPARED.
+	for _, pusherIso := range isolation.Levels() {
+		for _, test := range testCases {
+			name := fmt.Sprintf("pusherIso=%s/pusheeIso=%s/pusherPri=%d/pusheePri=%d",
+				pusherIso, test.pusheeIso, test.pusherPri, test.pusheePri)
+			t.Run(name, func(t *testing.T) {
+				canPush := CanPushWithPriority(
+					kvpb.PUSH_TIMESTAMP, pusherIso, test.pusheeIso, test.pusherPri, test.pusheePri, roachpb.PREPARED)
+				require.Equal(t, test.exp, canPush)
+			})
+		}
+	}
+}
+
 func testCanPushWithPriorityPushTimestampPusheeStaging(t *testing.T) {
 	min := enginepb.MinTxnPriority
 	max := enginepb.MaxTxnPriority
@@ -421,7 +507,7 @@ func testCanPushWithPriorityPushTouch(t *testing.T) {
 	mid1 := enginepb.TxnPriority(1)
 	mid2 := enginepb.TxnPriority(2)
 	priorities := []enginepb.TxnPriority{min, mid1, mid2, max}
-	statuses := []roachpb.TransactionStatus{roachpb.PENDING, roachpb.STAGING}
+	statuses := []roachpb.TransactionStatus{roachpb.PENDING, roachpb.STAGING, roachpb.PREPARED}
 	// NOTE: the behavior of PUSH_TOUCH pushes is agnostic to pushee status.
 	for _, pusheeStatus := range statuses {
 		// NOTE: the behavior of PUSH_TOUCH pushes is agnostic to isolation levels.

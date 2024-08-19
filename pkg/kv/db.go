@@ -1115,6 +1115,31 @@ func runTxn(ctx context.Context, txn *Txn, retryable func(context.Context, *Txn)
 	return err
 }
 
+// CommitPrepared commits the prepared transaction.
+func (db *DB) CommitPrepared(ctx context.Context, txn *roachpb.Transaction) error {
+	return db.endPrepared(ctx, txn, true /* commit */)
+}
+
+// RollbackPrepared rolls back the prepared transaction.
+func (db *DB) RollbackPrepared(ctx context.Context, txn *roachpb.Transaction) error {
+	return db.endPrepared(ctx, txn, false /* commit */)
+}
+
+func (db *DB) endPrepared(ctx context.Context, txn *roachpb.Transaction, commit bool) error {
+	if txn.Status != roachpb.PREPARED {
+		return errors.WithContextTags(errors.AssertionFailedf("transaction %v is not in a prepared state", txn), ctx)
+	}
+
+	et := endTxnReq(commit, hlc.Timestamp{} /* deadline */)
+	et.req.Key = txn.Key
+	// TODO: the need for this is bad.
+	et.req.LockSpans = txn.LockSpans
+	ba := &kvpb.BatchRequest{Requests: et.unionArr[:]}
+	ba.Txn = txn
+	_, pErr := db.sendUsingSender(ctx, ba, db.factory.NonTransactionalSender())
+	return pErr.GoError()
+}
+
 // send runs the specified calls synchronously in a single batch and returns
 // any errors. Returns (nil, nil) for an empty batch.
 func (db *DB) send(ctx context.Context, ba *kvpb.BatchRequest) (*kvpb.BatchResponse, *kvpb.Error) {
