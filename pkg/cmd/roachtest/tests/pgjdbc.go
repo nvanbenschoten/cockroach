@@ -43,6 +43,10 @@ func registerPgjdbc(r registry.Registry) {
 		t.Status("setting up cockroach")
 		c.Start(ctx, t.L(), option.NewStartOpts(sqlClientsInMemoryDB), install.MakeClusterSettings(), c.All())
 
+		if err := createPgjdbcUserAndDatabase(ctx, t, c, node[0]); err != nil {
+			t.Fatal(err)
+		}
+
 		version, err := fetchCockroachVersion(ctx, t.L(), c, node[0])
 		if err != nil {
 			t.Fatal(err)
@@ -204,6 +208,33 @@ func registerPgjdbc(r registry.Registry) {
 	})
 }
 
+// createPgjdbcUserAndDatabase creates a user and a database for pgjdbc tests,
+// according to the requirements of the pgjdbc test suite, which are outlined in
+// https://jdbc.postgresql.org/development/#test-suite.
+func createPgjdbcUserAndDatabase(
+	ctx context.Context, t test.Test, c cluster.Cluster, nodeIdx int,
+) error {
+	db, err := c.ConnE(ctx, t.L(), nodeIdx)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	stmts := []string{
+		"CREATE USER test with password 'test'",
+		"GRANT admin TO test",
+		"CREATE DATABASE test OWNER test",
+	}
+	for _, stmt := range stmts {
+		_, err = db.ExecContext(ctx, stmt)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	return nil
+}
+
 const pgjdbcDatabaseParams = `
 server=localhost
 port={pgport:1}
@@ -211,11 +242,11 @@ secondaryServer=localhost
 secondaryPort=5433
 secondaryServer2=localhost
 secondaryServerPort2=5434
-database=defaultdb
-username=test_admin
-password=testpw
-privilegedUser=test_admin
-privilegedPassword=testpw
+database=test
+username=test
+password=test
+privilegedUser=test
+privilegedPassword=test
 sspiusername=testsspi
 preparethreshold=5
 loggerLevel=DEBUG
